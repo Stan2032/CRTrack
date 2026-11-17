@@ -29,6 +29,7 @@ export const COMMANDS = [
     { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
     { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
+  { name: 'welcome', description: 'Leaders: post how-to-link instructions here (stays, kept up to date)' },
   { name: 'rules', description: 'Leaders: post the clan rules here (kept up to date automatically)' },
 ];
 
@@ -160,6 +161,12 @@ export async function handleDiscord(request, env, ctx) {
       const err = await upsert(env, 'discord:rules:' + guild, ch, text).then(() => '', e => e.message);
       return Response.json(reply(err ? cantPost(ch, err) : 'Rules posted here. I\'ll edit that message whenever the rules change on the site. Pin it to keep it handy.'));
     }
+    case 'welcome': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const ch = i.channel_id || i.channel?.id;
+      const err = await upsert(env, 'discord:welcome:' + guild, ch, WELCOME).then(() => '', e => e.message);
+      return Response.json(reply(err ? cantPost(ch, err) : 'Posted. Long-press it → Pin, so it stays at the top.'));
+    }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       later(syncGuild(env, guild, cfg, clan, 25));
@@ -232,6 +239,14 @@ export function rulesText(r) {
 }
 
 // Edit a remembered message, or post a new one if it's gone. Remembers the message id under `key`.
+export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see the rest of the server.**
+
+**1.** Type \`/link\` and tap the one from **War Audit**.
+**2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
+**3.** Send. Your clan role and nickname are set straight away.
+
+Not in the clan yet? Join in game first, then link. Stuck? Ask a leader.`;
+
 // Plain-language reason when Discord refuses a post.
 function cantPost(channel, err) {
   const code = (String(err).match(/: (\d{3})$/) || [])[1];

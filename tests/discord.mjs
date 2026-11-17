@@ -92,6 +92,10 @@ calls.length = 0;
 assert.equal(await updateRulesMessages(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /2,000\+ medals every war/);
 
+// Welcome / how-to-link message.
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'welcome', options: [] } })), /Posted/);
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: member('U9'), data: { name: 'welcome', options: [] } })), /Leaders only/);
+
 // A channel the bot can't post in: told why, in plain words, and /setup changes nothing.
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opt = {}) => /channels\/LOCKED\//.test(url) ? new Response('{}', { status: 403 }) : realFetch(url, opt);

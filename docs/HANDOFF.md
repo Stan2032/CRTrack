@@ -116,7 +116,7 @@ reached the target, who didn't), battle day 4 can't-reach (per-player targets), 
 4 hours, data pulls failing. Pushes carry no data; the phone fetches `/api/alerts/latest?clan=` and shows unseen ones.
 
 Discord (`worker/discord.js`): `/link #TAG`, `/unlink`, `/me`, and for leaders (Manage Roles) `/linkuser`, `/links`,
-`/setup` (war channel + roles), `/sync`. Roles and nicknames follow the game for linked members; pings linked members
+`/setup` (war channel + roles), `/sync`, `/rules`, `/welcome` (pinned how-to-link message for a channel newcomers can see). Roles and nicknames follow the game for linked members; pings linked members
 with decks left in a battle day's last 4 hours; posts war results and welcomes. It also keeps three messages up to date by editing them: a **live war board** (one per war, refreshed every pull on battle days), a **battle day summary** after each reset (medals gained with +/- % vs the day before, decks used, place, top 3), and the **rules** posted with `/rules` (re-written when rules are saved on the site). Signature checking was tested in Cloudflare's runtime (wrangler dev). Setup:
 1. discord.com/developers → New Application → Bot: copy the token. General Information: copy the Application ID and Public Key.
 2. Add Cloudflare secrets `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY` (and text `DISCORD_GUILD_ID`).
