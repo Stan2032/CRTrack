@@ -124,3 +124,25 @@ log('All checks passed');
   assert.ok(L.ruleProblems({ ...L.DEFAULT_RULES, lookback: 4 }).some(x => /nobody can be promoted/.test(x)));
   log('Rule limit checks passed');
 }
+
+// Absences from Discord /away: under target while away during the war -> leaders decide, not kick.
+{
+  const r = L.DEFAULT_RULES, end = Date.parse('2026-11-23T09:43:00Z');
+  const away = JSON.stringify({ from: '2026-11-19T10:00:00Z', until: '2026-11-22T10:00:00Z', reason: 'holiday' });
+  const a = L.awayDuring(L.parseAway(away), end - 4 * 864e5, end);
+  assert.ok(a, 'away during battle days');
+  assert.equal(L.awayDuring(L.parseAway(away), end + 864e5, end + 5 * 864e5), null, 'not during the next war');
+  const cur = { key: '9-1', fame: 900, decks: 8, boats: 0 };
+  const p = { role: 'member', isNew: true, offlineDays: 4, weeks: [cur], cur, before: [], prev: null, awayWar: a };
+  const res = L.judgeEnd(p, r, 'full');
+  assert.equal(res.status, 'Review'); assert.match(res.why, /Said they'd be away Thu 19 Nov to Sun 22 Nov: holiday/);
+  assert.equal(L.judgeEnd({ ...p, awayWar: null }, r, 'full').status, 'Kick');
+  log('Absence checks passed');
+}
+
+// The Worker's copies of logic.js / stats.js match the site (node worker/gen.mjs updates them).
+{
+  const { outOfDate } = await import('../worker/gen.mjs');
+  assert.deepEqual(outOfDate(), [], 'run: node worker/gen.mjs');
+  log('Worker copy checks passed');
+}

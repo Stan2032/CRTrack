@@ -242,7 +242,8 @@ function judgeEnd(p, r, join, override) {
     if (boatPct >= 25) res.why = [res.why, `${boatPct}% of decks on boats`].filter(Boolean).join(' · ');
   } else {
     const streak = streakBefore(p, r), warned = warnState(p, r)?.active;
-    if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
+    if (p.awayWar) res = out('Review', `Said they'd be away ${awayText(p.awayWar)}`);
+    else if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
       res = out('Check', `Offline ${Math.floor(p.offlineDays)} days, but reached ${r.target}+ the ${streak} wars before`);
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
     else if (p.role === 'elder' && r.demoteElders) res = !r.elderWarnFirst || (p.prev && p.prev.fame < r.target) || warned
@@ -271,6 +272,31 @@ function judgeEnd(p, r, join, override) {
   return res;
 }
 
+// One player's after-war result, as the leaders' page shows it (the Discord bot uses the same).
+//   note(kind, tag): the shared choice for this war; past: looking back at an older war; fmt: date format.
+const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
+const AUTO_CHECKED = ['Kick', 'Demote', 'Promote'];   // the game shows these; no manual tick
+function endResult(p, model, r, note, past, fmt = ukDay) {
+  const manual = note('join', p.tag), auto = p.autoJoin;
+  const join = manual || auto || (p.isNew && !p.gone ? 'unknown' : 'full');
+  const saved = past ? note('result', p.tag) : null;
+  const res = judgeEnd(p, r, join, note('over', p.tag) || saved);
+  if (saved && !note('over', p.tag)) res.why = res.why.replace(/^Changed by a leader/, 'Saved result');
+  // Gone: counts as a kick only if they left after the war ended (seen by the tracker); otherwise they just left.
+  const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
+  if (p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmt(p.leftAt) : 'Left during or before this war'; }
+  // A promotion or demotion seen in game after this war counts as this war's action, whatever was suggested.
+  if (!p.gone && model.endedAt) {
+    const after = (p.roleEvents || []).filter(e => e.at > model.endedAt).map(e => e.detail);
+    const promoted = after.some(d => /^member>(elder|coLeader)$/.test(d)), demoted = after.some(d => /^(elder>member|coLeader>(elder|member))$/.test(d));
+    if (promoted && res.status !== 'Promote') { res.status = 'Promote'; res.why = 'Promoted after this war'; }
+    if (demoted && res.status !== 'Demote') { res.status = 'Demote'; res.why = 'Demoted after this war'; }
+  }
+  const done = ACTIONS.includes(res.status)
+    ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p.tag) === '1' } : null;
+  return { join, joinAuto: !manual && !!auto, res, done };
+}
+
 function judgeLive(p, r, join, day) {
   const t = targetFor(join, r);
   const x = p.race || { fame: 0, decks: 0, today: 0 };
@@ -283,7 +309,7 @@ function judgeLive(p, r, join, day) {
   else if (need > max) status = 'Out';
   else status = 'Need';
   return { status, need, max, leftToday, fame: x.fame, today: x.today, target: t.medals,
-    why: status === 'Out' && x.today === 0 ? 'No decks used today (kick frees a slot)' : '' };
+    why: p.awayLive && status !== 'Safe' ? `Away ${awayText(p.awayLive)}` : status === 'Out' && x.today === 0 ? 'No decks used today (kick frees a slot)' : '' };
 }
 
 function guessDay(players) {
@@ -455,6 +481,15 @@ function notesMap(h) {
   for (const n of h.notes || []) m[`${n.kind}|${n.week}|${n.tag}`] = n.value;
   return m;
 }
+// Absences members post with /away in Discord: notes kind 'away', week '*', value {from, until, reason}.
+const ukDay = t => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' });
+function awayText(a) { return `${ukDay(a.from)} to ${ukDay(a.until)}${a.reason ? ': ' + a.reason : ''}`; }
+function parseAway(v) {
+  try { const a = JSON.parse(v); const from = ms(a.from), until = ms(a.until); return from && until ? { from, until, reason: String(a.reason || '').slice(0, 100) } : null; } catch (e) { return null; }
+}
+// Away for at least a day of the war's battle days (the 4 days before it ended)?
+function awayDuring(a, start, end) { return a && a.from < end && a.until > start && Math.min(a.until, end) - Math.max(a.from, start) >= 864e5 ? a : null; }
+
 // Adds history facts to players: role at war end, auto join day, decks per day, last saved result.
 function applyHistory(model, h, liveWeek) {
   if (!h) return model;
@@ -478,6 +513,9 @@ function applyHistory(model, h, liveWeek) {
     p.roleEvents = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'role').map(e => ({ at: ms(e.at), detail: String(e.detail) }));
     const left = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'leave').map(e => ms(e.at));
     p.leftAt = left.length ? Math.max(...left) : null;
+    p.away = parseAway(notes[`away|*|${p.tag}`]);
+    p.awayWar = war ? awayDuring(p.away, ms(war.ended_at) - 4 * 864e5, ms(war.ended_at)) : null;
+    p.awayLive = p.away && p.away.from <= Date.now() && p.away.until > Date.now() ? p.away : null;
   }
   model.endedAt = war ? ms(war.ended_at) : null;
   // War battles grouped by war week: a battle belongs to the first war that ended after it.
@@ -515,4 +553,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

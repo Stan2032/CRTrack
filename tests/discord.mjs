@@ -21,7 +21,7 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
-  if (/\/channels\/[CR]\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
+  if (/\/channels\/(C|R|LC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
 
@@ -53,6 +53,18 @@ assert.match(await text(await cmd('link', [{ name: 'tag', value: '#QQQQQ' }], me
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }], member('U2'))), /already linked/);
 assert.match(await text(await cmd('me')), /Luke/);
 assert.match(await text(await cmd('links', [], leader)), /Linked: 1 of 2[\s\S]*Not linked yet:\*\* perc/);
+
+// /away: saved as a shared note the page reads, posted to the leaders' channel.
+assert.match(await text(await here('leaders', 'LC')), /Leaders only: to-do list after each war \+ absences → <#LC>/);
+calls.length = 0;
+assert.match(await text(await cmd('away', [{ name: 'days', value: 3 }, { name: 'reason', value: 'holiday' }])), /away until \*\*.+\*\*[\s\S]*leaders decide/);
+await Promise.all(pending);
+const awayNote = await DB.prepare("SELECT value FROM notes WHERE kind = 'away' AND tag = '2VJ9V2PV'").first();
+assert.equal(JSON.parse(awayNote.value).reason, 'holiday');
+assert.match(calls.find(c => c.method === 'POST' && /channels\/LC\/messages$/.test(c.url)).body.content, /🏖️ \*\*Luke\*\* is away until .+: holiday/);
+assert.match(await text(await cmd('away', [{ name: 'days', value: 1 }, { name: 'user', value: 'U1' }], member('U7'))), /Only leaders/);
+assert.match(await text(await cmd('away', [{ name: 'days', value: 0 }])), /Welcome back/);
+assert.equal(await DB.prepare("SELECT 1 FROM notes WHERE kind = 'away'").first(), null, 'cleared');
 
 // Battle-day reminder pings linked members by mention, names otherwise, and only those users.
 calls.length = 0;

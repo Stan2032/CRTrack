@@ -13,8 +13,6 @@ let codeOk = false, leaderName = '';
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'First & only warning', Check: 'Check on them', Review: 'Leaders decide',
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
 const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused', 'Left'];
-const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
-const AUTO_CHECKED = ['Kick', 'Demote', 'Promote'];   // the game shows these; no manual tick
 const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'first & only warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
 const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
 const FOLDED = ['OK', 'Excused', 'Safe', 'Left'];
@@ -135,25 +133,11 @@ async function addFiles(files) {
 function evaluate() {
   const r = rules(), past = mode === 'end' && model.season !== model.latest;
   return model.players.map(p => {
-    const manual = note('join', p);
-    const auto = mode === 'end' ? p.autoJoin : p.autoJoinLive;
-    const join = manual || auto || (p.isNew && !p.gone && mode === 'end' ? 'unknown' : 'full');
-    const saved = past ? note('result', p) : null;
-    const res = mode === 'end' ? judgeEnd(p, r, join, note('over', p) || saved) : judgeLive(p, r, join, day);
-    if (mode === 'end' && saved && !note('over', p)) res.why = res.why.replace(/^Changed by a leader/, 'Saved result');
-    // Gone: counts as a kick only if they left after the war ended (seen by the tracker); otherwise they just left.
-    const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
-    if (mode === 'end' && p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmtDate(p.leftAt) : 'Left during or before this war'; }
-    // A promotion or demotion seen in game after this war counts as this war's action, whatever was suggested.
-    if (mode === 'end' && !p.gone && model.endedAt) {
-      const after = (p.roleEvents || []).filter(e => e.at > model.endedAt).map(e => e.detail);
-      const promoted = after.some(d => /^member>(elder|coLeader)$/.test(d)), demoted = after.some(d => /^(elder>member|coLeader>(elder|member))$/.test(d));
-      if (promoted && res.status !== 'Promote') { res.status = 'Promote'; res.why = 'Promoted after this war'; }
-      if (demoted && res.status !== 'Demote') { res.status = 'Demote'; res.why = 'Demoted after this war'; }
-    }
-    const done = mode === 'end' && ACTIONS.includes(res.status)
-      ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p) === '1' } : null;
-    const out = { ...p, join, joinAuto: !manual && !!auto, res, done };
+    if (mode === 'end') return { ...p, ...endResult(p, model, r, (kind, tag) => note(kind, { tag }), past, fmtDate) };
+    const manual = note('join', p), auto = p.autoJoinLive;
+    const join = manual || auto || 'full';
+    const res = judgeLive(p, r, join, day);
+    const out = { ...p, join, joinAuto: !manual && !!auto, res, done: null };
     if (mode === 'live' && raceInfo.day && res.status !== 'Excused' && !p.gone)
       out.fc = forecast(p, { target: res.target, day, leftToday: 4 - res.today, fame: res.fame, lookback: r.lookback, clan: clanH() });
     return out;
@@ -180,6 +164,7 @@ function more(p) {
   const lines = [];
   if (p.joined) lines.push(p.joined.seen ? `In clan since at least ${fmtDate(p.joined.at)}` : `Joined ${fmtDate(p.joined.at)}`);
   if (days) lines.push('Decks by battle day: ' + days.map(d => d == null ? '–' : d).join(' · '));
+  if (p.away && p.away.until > Date.now() - 14 * 864e5) lines.push(`${p.away.until > Date.now() ? 'Away' : 'Was away'} (said on Discord): ${awayText(p.away)}`);
   if (p.offlineDays != null) lines.push(`Last online ${p.offlineDays < 1 ? 'today' : Math.floor(p.offlineDays) + ' days ago'}`);
   const bw = mode === 'end' ? model.season : (raceInfo.week || 'current');
   const bt = battleText(p.battles?.[bw]);
@@ -580,7 +565,7 @@ function renderLog() {
     e.kind === 'role' ? esc(String(e.detail).replace('>', ' → ')) : words[e.kind] || esc(e.kind)}</div>`).join('');
   const names = Object.fromEntries((hist.members || []).map(m => [m.tag, cleanName(m.name)]));
   const what = n => n.kind === 'done' ? (n.value ? 'ticked done' : 'unticked') : n.kind === 'over' ? (n.value ? `changed to ${label(n.value)}` : 'reset to suggested')
-    : n.kind === 'join' ? `set join day: ${n.value || 'auto'}` : n.kind === 'rules' ? 'saved the rules' : n.kind;
+    : n.kind === 'join' ? `set join day: ${n.value || 'auto'}` : n.kind === 'rules' ? 'saved the rules' : n.kind === 'away' ? (n.value ? `away (${(() => { const x = parseAway(n.value); return x ? awayText(x) : ''; })()})` : 'back') : n.kind;
   const who = (hist.noteLog || []).filter(n => n.by).slice(0, 15).map(n => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(n.at)))}</span> <b>${esc(n.by)}</b> ${esc(what(n))}${
     n.tag && n.tag !== '*' ? ' · ' + esc(names[n.tag] || (n.tag.startsWith('STEP-') ? n.tag.slice(5).toLowerCase() + ' step' : n.tag)) : ''} <span class="muted">(war ${esc(n.week)})</span></div>`).join('');
   $('#log').innerHTML = `<div class="hint">${h.weeks} wars stored${h.since ? ' · tracking since ' + esc(fmtDate(h.since)) : ''}</div>${ev || '<div class="empty">No joins or leaves yet</div>'}`

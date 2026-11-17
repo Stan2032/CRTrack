@@ -346,7 +346,7 @@ export async function readMember(env, clan, tag) {
   };
 }
 
-const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];
+const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done', 'away'];
 
 export async function writeNotes(env, clan, items, now = new Date().toISOString(), by = null) {
   const ok = (items || []).filter(i => i && NOTE_KINDS.includes(i.kind) && typeof i.week === 'string' && typeof i.tag === 'string'

@@ -2,7 +2,7 @@
 //   - Slash commands arrive at /api/discord (Discord signs each request; we check the signature).
 //   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
-import { readMember } from './history.js';
+import { readMember, writeNotes } from './history.js';
 import { PUSH_SCHEMA } from './push.js';
 
 const API = 'https://discord.com/api/v10';
@@ -21,12 +21,17 @@ export const COMMANDS = [
   { name: 'linkuser', description: 'Leaders: link someone else', options: [
     { type: 6, name: 'user', description: 'Discord member', required: true },
     { type: 3, name: 'tag', description: 'Their player tag', required: true }] },
+  { name: 'away', description: 'Going away? Tell the leaders (no kick for missing medals while away; leaders decide)', options: [
+    { type: 4, name: 'days', description: 'How many days (0 = I\'m back)', required: true, min_value: 0, max_value: 21 },
+    { type: 3, name: 'reason', description: 'Optional, e.g. holiday', max_length: 100 },
+    { type: 6, name: 'user', description: 'Leaders: someone else' }] },
   { name: 'links', description: 'Leaders: who is linked, and who isn\'t yet' },
   { name: 'post-here', description: 'Leaders: choose what the bot posts in THIS channel', options: [
     { type: 3, name: 'what', description: 'What this channel is for', required: true, choices: [
       { name: 'War board + battle-day reminders', value: 'war' },
       { name: 'Battle day summaries + war results', value: 'results' },
-      { name: 'Welcomes for new members', value: 'joins' },
+      { name: 'Welcomes + shout-outs', value: 'joins' },
+      { name: 'Leaders only: to-do list after each war + absences', value: 'leaders' },
       { name: 'Rules (kept up to date)', value: 'rules' },
       { name: 'How to link (for newcomers)', value: 'welcome' },
       { name: 'Nothing (stop posting here)', value: 'none' }] }] },
@@ -78,7 +83,8 @@ async function allConfigs(env) {
     .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
 }
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
-export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes for new members' };
+export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs',
+  leaders: 'Leaders only: to-do list after each war + absences' };
 const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : cfg?.channel;
 
 async function findRoles(env, guild, opt, cfg) {
@@ -171,6 +177,20 @@ export async function handleDiscord(request, env, ctx) {
       if (lw) lines.push(`Last war (${lw.week}): ${lw.fame.toLocaleString()} medals ${lw.fame >= target ? '✅' : '❌'}`);
       return Response.json(reply(lines.join('\n')));
     }
+    case 'away': {
+      const other = opt.user && opt.user !== user;
+      if (other && !isLeader(i.member)) return Response.json(reply('Only leaders can set someone else as away.'));
+      const who = other ? opt.user : user;
+      const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, who).first();
+      if (!link) return Response.json(reply(other ? `<@${who}> isn't linked yet: \`/linkuser\` first.` : 'Link your account first: `/link #YOURTAG`'));
+      const m = await member(link.tag), name = cleanName(m?.name || link.tag), days = Math.max(0, Math.min(21, Number(opt.days) || 0));
+      const by = 'Discord: ' + cleanName(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || 'member');
+      const now = Date.now(), value = days ? JSON.stringify({ from: new Date(now).toISOString(), until: new Date(now + days * 864e5).toISOString(), reason: String(opt.reason || '').slice(0, 100) }) : null;
+      await writeNotes(env, clan, [{ week: '*', tag: link.tag, kind: 'away', value }], new Date(now).toISOString(), by);
+      const until = ukDate(now + days * 864e5);
+      later(postJob(env, guild, cfg, 'leaders', days ? `🏖️ **${name}** is away until **${until}**${opt.reason ? `: ${String(opt.reason).slice(0, 100)}` : ''}${other ? ` (set by ${by.slice(9)})` : ''}` : `👋 **${name}** is back.`));
+      return Response.json(reply(days ? `Got it: ${other ? `**${name}** is` : 'you\'re'} away until **${until}**. The leaders can see it. Missing medals while away won't mean an automatic kick; the leaders decide.` : `Welcome back${other ? `, ${name}` : ''}! Away cleared.`));
+    }
     case 'links': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       const ms = (await env.DB.prepare('SELECT tag, name FROM members WHERE clan = ? AND in_clan = 1').bind(clan).all()).results;
@@ -258,6 +278,13 @@ export const RULE_DEFAULTS = { target: 1800, perDay: 450, effortNet: true, demot
   warnClear: 3, spareBoats: true, boatShare: 50, holdWeeks: 3, holdOffline: 3, promoWeeks: 6, promoMisses: 1, promoAvg: 2200 };
 const n = x => Number(x).toLocaleString('en-GB');
 const ukClock = t => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
+const ukDate = t => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' });
+// Post to one server's channel for a job (if it has one). Mentions nobody.
+async function postJob(env, guild, cfg, job, content, extra = {}) {
+  const ch = chan(cfg, job);
+  if (!ch) return null;
+  return dapi(env, 'POST', `/channels/${ch}/messages`, { content: content.slice(0, 1990), allowed_mentions: { parse: [] }, ...extra });
+}
 const place = i => ['1st', '2nd', '3rd', '4th', '5th'][i] || `${i + 1}th`;
 
 async function clanRules(env, clan) {

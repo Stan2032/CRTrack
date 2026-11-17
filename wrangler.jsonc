@@ -1,6 +1,8 @@
 {
   "name": "crtrack",
   "main": "worker/index.js",
+  // Copies site/logic.js and site/stats.js into modules for the Worker (the bot decides like the page).
+  "build": { "command": "node worker/gen.mjs" },
   "compatibility_date": "2025-09-01",
   // Keep variables set in the Cloudflare dashboard (e.g. ALLOWED_CLANS) when deploying.
   "keep_vars": true,
