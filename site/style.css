@@ -175,3 +175,17 @@ svg.spark circle.ok { fill: var(--green); } svg.spark circle.miss { fill: var(--
 .tbl tr:first-child td { border-top: 0; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 12px; }
 .why.fc { color: var(--blue); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 4px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
+.tv { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.finds { margin: 0; padding-left: 0; list-style: none; }
+.finds li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.45; }
+.finds li:first-child { border-top: 0; }
+.more-stats, .pdetail { margin-top: 12px; }
+.more-stats > summary, .pdetail > summary { cursor: pointer; color: var(--blue); font-weight: 600; font-size: 13px; }
+.pdetail > div { margin-top: 4px; }
+.psum { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+.fcb { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.fcb.ok { color: var(--green); } .fcb.risk { color: var(--yellow); } .fcb.bad { color: var(--red); }
+svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fill: var(--text); font-weight: 700; }

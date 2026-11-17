@@ -203,11 +203,16 @@ function more(p) {
   if (modes.length) lines.push('All tracked war battles: ' + modes.map(([k, n]) => `${n} ${ms[k].won}W–${ms[k].lost}L (${Math.round(ms[k].rate * 100)}%, ~${Math.round(ms[k].perDeck)} per deck)`).join(' · '));
   const bm = bestMode(ms);
   if (bm) lines.push(`Earns most per deck in ${bm.mode}: ~${bm.gain} more than ${bm.next}`);
-  return `<div class="more">${spark(p, r.target)}${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}<div class="row">${moreControls(p)}</div></div>`;
+  const sum = [];
+  if (rel) sum.push(`<b>${rel.score >= 85 ? 'Very reliable' : rel.score >= 70 ? 'Reliable' : rel.score >= 55 ? 'Hit and miss' : 'Unreliable'}</b> (${rel.score}/100)`);
+  if (rel) sum.push(`usually ~${rel.avg.toLocaleString()} medals`);
+  if (bm) sum.push(`best in ${bm.mode}`);
+  if (pt.total >= 4 && pt.window) sum.push(`plays ~${String(pt.window.from).padStart(2, '0')}:00 UK`);
+  return `<div class="more">${sum.length ? `<div class="psum">${sum.join(' · ')}</div>` : ''}${spark(p, r.target)}<details class="pdetail"><summary>Details</summary>${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}</details><div class="row">${moreControls(p)}</div></div>`;
 }
 function moreControls(p) {
   const ctl = [];
-  if (!p.gone) ctl.push(joinSelect(p));
+  if (!p.gone && (p.isNew || note('join', p))) ctl.push(joinSelect(p));
   if (mode === 'end') {
     const o = note('over', p) || 'Auto';
     ctl.push(`<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.filter(s => s !== 'Left').map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`);
@@ -234,13 +239,14 @@ function row(p) {
   const why = mode === 'end' ? p.res.why
     : p.res.status === 'Out' ? `Most possible ${p.res.fame + p.res.max}` + (p.res.today === 0 ? ' · no decks today, kicking frees a slot' : '')
     : p.res.status === 'Need' ? `Needs ${p.res.need} more · up to ${p.res.max} still possible` : '';
-  const fcText = p.fc && p.res.status === 'Need' ? `Forecast: ${Math.round(p.fc.prob * 100)}% likely to reach ${p.res.target} · expect ~${p.fc.expected.toLocaleString()} (${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()})` : '';
+  const fcBand = p.fc ? (p.fc.prob >= 0.8 ? ['Likely', 'ok'] : p.fc.prob >= 0.2 ? ['At risk', 'risk'] : ['Unlikely', 'bad']) : null;
+  const fcText = p.fc && p.res.status === 'Need' ? `${fcBand[0]} ${Math.round(p.fc.prob * 100)}%` : '';
   const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
   const isDone = p.done && (p.done.auto || p.done.manual);
   return `<div class="p ${isDone ? 'is-done' : ''}">
     <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
-    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${fcText ? `<div class="why fc" title="${esc(p.fc.basis)}">${esc(fcText)}</div>` : ''}${ask}
+    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${fcText ? `<div class="why"><span class="fcb ${fcBand[1]}" title="Expect ~${p.fc.expected.toLocaleString()} (likely ${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()}). Based on ${esc(p.fc.basis)}.">${esc(fcText)}</span> <span class="muted">expect ~${p.fc.expected.toLocaleString()}</span></div>` : ''}${ask}
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
 }
 
@@ -467,11 +473,15 @@ function copyText(text, btn) {
 function spark(p, target) {
   const ws = p.weeks.slice(0, 20).reverse();
   if (ws.length < 2) return '';
-  const W = 260, H = 54, pad = 6, max = Math.max(target * 1.2, ...ws.map(w => w.fame)), x = i => pad + i * (W - 2 * pad) / (ws.length - 1), y = v => H - pad - v / max * (H - 2 * pad);
+  // Zoomed to the useful range (around the target), so the shape is readable.
+  const W = 280, H = 60, pad = 7, right = 40, vals = ws.map(w => w.fame);
+  const hi = Math.max(target * 1.15, ...vals), lo = Math.max(0, Math.min(target * 0.85, ...vals) - 100);
+  const x = i => pad + i * (W - pad - right) / (ws.length - 1), y = v => H - pad - (v - lo) / (hi - lo) * (H - 2 * pad);
   const pts = ws.map((w, i) => `${x(i).toFixed(1)},${y(w.fame).toFixed(1)}`).join(' ');
   const dots = ws.map((w, i) => `<g><circle cx="${x(i)}" cy="${y(w.fame)}" r="3.5" class="${w.fame < target ? 'miss' : 'ok'}"/><circle cx="${x(i)}" cy="${y(w.fame)}" r="10" fill="transparent"><title>War ${esc(w.key)}: ${w.fame} medals, ${w.decks}/16 decks</title></circle></g>`).join('');
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Medals per war, oldest to newest: ${ws.map(w => w.fame).join(', ')}. Dashed line is the ${target} target.">
-    <line x1="${pad}" x2="${W - pad}" y1="${y(target)}" y2="${y(target)}" class="target"/><polyline points="${pts}" class="line"/>${dots}</svg>`;
+    <line x1="${pad}" x2="${W - right}" y1="${y(target)}" y2="${y(target)}" class="target"/><text x="${W - right + 4}" y="${y(target) + 3}" class="ax start">${target}</text>
+    <polyline points="${pts}" class="line"/>${dots}<text x="${W - right + 4}" y="${Math.max(9, Math.min(H - 2, y(vals[vals.length - 1]) + 3))}" class="ax start strong">${vals[vals.length - 1]}</text></svg>`;
 }
 function bars(items, { h = 110, fmt = v => v, ref = null, label = '' } = {}) {
   if (!items.length) return '';
@@ -530,7 +540,34 @@ function renderStats() {
   // 6. Inactive outside war
   const idle = model.players.filter(p => !p.gone && p.offlineDays != null && p.offlineDays >= 7).sort((a, b) => b.offlineDays - a.offlineDays);
   parts.push(`<h3>Offline 7+ days</h3>` + (idle.length ? `<table class="tbl">${idle.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${Math.floor(p.offlineDays)} days</td><td></td></tr>`).join('')}</table>` : '<div class="empty">Nobody</div>'));
-  box.innerHTML = parts.join('');
+  // Headline tiles and plain-language findings, worked out from the same data.
+  const last = ser[ser.length - 1], pct = x => x && x.played ? Math.round(100 * x.passed / x.played) : 0;
+  const tiles = [];
+  if (last) {
+    tiles.push([last.w && last.w.rank ? place(last.w.rank) : '–', `place in war ${last.week}` + (last.w && last.w.trophy_change ? ` (${last.w.trophy_change > 0 ? '+' : ''}${last.w.trophy_change} trophies)` : '')]);
+    tiles.push([`${last.passed}/${last.played}`, `reached ${r.target}+ (${pct(last)}%)`]);
+    tiles.push([last.played ? Math.round(last.medals / last.played).toLocaleString() : '–', 'average medals per player']);
+  }
+  if (ms.duel.games >= 5) tiles.push([`${Math.round(ms.duel.rate * 100)}%`, 'of duel games won']);
+  const finds = [];
+  if (ser.length >= 6) {
+    const a = ser.slice(-3), b = ser.slice(-6, -3), pa = Math.round(a.reduce((t, x) => t + pct(x), 0) / 3), pb = Math.round(b.reduce((t, x) => t + pct(x), 0) / 3);
+    if (Math.abs(pa - pb) >= 3) finds.push(`${pa > pb ? '📈' : '📉'} Members reaching ${r.target} is ${pa > pb ? 'up' : 'down'}: ${pa}% over the last 3 wars, from ${pb}% before.`);
+  }
+  const strugglers = model.players.filter(p => !p.gone).map(p => ({ p, miss: p.weeks.slice(0, 5).filter(w => w.fame < r.target).length, n: Math.min(5, p.weeks.length) })).filter(x => x.n >= 3 && x.miss >= 3).sort((a, b) => b.miss - a.miss);
+  if (strugglers.length) finds.push(`⚠️ Missing most wars: ${strugglers.slice(0, 4).map(x => `${esc(x.p.name)} (${x.miss} of last ${x.n})`).join(', ')}.`);
+  if (ms.duel.games >= 5 && ms.pvp.games >= 5 && ms.duel.perDeck - ms.pvp.perDeck >= 15)
+    finds.push(`⚔️ Duels earn ~${Math.round(ms.duel.perDeck - ms.pvp.perDeck)} more medals per deck than 1v1 for this clan. Encourage duels first.`);
+  if (ms.boat.games >= 5 && ms.boat.perDeck < Math.max(ms.duel.perDeck || 0, ms.pvp.perDeck || 0) - 15)
+    finds.push(`🚤 Boat attacks average ~${Math.round(ms.boat.perDeck)} per deck, the lowest of the three.`);
+  if (pt.total >= 10) finds.push(`🕒 Most war decks are played ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 UK. Remind people just before.`);
+  if (rel.length) finds.push(`⭐ Most reliable: ${rel.slice(0, 3).map(x => esc(x.p.name)).join(', ')}.`);
+  const imp = model.players.filter(p => !p.gone && p.cur && p.prev && p.cur.decks).map(p => ({ p, d: p.cur.fame - p.prev.fame })).sort((a, b) => b.d - a.d)[0];
+  if (imp && imp.d >= 300) finds.push(`🚀 Most improved last war: ${esc(imp.p.name)} (+${imp.d.toLocaleString()}).`);
+  if (idle.length) finds.push(`💤 Offline 7+ days: ${idle.slice(0, 4).map(p => esc(p.name)).join(', ')}.`);
+  box.innerHTML = (tiles.length ? `<div class="tiles">${tiles.map(([v, l]) => `<div class="tile"><div class="tv">${esc(v)}</div><div class="tl">${esc(l)}</div></div>`).join('')}</div>` : '')
+    + (finds.length ? `<h3>What stands out</h3><ul class="finds">${finds.map(f => `<li>${f}</li>`).join('')}</ul>` : '')
+    + `<details class="more-stats"><summary>Charts and tables</summary>${parts.join('')}</details>`;
 }
 
 function renderLog() {
