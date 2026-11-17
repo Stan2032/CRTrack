@@ -1,128 +1,151 @@
 # Handoff
 
-Context for anyone (person or AI) picking this up.
+Everything someone (person or AI) needs to pick this up. Last updated 17 Nov 2026.
 
-## Who and why
+## What it is
 
-- Stan is a co-leader of **#WINNING** (`#PPCCR8VU`), Legendary League, about 3,355 war trophies. The leader is **Baki**.
-- Clan rule: **1800 war medals a week**. Under 1800 risks a kick or demotion. Strong scorers get promoted.
-- Goal: stop working out by hand who to kick, demote, or promote each week, and get chat messages ready to paste.
-- The tool is **generic**: any clan can drop in its own RoyaleAPI CSVs. Nothing is hard-coded to #WINNING.
-- Style Stan asked for: **short, plain words, no self-explaining text**, in the UI and in chat messages.
+A Clash Royale clan war audit for **#WINNING** (`#PPCCR8VU`), built so any clan can use it.
+Stan (co-leader) and Baki (leader) use it after each war to see who to kick, demote, warn,
+check on or promote, with clan chat messages ready to paste, and during battle days to see who
+still needs to play.
 
-History: the first round was done with Gemini (transcript in `docs/gemini/conversation.txt`, its two app versions alongside). This repo replaces those apps.
+- **Leaders' page:** https://crtrack.stane203.workers.dev (opens and loads the clan by itself)
+- **Members' page:** https://crtrack.stane203.workers.dev/me.html (each member enters their own tag; own numbers only)
+- **Discord bot:** slash commands and pings, run by the same Worker (set up per the steps below)
 
-## Clan Wars 2 maths
+Style Stan asked for: **short, plain words**, no self-explaining text; UI follows Nielsen &
+Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 
-| Battle | Win | Loss |
+## Files
+
+| Path | What |
+|---|---|
+| `site/index.html`, `site/app.js` | Leaders' page |
+| `site/me.html`, `site/me.js` | Members' page |
+| `site/logic.js` | Decisions: building players from data, `judgeEnd` / `judgeLive`, chat messages, rule limits (`RULE_SPEC`) |
+| `site/stats.js` | Forecasts, reliability, play times, battle types, race projection, forecast accuracy, seasons |
+| `site/ui.js` | Shared by both pages: escaping, UK dates, charts (`spark`, `bars`), `rulesExplained` |
+| `site/sw.js`, `site/manifest.webmanifest`, `site/icons/` | Installable app, offline page, phone notifications |
+| `worker/index.js` | Worker entry: `/api/*`, static files, the 15-minute schedule |
+| `worker/api.js` | All `/api` routes |
+| `worker/history.js` | Snapshots into D1, alerts, history and member reads, shared notes |
+| `worker/push.js` | Web Push (VAPID keys made on first use, kept in D1) |
+| `worker/discord.js` | Discord bot |
+| `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
+| `samples/` | Real RoyaleAPI exports from 16 Nov 2026 (used by tests) |
+| `docs/gemini/` | The earlier Gemini work this replaced |
+
+Run all tests: `for t in check function history stats discord; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
+(the GitHub workflow runs them too, but GitHub Actions is currently blocked by an account setting).
+
+## Cloudflare setup
+
+Worker `crtrack`, deployed by Workers Builds from the `main` branch (`wrangler.jsonc`, `keep_vars: true`).
+
+| Name | Type | What |
 |---|---|---|
-| Duel (per game, needs 3+ decks left) | 250 | 100 |
-| 1v1 / special | 200 | 100 |
-| Boat attack | 125 | 75 |
+| `CR_API_KEY` | Secret | Clash Royale API key, allowed IP `45.79.218.79` (RoyaleAPI's proxy) |
+| `ALLOWED_CLANS` | Text | `PPCCR8VU`: only these clans can be used or tracked |
+| `EDIT_KEY` | Secret | Shared leader code |
+| `EDIT_KEYS` | Secret (optional) | Per-leader codes `Stan:xxx,Baki:yyy`, so logs show who |
+| `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID` | Secrets | Discord bot |
+| `DISCORD_GUILD_ID` | Text (optional) | Server id: commands appear instantly there |
+| `DB` | D1 binding | `crtrack-history`, id `513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe |
 
-- 4 battle days a week, 4 decks a day = 16 decks.
-- Most medals in one day, by decks left today: 4 → 900, 3 → 700, 2 → 400 (no duel), 1 → 200, 0 → 0.
-- Losing all 16 PvP games = 1600, so 1800 needs only 2 wins in 16.
-- 1800 / 4 days = **450 a day**. A late joiner's target is 450 × full battle days left after the day they joined (joined day 1 → 1350, day 2 → 900, day 3 → 450, day 4 → excused).
-- Live elimination: `medals + today's max + 900 × days after today < target` means they can't make it.
-- Kicking someone with **0 decks used today** frees a battle slot (50 players a day max). Kicking someone who already played does not.
-- Boat-only players: wins = (medals − 75 × boats) / 50. The same record in 1v1 = 200 × wins + 100 × losses.
+## Data and the schedule
 
-## Pull (official API)
+The official API (via `proxy.royaleapi.dev`) gives members, the current race, and the **last 10 wars only**.
+Everything older exists only because the database saved it (from 7 Sep 2026, kept forever).
 
-The app calls `https://proxy.royaleapi.dev/v1/clans/%23TAG` plus `/members`, `/currentriverrace` and `/riverracelog?limit=10`.
-These need the user's own key from developer.clashroyale.com, allowed for IP 45.79.218.79 (RoyaleAPI's proxy; the proxy allows browser requests).
-`apiToRows()` turns the replies into the same rows as the CSVs. Week key = `seasonId-(sectionIndex+1)`.
-Battle day = `periodIndex % 7 - 2` when `periodType` is `warDay` or `colosseum`.
-
-Hosted on Cloudflare Workers (`wrangler.jsonc`, `worker/index.js` serves `site/` as static assets; `worker/api.js`). `worker/api.js` serves `/api/v1/clans/...`, adds the `CR_API_KEY` secret, and only allows clan endpoints (optionally only the clans in `ALLOWED_CLANS`).
-`/api/status` says whether the site has a key and which clans are allowed. If it has a key, the page hides key setup, prefills a single allowed clan and pulls on open. A personal key in the browser still takes priority.
-
-Live at `https://crtrack.stane203.workers.dev` (Workers Builds from this repo; `CR_API_KEY` secret and `ALLOWED_CLANS=PPCCR8VU` set in the dashboard; `keep_vars` stops deploys wiping them).
-
-## History (D1)
-
-Database `crtrack-history` (id `513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe), bound as `DB`.
-A cron fires every 15 minutes. On battle days every run snapshots; on training days only runs in the hour after the daily reset, or 12 hours after the last one, do (`shouldRun()`). Each snapshot (`worker/history.js`, `snapshot()`) saves, for each clan in `TRACK_CLANS` or `ALLOWED_CLANS`:
+Cron every 15 minutes (`snapshotAll` → `snapshot`). Battle days: every run. Training days: only the hour
+after the daily reset (~09:43 UTC) and every 12 hours (`shouldRun`). "Request updated data" on the page
+pulls at once (anyone, 5-minute limit per clan, counted from the last request even if it failed).
 
 | Table | What |
 |---|---|
 | `members` | current members, role, last online |
-| `member_events` | `seen` (first sighting), `join`, `leave`, `role` (`member>elder`), with time |
-| `wars`, `war_players` | every finished war, kept forever |
-| `periods` | when each training / battle day was first seen (used to tell which battle day someone joined on) |
-| `race_days` | each player's decks/medals per battle day (last value before the day reset) |
-| `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `done` (action ticked), `rules` |
-| `member_stats` | donations given/received, trophies, level, per war week |
-| `race_standings` | every clan in the race and its medals, per battle day |
-| `race_events` | a timestamped row each time a player's deck count goes up (when they played, to 15 min): play-time patterns and pace |
-| `note_log` | who changed what (per-leader codes) |
-| `push_subs`, `alerts`, `kv` | app notification subscriptions, sent alerts, server keys |
-| `war_battles` | (checked: iccyman2511 138-2 rebuilt to exactly 2,850 medals / 16 decks) |
-| `war_battles` | war battles from players' battle logs (duel / 1v1 / boat, games won and lost). 3 players per run in rotation, so each player's log is read about every 4 hours (the log holds their last 25 battles) |
+| `member_events` | `seen`, `join`, `leave`, `role` (`member>elder`), with time |
+| `wars`, `war_players` | every finished war (`wars.fame` is race progress, not total medals) |
+| `periods` | when each training/battle day was first seen (to tell which day someone joined) |
+| `race_days` | each player's medals and decks per battle day (last snapshot before the reset) |
+| `race_events` | a row each time a player's deck count rises (when they play, to 15 min) |
+| `race_standings` | every clan in the race, per battle day |
+| `war_battles` | war battles from battle logs (3 players per run in rotation). Checked: rebuilds iccyman2511's 138-2 exactly (2,850 / 16 decks) |
+| `member_stats` | donations, trophies, level per war week |
+| `notes` | shared choices: `join`, `over`, `result` (saved automatically), `done` (ticked), `rules` (only changed rules) |
+| `note_log` | who changed what |
+| `push_subs`, `alerts`, `kv` | phone alert subscriptions, sent alerts, server keys, rate limits, Discord config |
+| `discord_links` | Discord user ↔ player tag, per server |
 
-## How long data lasts
+Free-plan limits per run: 50 database queries, 50 outside requests, 10 ms CPU. Writes use one multi-row
+statement per table with values escaped by `q()`. The page loads the last 26 wars (`?all=1` for backups).
 
-- The official API only returns the last 10 wars, so anything older exists only because this database saved it. Wars are kept forever from 7 Sep 2026 (the first of the 10 imported).
-- Storage: about 50–150 KB per war week, so the free plan's 500 MB database holds decades.
-- Free-plan daily limits: 100,000 rows written (we use about 10–20,000 on battle days), 5 million rows read (each page load reads the clan's whole history, a few thousand rows a year), 100,000 Worker requests.
-- Per run: 50 database queries and 50 outside requests (we use about 25 and 6), and 10 ms of CPU, which is why battle logs are read 3 players at a time.
+## Decisions after a war (`judgeEnd`)
 
-Free plan limits per run: 50 queries and 10 ms CPU. Writes use one multi-row statement per table, with values inlined via `q()` (escapes quotes).
-Seeded on 17 Nov 2026 with the 16 Nov roster (as `seen`) and Stan's 138-2 calls (join days, changes, results).
-Writing notes needs the `EDIT_KEY` secret sent as `X-Edit-Key`. The page calls it the "leader code".
+Defaults; all in Rules, corrected to sensible ranges (`RULE_SPEC`, `sanitizeRules`).
 
-## Data (RoyaleAPI CSV exports)
+1. Not in the war, or excused / joined day 4 → **Excused**. Left during the war → **Left the clan**.
+2. Reached the target (1800; late joiners 450 × battle days left after joining, or used every deck) → **Passed**,
+   or **Promote** if Member, 6+ wars, ≤1 miss, average 2,200+, not mostly boats.
+3. Under the target:
+   1. Reached it 3+ wars in a row before and offline 3+ days → **Check on them**
+   2. Leader / co-leader → **Leaders decide**
+   3. Elder → **First & only warning**; demote on a second miss in a row or while warned
+   4. While on a posted first & only warning (until 3 wars in a row at target) → **Kick**
+   5. Mostly boats (50%+, 8+ decks) → **Warning + boat tip**; still under on boats after that → **Kick**
+   6. New with unknown join day → **Leaders decide**; new → **Kick**
+   7. Back after leaving → **Leaders decide**; second miss in a row → **Kick**; otherwise **First & only warning**
+4. A leader's change always wins. A promotion or demotion seen in game after a war counts as that war's action.
+5. Kicks, demotions and promotions tick themselves from the game; warnings and check-ins are ticked by hand
+   (they happen in clan chat, which the API doesn't include). A warning only counts once ticked (posted).
 
-Detected by column names, so file names don't matter.
+Battle days (`judgeLive`): most medals possible today by decks left (4→900, 3→700, 2→400, 1→200), plus 900 per day after.
 
-| File | Key columns | Notes |
-|---|---|---|
-| Roster | `tag, name, role, lastSeen` | `lastSeen` like `20261116T123806.000Z`. "Now" = latest lastSeen in the file. |
-| War log | `season_key, player_tag, player_fame, player_decks_used, player_boat_attacks` | One row per player per week they were in the clan (0/0 rows = in clan, didn't play). Main source. |
-| War history | `s_<week>_fame`, `s_<week>_decks_used`, ... | Wide format, no boats, 0/0 can't be told apart from "not in clan". Fallback only. |
-| Current race | `player_fame, player_decks_used, player_decks_used_today` | Live mode. Has no battle-day number, so the app guesses from the most decks used, and you can change it. |
+## Stats (`site/stats.js`)
 
-**Always join by tag, not name.** There are two different "Luke"s in the history.
+- **Forecast:** Monte Carlo (2,000 runs, seeded) from the player's own habits: share of decks played, medals per deck and its spread; new players use the clan's. Bands: Likely ≥80%, At risk ≥20%, Unlikely.
+- **Forecast accuracy:** reruns past battle-day forecasts with only what was known then; Brier score vs guessing the usual pass rate.
+- **Reliability (0–100):** 40% wars at target, 30% decks used, 20% medals vs target (1.5× = full), 10% recent trend.
+- **Race projection:** each clan's pace so far carried to day 4 (the roughest estimate here).
+- **Best battle type:** medals per deck from duel 250/100, 1v1 200/100, boats 125/75 (needs 5+ games in two types).
 
-Join dates aren't in the API. RoyaleAPI's join/leave log only starts once `code: RoyaleAPI` is in the clan description (Stan added it on 16 Nov 2026). For now, NEW players (no earlier weeks) are flagged and the join day is set by hand.
+## Alerts and Discord
 
-## Decision order (week end)
+Phone alerts (installed app, leaders with the code): joins/leaves (with open spots), war finished (placing, how many
+reached the target, who didn't), battle day 4 can't-reach (per-player targets), decks still unused in a day's last
+4 hours, data pulls failing. Pushes carry no data; the phone fetches `/api/alerts/latest?clan=` and shows unseen ones.
 
-1. Not in the last war → Excused
-2. Join day set to Excused or Day 4 → Excused
-3. Reached target (or late joiner who used every deck) → OK, or **Promote** if member, 6+ weeks, ≤1 miss, avg ≥2300, mostly not boats
-4. Under target:
-   1. Passed 5+ weeks in a row before this, and offline 3+ days → **Check** (check in, don't kick)
-   2. Leader / co-leader → **Review**
-   3. Elder → **Demote**
-   4. 50%+ boats and 8+ decks → **Warn** (coach them off boats)
-   5. New → **Kick**
-   6. Missed the week before too → **Kick**
-   7. Otherwise → **Warn** (1st miss)
-5. A manual change in the **Change** column always wins.
+Discord (`worker/discord.js`): `/link #TAG`, `/unlink`, `/me`, and for leaders (Manage Roles) `/linkuser`, `/links`,
+`/setup` (war channel + roles), `/sync`. Roles and nicknames follow the game for linked members; pings linked members
+with decks left in a battle day's last 4 hours; posts war results and welcomes. Setup:
+1. discord.com/developers → New Application → Bot: copy the token. General Information: copy the Application ID and Public Key.
+2. Add Cloudflare secrets `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY` (and text `DISCORD_GUILD_ID`).
+3. General Information → Interactions Endpoint URL: `https://crtrack.stane203.workers.dev/api/discord`.
+4. OAuth2 → URL Generator: scopes `bot` + `applications.commands`; permissions Manage Roles, Manage Nicknames, Send Messages, View Channels. Open the link to add the bot.
+5. In Discord: drag the bot's role **above** the clan roles. Leaders' page → Rules → **Register Discord commands**. Then `/setup` and `/sync`.
 
-## Week 138-2 (ended 16 Nov 2026): what was actually done
+## Measured facts
 
-Done in game by Stan:
+- Clan chat keeps **256 characters** (pasted a numbered ruler); messages split to fit.
+- Clan description keeps **128 characters**. The game's font draws `=` like `:` and `>` like `)`.
+- Names can carry colour codes (`<c4>Baki`): `cleanName` strips them. **Always match players by tag**, not name (two different "Luke"s).
 
-- **Kicked:** Manny1, ty, bestgirlclasher (YOUREawful, great ben, and CURRY LORD were already gone)
-- **Demoted:** notorious mike (Elder, first miss in 10 weeks)
-- **Promoted to Elder:** Luke, AzzA, Veiz, Marcus.B:), Spud, Ninja
-- **Warned:** perc, boi in a jar, Mohammad nazari (boats); mattmk, Bob, Thomas king (near misses / first misses)
-- **Check in:** Pirate Steve (co-leader, offline since 11 Nov, usually 2,500+)
-- **Excused:** >FRXNCHY< (joined day 2, Stan promised in chat). brayyisaac joined day 3 and used 4/4 decks, so passed.
-- Posted chat messages telling the boat users to switch to duels/1v1.
+## What happened in war 138-2 (seeded into the database)
 
-With brayyisaac set to Day 3 and >FRXNCHY< set to Excused, the app reproduces these calls (`node tests/check.mjs`). Differences:
+Kicked Manny1, ty, bestgirlclasher; demoted notorious mike; promoted Luke, AzzA, Veiz, Marcus.B:), Spud, Ninja
+(then Daddy, !AR1!, RufcHarvey on 17 Nov); warned perc, boi in a jar, Mohammad nazari, mattmk, Bob, Thomas king
+(posted); check-in for Pirate Steve; >FRXNCHY< excused, brayyisaac joined day 3 and passed.
 
-- **Promote:** the app suggests Xreal and N444adt (7/7 weeks, avg 2,600+) instead of AzzA (avg 2,270) and Ninja (missed this week). Stan picked those two by hand.
-- **Ninja** shows Warn (1st miss). Stan promoted him anyway, using the Change column.
+## Decisions made with Stan (17 Nov audit)
 
-## Not done yet / ideas
+Site open to anyone with the link; returning players → leaders decide; promotion average 2,200; check-ins after 3 wars;
+boat rule 50% / 8 decks; opens on Last war while it has to-dos; `main` branch; warnings last until 3 wars in a row at target;
+members see only their own numbers; Jev (TypeSafe) not used yet. Its one good use here would be reading chat
+screenshots for absence messages, if wanted.
 
-- Pull is tested against fake API replies only; it still needs a real-key test.
-- The RoyaleAPI page links (`/clan/TAG`, `/war/log`, `/war/race`) are best guesses, because royaleapi.com blocks automated checks.
-- **Join dates** from RoyaleAPI's join/leave log, once it has been running a week.
-- **Track warnings across weeks** (now inferred from "missed the week before").
-- Clan chat keeps 256 characters (measured 17 Nov 2026 by pasting a 300-character numbered ruler; it stopped at 256). Longer messages are split into parts. Longer messages are split into parts. Changeable in Rules.
+## Open
+
+- First real battle day (Thu 19 Nov): check snapshots, race data, battle-log coverage (raise `BATTLELOGS_PER_RUN` to 5 if patchy).
+- GitHub Actions blocked by an account setting.
+- Older RoyaleAPI exports (before 7 Sep 2026) can be imported if Stan has them.
+- The members' page shows anyone's numbers to whoever types their tag (same data RoyaleAPI shows publicly).

@@ -22,6 +22,16 @@ Folded at the bottom: **Clan log** (joins, leaves, promotions) and **Rules**.
 Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
 or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
+## Members' page
+
+`/me.html`: each member enters their own player tag and sees only their own numbers: this war's medals and decks
+left today, their forecast, their war history and consistency, how they play, and the rules explained.
+
+## Discord
+
+A bot run by the same Worker: `/link #TAG`, `/me`, roles and nicknames that follow the game, battle-day pings for
+linked members with decks left, and war results. Setup steps are in `docs/HANDOFF.md`.
+
 ## Stats and forecasts
 
 - **Forecast** (This war): each player's chance of reaching the target, from their own habits (share of decks they play, medals per deck, how much that varies), simulated 2,000 times. New players use the clan's typical habits.
