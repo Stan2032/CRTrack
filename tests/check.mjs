@@ -2,6 +2,10 @@
 // Usage: node tests/check.mjs
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+// Only print details when run directly (other tests import fakeApi from here).
+const main = process.argv[1] === fileURLToPath(import.meta.url);
+const log = (...a) => { if (main) console.log(...a); };
 import assert from 'node:assert/strict';
 
 const code = readFileSync(new URL('../site/logic.js', import.meta.url), 'utf8');
@@ -33,7 +37,7 @@ for (const [n, s] of Object.entries(expect)) {
 }
 const summary = {};
 for (const [n, x] of Object.entries(res)) (summary[x.status] ||= []).push(n);
-console.log(summary);
+log(summary);
 
 // Boat swap: stuart 16 boats, 1800 -> 12W 4L -> 2800 in 1v1
 const st = m.players.find(p => p.name === 'stuart');
@@ -43,7 +47,7 @@ assert.equal(L.boatSwap(st.cur).pvp, 2800);
 const list = m.players.map(p => ({ ...p, res: res[p.name] }));
 for (const c of L.chatEnd(list, r)) {
   assert.ok(c.text.length <= r.chatLimit, c.title + ' too long');
-  console.log(`--- ${c.title} (${c.text.length})\n${c.text}`);
+  log(`--- ${c.title} (${c.text.length})\n${c.text}`);
 }
 
 // History-only fallback still works
@@ -89,7 +93,7 @@ assert.equal(L.raceDay({ periodType: 'training', periodIndex: 1 }), 0);
 assert.equal(L.raceDay({ periodType: 'warDay', periodIndex: 10 }), 1);
 
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
-console.log('All checks passed');
+log('All checks passed');
 
 // First & only warning: lasts until the target is reached r.warnClear wars in a row.
 {
@@ -107,7 +111,7 @@ console.log('All checks passed');
   p = mk([w('2-1', 2000), w('1-4', 2000), w('1-3', 2000), w('1-2', 2000), w('1-1', 1500)], w('2-2', 1500));
   assert.equal(L.warnState(p, r3).active, false);
   assert.equal(L.judgeEnd(p, r3, 'full').status, 'Warn');
-  console.log('Warning duration checks passed');
+  log('Warning duration checks passed');
 }
 
 // Rules are corrected to sensible ranges, and impossible combinations are flagged.
@@ -118,5 +122,5 @@ console.log('All checks passed');
   assert.equal(L.sanitizeRules({}).fixed.length, 0, 'defaults are all valid');
   assert.equal(L.ruleProblems(L.DEFAULT_RULES).length, 0, 'defaults make sense together');
   assert.ok(L.ruleProblems({ ...L.DEFAULT_RULES, lookback: 4 }).some(x => /nobody can be promoted/.test(x)));
-  console.log('Rule limit checks passed');
+  log('Rule limit checks passed');
 }
