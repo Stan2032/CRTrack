@@ -224,6 +224,8 @@ const DEFAULT_RULES = {
   perDay: 450,       // per battle day left, for late joiners
   effortNet: true,   // late joiner passes if they used every deck they could
   demoteElders: true,
+  elderWarnFirst: true,  // elders get a warning before demotion
+  boatRepeatKick: true,  // boat attackers still under after a warning are kicked
   spareBoats: true,  // active boat users get a warning, not a kick
   boatShare: 50,     // % of decks on boats to count as a boat user
   holdWeeks: 5,      // passed this many weeks in a row before...
@@ -401,13 +403,13 @@ function judgeEnd(p, r, join, override) {
     if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
       res = out('Check', `Offline ${Math.floor(p.offlineDays)} days, but reached ${r.target}+ the ${streak} wars before`);
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
-    else if (p.role === 'elder' && r.demoteElders) res = (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
-      ? out('Demote', `Elder, second miss in a row`) : out('Warn', 'Elder, first miss');
-    else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after their first & only warning');
+    else if (p.role === 'elder' && r.demoteElders) res = !r.elderWarnFirst || (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
+      ? out('Demote', r.elderWarnFirst ? 'Elder, second miss in a row' : `Elder under ${r.target}`) : out('Warn', 'Elder, first miss');
+    else if (p.lastResult === 'Warn' && !(isBoater && !r.boatRepeatKick)) res = out('Kick', 'Under again after their first & only warning');
     else if (isBoater) {
       // Boat attackers: a first & only warning; if they were warned (or under on boats) last war and still are, kick.
       const prevBoats = p.prev && p.prev.decks && p.prev.boats != null && 100 * p.prev.boats / p.prev.decks >= r.boatShare;
-      const ignored = p.lastResult == null && p.prev && p.prev.fame < r.target && prevBoats;
+      const ignored = r.boatRepeatKick && p.lastResult == null && p.prev && p.prev.fame < r.target && prevBoats;
       res = ignored ? out('Kick', `Still on boats after last war's tip (${boatPct}% of decks), under again`)
         : out('Warn', `${p.isNew ? 'New, ' : 'Played, but '}${boatPct}% of decks on boats`);
     }
@@ -653,7 +655,8 @@ let codeOk = false;
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
-  demoteElders: 'Elders: a first & only warning, then demote on 2nd miss in a row', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
+  demoteElders: 'Elders who miss are demoted, not kicked', elderWarnFirst: 'Elders get a first & only warning before demotion',
+  boatRepeatKick: 'Boat attackers still under after a warning are kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
   holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
   promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };

@@ -50,21 +50,28 @@ To limit who can open the page, turn on **Cloudflare Access** for the Worker and
 
 Join days and overrides are saved in each person's own browser, not shared.
 
-## Rules (defaults, change them in Rules)
+## Rules
 
-| | |
+Every clan sets its own under **Rules** (saved for all leaders with the leader code). Defaults:
+
+| When someone is under the target (default 1800 medals) | Suggestion |
 |---|---|
-| Target | 1800 medals a week |
-| Late joiner | 450 per battle day left after joining, or used every deck |
-| Elder under, 1st miss | First & only warning |
-| Elder under, 2nd miss in a row (or after a warning) | Demote |
-| Member under, 1st miss | First & only warning |
-| Member under, 2nd miss in a row or new | Kick |
-| Mostly boats (50%+, 8+ decks), incl. new members | First & only warning, with the boat attack tip |
-| Still on boats and under again after that | Kick (Elders: demote) |
-| Passed 5+ weeks in a row, now offline 3+ days | Check in |
-| Leader / co-leader under | Review |
-| Promote | Member, 6+ weeks, 1 miss max, avg 2300+ |
+| Member, first miss | First & only warning |
+| Member, new or second miss in a row | Kick |
+| Member, under again after a first & only warning | Kick |
+| Elder, first miss | First & only warning *(switch: Elders get a warning before demotion)* |
+| Elder, second miss in a row or after a warning | Demote |
+| Mostly boat attacks (50%+ of decks, 8+ decks), including new members | First & only warning, with the boat attack tip |
+| Still on boats and under again after that | Kick *(switch: Boat attackers still under after a warning are kicked)* |
+| Passed the target 5+ wars in a row, now offline 3+ days | Check on them |
+| Leader or co-leader | Leaders decide |
+
+| Otherwise | Suggestion |
+|---|---|
+| Joined mid-war | Target is 450 per battle day left after joining, or passes if every deck was used |
+| Member, 6+ wars in clan, at most 1 miss, average 2300+ | Promote to Elder |
+
+All numbers and switches can be changed.
 
 ## Files
 
