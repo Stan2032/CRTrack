@@ -42,8 +42,14 @@ const b = await chromium.launch();
 try {
   // Leaders' page: loads the clan and opens on last war (training day)
   const p = await page(b);
-  assert.equal(await p.isVisible('#guide'), true, 'quick guide shows on first visit');
-  await p.click('#guideok'); assert.equal(await p.isVisible('#guide'), false);
+  // Help: a ? next to a section title shows its explanation; again hides it. In a folded section it doesn't open it.
+  await p.click('button[data-help="act"]');
+  assert.match(await p.textContent('.helptip'), /Tap a circle/);
+  await p.click('button[data-help="act"]'); assert.equal(await p.locator('.helptip').count(), 0);
+  await p.click('button[data-help="stats"]');
+  assert.equal(await p.evaluate(() => document.querySelector('button[data-help="stats"]').closest('details').open), false, 'stays folded');
+  assert.match(await p.textContent('.helptip'), /reliable/);
+  await p.click('button[data-help="stats"]');
   assert.match(await p.textContent('#chips'), /To do:/);
   assert.match(await p.textContent('#groups'), /Kick/);
   // Recommended steps and copy

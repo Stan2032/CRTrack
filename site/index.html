@@ -15,19 +15,8 @@
 </head>
 <body>
 
-<h1>Clan War Audit <button class="helpbtn" id="helpbtn" aria-label="How to use this">?</button></h1>
+<h1><img src="icons/clan-badge.svg" alt="" class="badge">Clan War Audit</h1>
 <div id="sub"></div>
-<section class="guide hidden" id="guide" aria-label="How to use this">
-  <div class="steps-head">How to use this</div>
-  <ol>
-    <li><b>Who to act on</b> shows what to do after each war, in order. Tap the circle when a step is done. Kicks, demotions and promotions tick themselves once the game shows them.</li>
-    <li><b>Copy</b> gives a ready message for clan chat (each fits the 256-character limit).</li>
-    <li><b>Tap a name</b> for their history, reliability and battle record, or to change the suggestion.</li>
-    <li><b>Last war / This war</b>: on battle days, This war shows who still has decks to play, forecasts, and the race.</li>
-    <li>Leaders: enter the <b>leader code</b> under Rules so your ticks and changes are shared, then turn on <b>🔔 alerts</b>.</li>
-  </ol>
-  <button class="btn small" id="guideok">Got it</button>
-</section>
 <div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button><span id="freshmsg" class="freshmsg" role="status"></span>
   <div class="notify hidden" id="install"><span id="installtext"></span><button class="btn small main hidden" id="installbtn">Install app</button></div>
   <div class="notify hidden" id="notify"><span id="notifytext"></span><button class="btn small" id="notifybtn"></button></div></div>
@@ -57,7 +46,7 @@
 </section>
 
 <section class="step">
-  <h2><span class="n">2</span>Who to act on</h2>
+  <h2><span class="n">2</span>Who to act on <button class="q" data-help="act" aria-label="What is this?" aria-expanded="false">?</button></h2>
   <div class="row">
     <span class="seg" role="tablist"><button id="m-end" class="on" role="tab">Last war</button><button id="m-live" role="tab">This war</button></span>
     <label id="daywrap" class="hidden">Battle day
@@ -71,7 +60,7 @@
 </section>
 
 <section class="step">
-  <h2><span class="n">3</span>Clan chat messages</h2>
+  <h2><span class="n">3</span>Clan chat messages <button class="q" data-help="chat" aria-label="What is this?" aria-expanded="false">?</button></h2>
   <div class="cards" id="cards"><div class="empty">Nothing yet</div></div>
 </section>
 
@@ -81,7 +70,7 @@
 </details>
 
 <details class="step" id="statsbox">
-  <summary>Clan stats</summary>
+  <summary>Clan stats <button class="q" data-help="stats" aria-label="What is this?" aria-expanded="false">?</button></summary>
   <div id="statsbody" class="stats"><div class="empty">Load a clan to see stats</div></div>
 </details>
 
@@ -100,7 +89,7 @@
 </details>
 
 <details class="step" id="rulesbox">
-  <summary>Rules</summary>
+  <summary>Rules <button class="q" data-help="rules" aria-label="What is this?" aria-expanded="false">?</button></summary>
   <div class="rulenote" id="rulenote"></div>
   <div class="rules" id="rules"></div>
   <div class="row" style="margin-top:12px">

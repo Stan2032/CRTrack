@@ -824,11 +824,22 @@ function renderInstall() {
 $('#installbtn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; renderInstall(); };
 renderInstall();
 
-// ---- Quick guide: shown on first visit, reopened with the ? button ----
-function showGuide(on) { $('#guide').classList.toggle('hidden', !on); }
-if (!get('cr-war-audit:guideSeen', false)) showGuide(true);
-$('#guideok').onclick = () => { put('cr-war-audit:guideSeen', true); showGuide(false); };
-$('#helpbtn').onclick = () => showGuide($('#guide').classList.contains('hidden'));
+// ---- Help: small ? buttons next to section titles open a short explanation underneath ----
+const HELP = {
+  act: 'What to do after each war, in order. Tap a circle when a step is done: kicks, demotions and promotions tick themselves once the game shows them. Tap a name for their history and battle record, or to change the suggestion. On battle days, <b>This war</b> shows who still has decks to play, forecasts and the race.',
+  chat: 'Ready-made messages for clan chat, each within the 256-character limit. Tap <b>Copy</b>, then paste in game.',
+  rules: 'The numbers behind every suggestion. Leaders: enter the <b>leader code</b> here so your ticks and changes are shared with the other leaders, then turn on <b>🔔 alerts</b> at the top.',
+  stats: 'Medals and pass rate per war, the most and least reliable players, battle types, when the clan plays (UK time), top donors and who has been offline.',
+};
+document.addEventListener('click', e => {
+  const b = e.target.closest('.q[data-help]');
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();   // inside a <summary>: don't open or close the section
+  const head = b.closest('h2, summary'), box = head.closest('.step');
+  let tip = box.querySelector(':scope > .helptip');
+  if (!tip) { tip = document.createElement('div'); tip.className = 'helptip'; tip.innerHTML = HELP[b.dataset.help]; head.after(tip); b.setAttribute('aria-expanded', 'true'); }
+  else { tip.remove(); b.setAttribute('aria-expanded', 'false'); }
+}, true);
 
 // ---- Check a player (recruits) ----
 async function checkPlayer() {

@@ -16,7 +16,7 @@ body { margin: 0 auto; max-width: 860px; padding: 16px 16px 48px; background: va
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 h1 { font-size: 19px; margin: -16px -16px 0; padding: 14px 16px 12px; background: var(--brand); color: #fff;
   border-bottom: 3px solid var(--gold); border-radius: 0 0 14px 14px; display: flex; align-items: center; gap: 8px; }
-h1::before { content: "🔥"; font-size: 18px; }
+h1 .badge { width: 30px; height: 33px; flex: none; }
 #sub { margin-top: 8px; }
 #sub { color: var(--muted); font-size: 13px; min-height: 18px; margin-bottom: 14px; }
 .step { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--gold); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
@@ -196,10 +196,6 @@ svg.spark circle.ok { fill: var(--green); } svg.spark circle.miss { fill: var(--
 .fcb { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
 .fcb.ok { color: var(--green); } .fcb.risk { color: var(--yellow); } .fcb.bad { color: var(--red); }
 svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fill: var(--text); font-weight: 700; }
-.helpbtn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--gold); background: transparent; color: var(--gold-hi); font-weight: 700; cursor: pointer; margin-left: auto; }
-.guide { border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 10px; padding: 10px 12px; background: var(--card); margin-bottom: 14px; }
-.guide ol { margin: 6px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
-.guide li { margin: 4px 0; }
 #explain h3 { font-size: 14px; margin: 14px 0 4px; } #explain h3:first-child { margin-top: 0; }
 #explain p { margin: 4px 0; font-size: 14px; line-height: 1.5; }
 #explain .card { margin-top: 8px; }
@@ -231,3 +227,7 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
 /* Leader code: hidden like a password, but not a password field (stops browser "save password" pop-ups). */
 .masked { -webkit-text-security: disc; text-security: disc; }
 #descextra { width: 100%; box-sizing: border-box; margin: 4px 0 8px; }
+.q { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--soft); color: var(--muted);
+  font: 700 12px/1 inherit; cursor: pointer; padding: 0; display: inline-grid; place-items: center; }
+.q[aria-expanded="true"] { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
+.helptip { background: var(--soft); border-left: 3px solid var(--gold); border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 13px; color: var(--text); }

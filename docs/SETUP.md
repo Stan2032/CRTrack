@@ -70,7 +70,7 @@ data pulls failing.
 At **discord.com/developers/applications** → **New Application** (e.g. "War Audit"):
 
 1. **General Information**: copy **Application ID** → `DISCORD_APP_ID`, and **Public Key** → `DISCORD_PUBLIC_KEY`
-   (both Cloudflare secrets). Optional: app icon `site/icons/discord-icon-1024.png`.
+   (both Cloudflare secrets). Optional: app icon `site/icons/discord-icon-1024.png`. Server icon (the clan badge, padded for Discord's circle crop): `site/icons/discord-server-icon.png`.
 2. **Bot**: **Reset Token** → copy → `DISCORD_BOT_TOKEN` (secret). Leave *Public Bot* off.
    No privileged intents are needed (all three can stay off).
 3. Save the Cloudflare secrets *before* the next step (Discord checks the site answers).
