@@ -121,7 +121,7 @@ export async function readHistory(env, clan) {
   return { clan, members, events, wars, players, periods, days, notes };
 }
 
-const NOTE_KINDS = ['join', 'over', 'result', 'rules'];
+const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];
 
 export async function writeNotes(env, clan, items, now = new Date().toISOString()) {
   const ok = (items || []).filter(i => i && NOTE_KINDS.includes(i.kind) && typeof i.week === 'string' && typeof i.tag === 'string'

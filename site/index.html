@@ -99,6 +99,23 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 .log .ev { font-size: 13px; padding: 4px 0; border-top: 1px solid var(--line); }
 .log .when { color: var(--muted); display: inline-block; min-width: 92px; }
 .btn.hidden, .hidden { display: none !important; }
+.summary { font-size: 14px; margin: 6px 0; line-height: 1.6; }
+.summary a { text-decoration: none; font-weight: 600; }
+.muted, .count { color: var(--muted); font-weight: 400; }
+.group > h3, .group > summary { text-transform: none; letter-spacing: 0; font-size: 15px; }
+.p { display: block; padding: 10px 2px; }
+.top { display: flex; align-items: center; gap: 6px; }
+.facts { font-size: 13px; margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.facts .dots { display: inline-flex; gap: 3px; align-items: center; }
+.why { margin-top: 2px; }
+.chev { color: var(--muted); font-weight: 400; }
+.tick { border: 1px solid var(--line); background: var(--soft); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.tick.done { background: transparent; border-color: var(--green); color: var(--green); }
+span.tick { cursor: default; }
+.is-done .facts, .is-done .why, .is-done .name { opacity: .55; }
+.ask { margin-top: 6px; font-size: 13px; color: var(--blue); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.more .row { margin-top: 6px; }
+#context { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
 </style>
 </head>
 <body>
@@ -139,12 +156,8 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
     </label>
   </div>
   <div id="context" class="context"></div>
-  <div class="chips" id="chips"></div>
+  <div class="summary" id="chips"></div>
   <div id="groups"><div class="empty">Load a clan to start</div></div>
-  <div class="row foot hidden" id="savewrap">
-    <button class="btn" id="saveresults">Save results</button>
-    <span class="hint" id="savehint">So next war can spot repeat misses</span>
-  </div>
 </section>
 
 <section class="step">
@@ -255,11 +268,13 @@ function historyToLog(rows) {
   return out;
 }
 
-function build({ roster = [], log = [], race = [], history = [] }) {
+// opts.season: which finished war to audit (default latest). opts.withGone: include that war's players who have since left.
+function build({ roster = [], log = [], race = [], history = [] }, opts = {}) {
   if (!log.length && history.length) log = historyToLog(history);
   const seasons = [...new Set(log.map(r => r.season_key))].sort(cmpKey).reverse();
-  const season = seasons[0] || null;
-  const prevSeason = seasons[1] || null;
+  const idx = opts.season ? Math.max(0, seasons.indexOf(opts.season)) : 0;
+  const season = seasons[idx] || null;
+  const prevSeason = seasons[idx + 1] || null;
   const any = log[0] || race[0] || {};
   const clan = { tag: cleanTag(any.clan_tag), name: any.clan_name || '' };
 
@@ -280,9 +295,16 @@ function build({ roster = [], log = [], race = [], history = [] }) {
     : Object.keys(raceBy).length
       ? Object.values(raceBy).map(r => ({ tag: cleanTag(r.player_tag), name: r.player_name, role: 'member', lastSeen: null }))
       : [];
+  if (opts.withGone && season) {
+    const here = new Set(base.map(p => p.tag));
+    for (const r of log) if (r.season_key === season && !here.has(cleanTag(r.player_tag))) {
+      here.add(cleanTag(r.player_tag));
+      base.push({ tag: cleanTag(r.player_tag), name: r.player_name, role: 'member', lastSeen: null, gone: true });
+    }
+  }
 
   const players = base.map(p => {
-    const weeks = weeksBy[p.tag] || [];
+    const weeks = (weeksBy[p.tag] || []).filter(w => !season || cmpKey(w.key, season) <= 0);
     const cur = weeks.find(w => w.key === season) || null;
     const before = weeks.filter(w => w.key !== season);
     const rr = raceBy[p.tag];
@@ -296,7 +318,7 @@ function build({ roster = [], log = [], race = [], history = [] }) {
         boats: +rr.player_boat_attacks || 0 } : null,
     };
   });
-  return { clan, season, prevSeason, ref, players, hasBoats: log.some(r => r.player_boat_attacks !== '') };
+  return { clan, season, prevSeason, seasons, latest: seasons[0] || null, ref, players, hasBoats: log.some(r => r.player_boat_attacks !== '') };
 }
 
 // join: 'full' | '1' | '2' | '3' | '4' | 'excused'  (battle day they joined on)
@@ -333,35 +355,33 @@ function judgeEnd(p, r, join, override) {
   const isBoater = r.spareBoats && boatPct >= r.boatShare && w.decks >= 8;
 
   let res;
-  if (!w) res = out('Excused', 'Not in last war');
-  else if (t.excused) res = out('Excused', 'Excused');
+  if (!w) res = out('Excused', 'Not in this war');
+  else if (t.excused) res = out('Excused', 'Excused by a leader');
   else if (w.fame >= t.medals || (t.late && r.effortNet && w.decks >= t.decks)) {
     const n = recent(p, r).length, miss = missCount(p, r), avg = avgMedals(p, r);
     if ((p.roleNow || p.role) === 'member' && n >= r.promoWeeks && miss <= r.promoMisses && avg >= r.promoAvg && boatPct < r.boatShare)
-      res = out('Promote', `${n - miss}/${n} wks passed, avg ${avg}`);
-    else res = out('OK', t.late ? `Late join, needed ${t.medals}` : '');
-    if (boatPct >= 25) res.why = [res.why, `${boatPct}% boats`].filter(Boolean).join(' · ');
+      res = out('Promote', `Reached ${r.target}+ in ${n - miss} of ${n} wars, average ${avg}`);
+    else res = out('OK', t.late ? `Joined late, needed ${t.medals}` : '');
+    if (boatPct >= 25) res.why = [res.why, `${boatPct}% of decks on boats`].filter(Boolean).join(' · ');
   } else {
     const streak = streakBefore(p, r);
     if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
-      res = out('Check', `Offline ${Math.floor(p.offlineDays)}d, passed ${streak} wks before`);
-    else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', 'Leader/co-leader under');
-    else if (p.role === 'elder' && r.demoteElders) res = out('Demote', 'Elder under');
+      res = out('Check', `Offline ${Math.floor(p.offlineDays)} days, but reached ${r.target}+ the ${streak} wars before`);
+    else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
+    else if (p.role === 'elder' && r.demoteElders) res = out('Demote', `Elder under ${r.target}`);
     else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after final warning');
-    else if (isBoater) res = out('Warn', `${boatPct}% boats`);
-    else if (p.isNew) res = out('Kick', 'New, under');
-    else if (p.prev && p.prev.fame < r.target) res = out('Kick', '2nd miss in a row');
-    else if (!p.prev) res = out('Kick', 'Under, not in war before');
-    else res = out('Warn', '1st miss');
+    else if (isBoater) res = out('Warn', `Played, but ${boatPct}% of decks on boats`);
+    else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
+    else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
+    else if (!p.prev) res = out('Kick', `Under ${r.target}, wasn't in the war before`);
+    else res = out('Warn', 'First miss');
   }
   if (w && p.days) {
     const missed = p.days.map((d, i) => d === 0 ? i + 1 : null).filter(Boolean);
-    if (missed.length && missed.length < 4) res.why = [res.why, 'No decks day ' + missed.join(', ')].filter(Boolean).join(' · ');
+    if (missed.length && missed.length < 4) res.why = [res.why, 'No decks on battle day ' + missed.join(', ')].filter(Boolean).join(' · ');
   }
   res.auto = res.status;
   if (override && override !== 'Auto') { res.status = override; res.why = 'Changed by a leader' + (res.why ? ' · ' + res.why : ''); }
-  if ((res.status === 'Demote' && p.roleNow && p.roleNow !== p.role) || (res.status === 'Promote' && p.roleNow && p.roleNow !== 'member'))
-    res.why = [res.why, 'done'].filter(Boolean).join(' · ');
   res.boatPct = boatPct;
   return res;
 }
@@ -534,7 +554,11 @@ function applyHistory(model, h, liveWeek) {
     p.daysLive = liveWeek ? dayDecks(h, liveWeek, p.tag) : null;
     p.joined = joinedAt(h, p.tag);
     p.lastResult = model.prevSeason ? notes[`result|${model.prevSeason}|${p.tag}`] || null : null;
+    p.roleEvents = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'role').map(e => ({ at: ms(e.at), detail: String(e.detail) }));
+    const left = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'leave').map(e => ms(e.at));
+    p.leftAt = left.length ? Math.max(...left) : null;
   }
+  model.endedAt = war ? ms(war.ended_at) : null;
   const real = (h.events || []).filter(e => e.kind !== 'seen');
   model.history = {
     since: (h.events || []).length ? Math.min(...h.events.map(e => ms(e.at))) : null,
@@ -546,14 +570,23 @@ function applyHistory(model, h, liveWeek) {
   return model;
 }
 
-if (typeof module !== 'undefined') module.exports = { historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+// Was the action already carried out in game? (left the clan, or role changed after the war ended)
+function autoDone(p, status, endMs) {
+  if (status === 'Kick') return !!p.gone;
+  const after = (p.roleEvents || []).filter(e => !endMs || e.at > endMs).map(e => e.detail);
+  if (status === 'Demote') return after.some(d => /^(elder>member|coLeader>(elder|member))$/.test(d));
+  if (status === 'Promote') return after.some(d => /^member>(elder|coLeader)$/.test(d));
+  return false;
+}
+
+if (typeof module !== 'undefined') module.exports = { autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
 </script>
 <script>
 // ---- UI ----
 const $ = s => document.querySelector(s);
 const PROXY = 'https://proxy.royaleapi.dev/v1';
 let data = { roster: [], log: [], race: [], history: [] };
-let model = null, mode = 'end', day = 4, source = '', hist = null;
+let model = null, mode = 'end', day = 4, source = '', hist = null, pickWeek = null;
 let raceInfo = { week: null, day: 0, period: null };
 let local = { notes: {}, rules: {} };          // this device
 let settings = { key: '', tag: '', code: '' };
@@ -567,10 +600,12 @@ const RULE_LABELS = {
   promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'Final warning', Check: 'Check on them', Review: 'Leaders decide',
-  Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
-const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused'];
+  Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
+const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused', 'Left'];
+const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
+const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'final warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
 const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
-const FOLDED = ['OK', 'Excused', 'Safe'];
+const FOLDED = ['OK', 'Excused', 'Safe', 'Left'];
 const JOIN = [['full', 'Joined before war'], ['1', 'Joined battle day 1'], ['2', 'Joined battle day 2'], ['3', 'Joined battle day 3'], ['4', 'Joined battle day 4'], ['excused', 'Excused this war']];
 const ROLE = { elder: 'Elder', coLeader: 'Co-leader', leader: 'Leader' };
 const label = s => s === 'Out' ? `Can't reach ${rules().target}` : s === 'Safe' ? `Reached ${rules().target}` : LABEL[s] || s;
@@ -624,9 +659,11 @@ function setLinks() {
 }
 
 function load(rows, src) {
-  data = { roster: [], log: [], race: [], history: [], ...rows };
+  const base = rows.__rows || rows;
+  data = { roster: [], log: [], race: [], history: [], ...base };
   if (hist) data.log = mergeLog(data.log, historyLogRows(hist));
-  model = build(data);
+  data.__rows = base;
+  model = build(data, { season: pickWeek, withGone: true });
   if (hist) applyHistory(model, hist, raceInfo.week);
   if (model.clan.tag) { $('#tag').value = model.clan.tag; settings.tag = model.clan.tag; put('cr-war-audit:settings', settings); setLinks(); }
   loadLocal();
@@ -654,6 +691,7 @@ async function pull() {
     const rows = apiToRows({ clan, members, race, log });
     raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod };
     if (raceInfo.day) day = raceInfo.day;
+    pickWeek = null;
     load(rows, 'api');
     setMode(raceInfo.day ? 'live' : 'end');
     say('Updated ' + fmtTime(Date.now()) + (hist?.events?.length ? ' · history since ' + fmtDate(model.history.since) : ''));
@@ -668,7 +706,8 @@ async function pull() {
 }
 
 async function addFiles(files) {
-  const rows = source === 'api' ? { roster: [], log: [], race: [], history: [] } : { ...data };
+  const rows = source === 'api' ? { roster: [], log: [], race: [], history: [] } : { ...(data.__rows || data) };
+  pickWeek = null;
   hist = null; raceInfo = { week: null, day: 0, period: null };
   const bad = [];
   for (const f of files) { const r = parseCSV(await f.text()), kind = detect(r); if (kind) rows[kind] = r; else bad.push(f.name); }
@@ -680,14 +719,32 @@ async function addFiles(files) {
 }
 
 function evaluate() {
-  const r = rules();
+  const r = rules(), past = mode === 'end' && model.season !== model.latest;
   return model.players.map(p => {
     const manual = note('join', p);
     const auto = mode === 'end' ? p.autoJoin : p.autoJoinLive;
     const join = manual || auto || 'full';
-    const res = mode === 'end' ? judgeEnd(p, r, join, note('over', p)) : judgeLive(p, r, join, day);
-    return { ...p, join, joinAuto: !manual && !!auto, res };
+    const saved = past ? note('result', p) : null;
+    const res = mode === 'end' ? judgeEnd(p, r, join, note('over', p) || saved) : judgeLive(p, r, join, day);
+    if (mode === 'end' && saved && !note('over', p)) res.why = res.why.replace(/^Changed by a leader/, 'Saved result');
+    // Gone: counts as a kick only if they left after the war ended (seen by the tracker); otherwise they just left.
+    const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
+    if (mode === 'end' && p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmtDate(p.leftAt) : 'Left during or before this war'; }
+    const done = mode === 'end' && ACTIONS.includes(res.status)
+      ? { auto: autoDone(p, res.status, model.endedAt), manual: note('done', p) === '1' } : null;
+    return { ...p, join, joinAuto: !manual && !!auto, res, done };
   });
+}
+
+// Results are remembered automatically when a leader opens the latest war.
+let saving = false;
+async function autoSave(list) {
+  if (!codeOk || saving || mode !== 'end' || !model.season || model.season !== model.latest) return;
+  const items = list.filter(p => !p.gone && serverNotes()[`result|${model.season}|${p.tag}`] !== p.res.status)
+    .map(p => ({ week: model.season, tag: p.tag, kind: 'result', value: p.res.status }));
+  if (!items.length) return;
+  saving = true;
+  try { await postNotes(items); } finally { saving = false; }
 }
 
 function more(p) {
@@ -699,76 +756,98 @@ function more(p) {
   if (days) lines.push('Decks by battle day: ' + days.map(d => d == null ? '–' : d).join(' · '));
   if (p.offlineDays != null) lines.push(`Last online ${p.offlineDays < 1 ? 'today' : Math.floor(p.offlineDays) + ' days ago'}`);
   if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
-  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}</div>`;
+  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}<div class="row">${moreControls(p)}</div></div>`;
 }
+function moreControls(p) {
+  const ctl = [];
+  if (!p.gone) ctl.push(joinSelect(p));
+  if (mode === 'end') {
+    const o = note('over', p) || 'Auto';
+    ctl.push(`<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.filter(s => s !== 'Left').map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`);
+  }
+  return ctl.join('');
+}
+const joinSelect = p => `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
 
 function row(p) {
-  const r = rules();
-  const role = p.roleNow || p.role;
-  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${p.isNew ? '<span class="new">NEW</span>' : ''}`;
-  const why = [p.res.why, p.joinAuto && p.join !== 'full' ? JOIN.find(j => j[0] === p.join)[1].toLowerCase() : ''].filter(Boolean).join(' · ');
-  const num = (v, l) => `<span>${v}<small>${l}</small></span>`;
-  let nums, ctl = '';
-  if (p.isNew || p.join !== 'full' || note('join', p))
-    ctl += `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
+  const r = rules(), role = p.roleNow || p.role;
+  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${p.isNew && !p.gone ? '<span class="new">NEW</span>' : ''}`;
+  let facts, right = '';
   if (mode === 'end') {
-    const w = p.cur, n = recent(p, r).length, miss = missCount(p, r);
-    const ws = recent(p, r).slice().reverse();   // oldest → newest
+    const w = p.cur, ws = recent(p, r).slice().reverse(), miss = missCount(p, r);
     const dots = ws.map(x => `<i class="dot ${x.fame < r.target ? 'miss' : ''}" title="${esc(x.key)}: ${x.fame}"></i>`).join('');
-    const hist = n ? `<span class="hist" aria-label="${n - miss} of last ${n} wars at ${r.target} or more"><span class="dots">${dots}</span><small>${n - miss}/${n} wars at ${r.target}+</small></span>` : num('–', `wars at ${r.target}+`);
-    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks') + hist;
-    const o = note('over', p) || 'Auto';
-    ctl += `<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`;
+    facts = w ? `<span>${w.fame} medals</span><span>${w.decks}/16 decks${w.boats ? `, ${w.boats} on boats` : ''}</span>` : '<span>Not in this war</span>';
+    if (ws.length) facts += `<span class="dots" title="${ws.length - miss} of last ${ws.length} wars at ${r.target}+">${dots}</span>`;
+    if (p.done) right = p.done.auto ? '<span class="tick done">✓ Done</span>'
+      : `<button class="tick ${p.done.manual ? 'done' : ''}" data-done="${esc(p.tag)}" aria-pressed="${p.done.manual}">${p.done.manual ? '✓ Done' : 'Mark done'}</button>`;
   } else {
-    nums = num(p.res.fame, 'medals') + num(`${p.res.today}/4`, 'decks today') + num(p.res.need ? p.res.need : '–', 'still needs') + num(p.res.max, 'most possible');
+    facts = `<span>${p.res.fame} medals</span><span>${p.res.today}/4 decks today</span>`;
   }
-  return `<div class="p"><div class="who"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)}</button>${tags}<div class="why">${esc(why)}</div></div>
-    <div class="nums">${nums}</div><div class="ctl">${ctl}</div><div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
+  const why = mode === 'end' ? p.res.why
+    : p.res.status === 'Out' ? `Most possible ${p.res.fame + p.res.max}` + (p.res.today === 0 ? ' · no decks today, kicking frees a slot' : '')
+    : p.res.status === 'Need' ? `Needs ${p.res.need} more · up to ${p.res.max} still possible` : '';
+  const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
+    ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
+  const isDone = p.done && (p.done.auto || p.done.manual);
+  return `<div class="p ${isDone ? 'is-done' : ''}">
+    <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
+    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${ask}
+    <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
 }
 
 function contextLine() {
   if (!model) return '';
-  if (mode === 'end') {
-    const war = hist?.wars?.find(w => w.week === model.season);
-    return model.season ? `War ${model.season}${war && parseTime(war.ended_at) ? ' · ended ' + fmtDate(parseTime(war.ended_at)) : ''}` : 'No finished war found';
-  }
-  if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''} · training days. Battle days haven't started.`;
-  return `${raceInfo.week ? 'War ' + raceInfo.week + ' · ' : ''}battle day ${day} of 4`;
+  if (mode === 'end') return model.season ? '' : 'No finished war found';
+  if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''}: training days. Battle days haven't started.`;
+  return `${raceInfo.week ? 'War ' + raceInfo.week + ': ' : ''}battle day ${day} of 4`;
+}
+function weekPicker() {
+  if (mode !== 'end' || !model?.seasons?.length) return '';
+  const ended = w => { const x = hist?.wars?.find(v => v.week === w); const t = x && parseTime(x.ended_at); return t ? ', ended ' + fmtDate(t) : ''; };
+  return `<select id="week" aria-label="Which war">${model.seasons.map(w => `<option value="${w}" ${w === model.season ? 'selected' : ''}>War ${w}${ended(w)}${w === model.latest ? ' (latest)' : ''}</option>`).join('')}</select>`;
 }
 
 function render() {
   renderRules();
   $('#daywrap').classList.toggle('hidden', !(mode === 'live' && source === 'csv'));
-  $('#savewrap').classList.toggle('hidden', !(model && mode === 'end' && model.season));
   if (!model || !model.players.length) return;
-  $('#context').textContent = contextLine();
+  $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>`;
   if (mode === 'live' && source === 'api' && !raceInfo.day) {
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
     $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
   }
   const r = rules(), list = evaluate();
   const groups = mode === 'end' ? GROUPS_END : GROUPS_LIVE;
-  const sortKey = p => mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame;
+  const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
+  const sortKey = p => (isDone(p) ? 1e6 : 0) + (mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame);
   const parts = groups.map(s => [s, list.filter(p => p.res.status === s).sort((a, b) => sortKey(a) - sortKey(b))]).filter(g => g[1].length);
 
-  $('#chips').innerHTML = parts.map(([s, ps]) => `<a class="chip s-${s}" href="#g-${s}">${esc(label(s))} ${ps.length}</a>`).join('');
+  if (mode === 'end') {
+    const todo = ACTIONS.map(s => [s, list.filter(p => p.res.status === s && !isDone(p)).length]).filter(x => x[1]);
+    const done = list.filter(isDone).length;
+    const word = (n, s) => n + ' ' + VERB[s] + (n === 1 ? '' : 's');
+    $('#chips').innerHTML = (todo.length ? `<b>To do:</b> ${todo.map(([s, n]) => `<a href="#g-${s}" class="s-${s}">${word(n, s)}</a>`).join(', ')}` : '<b>All done</b>')
+      + (done ? ` <span class="muted">· ${done} done</span>` : '');
+  } else {
+    const out = list.filter(p => p.res.status === 'Out').length, need = list.filter(p => p.res.status === 'Need').length;
+    $('#chips').innerHTML = `<a href="#g-Out" class="s-Out">${out} can't reach ${r.target}</a> · <a href="#g-Need" class="s-Need">${need} still need medals</a>`;
+  }
   $('#groups').innerHTML = parts.map(([s, ps]) => {
-    const body = ps.map(row).join(''), head = `${esc(label(s))} · ${ps.length}`;
+    const d = ps.filter(isDone).length;
+    const head = `${esc(label(s))} <span class="count">${ps.length}${d ? `, ${d} done` : ''}</span>`;
+    const body = ps.map(row).join('');
     return FOLDED.includes(s) ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
-  const saved = model.history?.saved;
-  $('#saveresults').textContent = saved ? 'Save results again' : 'Save results';
-  $('#savehint').textContent = !site.edit ? 'Saving needs a site with history' : !codeOk ? 'Needs the leader code (in Rules)' : saved ? 'Saved. Next war uses these.' : 'So next war can spot repeat misses';
-
-  const msgs = (mode === 'end' ? chatEnd(list, r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
+  const msgs = (mode === 'end' ? chatEnd(list.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
       <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
   renderLog();
+  autoSave(list);
 }
 const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'Final warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
 
@@ -833,14 +912,6 @@ $('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-w
 $('#m-end').onclick = () => setMode('end');
 $('#m-live').onclick = () => setMode('live');
 $('#day').onchange = e => { day = +e.target.value; render(); };
-$('#saveresults').onclick = async () => {
-  if (!codeOk) { $('#rulesbox').open = true; $('#code').focus(); return say('Enter the leader code to save', true); }
-  const items = evaluate().map(p => ({ week: model.season, tag: p.tag, kind: 'result', value: p.res.status }));
-  const ok = await postNotes(items);
-  say(ok ? 'Results saved for everyone' : 'Saving failed', !ok);
-  if (!ok) return;
-  model.history.saved = true; render();
-};
 $('#savecode').onclick = async () => {
   const c = $('#code').value.trim();
   codeOk = await checkCode(c);
@@ -853,6 +924,8 @@ $('#saverules').onclick = async () => {
   say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
 };
 document.addEventListener('click', e => {
+  const d = e.target.closest('[data-done]');
+  if (d) { const p = model.players.find(x => x.tag === d.dataset.done); setNote('done', p, note('done', p) === '1' ? 'Auto' : '1'); return; }
   const m = e.target.closest('[data-more]');
   if (m) { const box = document.getElementById('m-' + m.dataset.more); box.classList.toggle('hidden'); m.setAttribute('aria-expanded', !box.classList.contains('hidden')); }
   const c = e.target.closest('[data-copy]');
@@ -863,6 +936,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, p = model && model.players.find(x => x.tag === (el.dataset.join || el.dataset.over));
+  if (el.id === 'week') { pickWeek = el.value === model.latest ? null : el.value; load(data.__rows, source); return; }
   if (el.dataset.join && p) setNote('join', p, el.value);
   if (el.dataset.over && p) setNote('over', p, el.value);
   if (el.dataset.rule) { local.rules[el.dataset.rule] = el.type === 'checkbox' ? el.checked : +el.value; saveLocal(); render(); say(codeOk ? 'Changed here. Tap "Save rules for everyone" to share.' : 'Saved on this device'); }

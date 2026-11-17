@@ -10,8 +10,10 @@ Open the hosted link (or `site/index.html`), and it loads the clan. Then work do
 2. **Who to act on**
    - **Last war**: who to kick, demote, warn, check on, or promote.
    - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
-   - Tap a name for their history. Use the menu on the right to change a suggestion.
-   - **Save results** after acting, so next war spots anyone who misses again after a final warning.
+   - Each player: name, then medals and decks, then the reason. Dots show their recent wars (green = reached 1800).
+   - **Mark done** when you've acted. Kicks, demotions and promotions tick themselves once the game shows them.
+   - Tap a name for their history and to change the suggestion or join day.
+   - Pick an earlier war to see what was decided and done. Results are remembered automatically.
 3. **Clan chat messages**: copy and paste.
 
 Folded at the bottom: **Clan log** (joins, leaves, promotions) and **Rules**.
@@ -28,7 +30,7 @@ Every 15 minutes the site saves the clan's members and this war's progress. Over
 - **Role at the end of each war**, so promoting someone after the war doesn't flag them for demotion
 - **Decks used each battle day**, e.g. "No decks day 3"
 - **All past wars**, beyond the API's last 10
-- **Shared choices**: join days, changes and saved results are the same for every leader (needs the leader code)
+- **Shared choices**: join days, changes, done ticks and results are the same for every leader (needs the leader code)
 
 ## Share it (Cloudflare Workers, free)
 
