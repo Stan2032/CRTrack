@@ -78,6 +78,7 @@ function setLinks() {
 }
 
 function load(rows, src) {
+  _clanH = null;
   const base = rows.__rows || rows;
   data = { roster: [], log: [], race: [], history: [], ...base };
   if (hist) data.log = mergeLog(data.log, historyLogRows(hist));
@@ -161,9 +162,14 @@ function evaluate() {
     }
     const done = mode === 'end' && ACTIONS.includes(res.status)
       ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p) === '1' } : null;
-    return { ...p, join, joinAuto: !manual && !!auto, res, done };
+    const out = { ...p, join, joinAuto: !manual && !!auto, res, done };
+    if (mode === 'live' && raceInfo.day && res.status !== 'Excused' && !p.gone)
+      out.fc = forecast(p, { target: res.target, day, leftToday: 4 - res.today, fame: res.fame, lookback: r.lookback, clan: clanH() });
+    return out;
   });
 }
+let _clanH = null;
+const clanH = () => _clanH || (_clanH = clanHabits(model.players, rules().lookback));
 
 // Results are remembered automatically when a leader opens the latest war.
 let saving = false;
@@ -189,7 +195,15 @@ function more(p) {
   if (bt) lines.push(`War battles ${mode === 'end' ? 'that war' : 'this war'}: ${bt}`);
   if (p.donations != null && !p.gone) lines.push(`Donations this week: ${p.donations} given, ${p.received ?? 0} received`);
   if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
-  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}<div class="row">${moreControls(p)}</div></div>`;
+  const rel = reliability(p, r.target, r.lookback);
+  if (rel) lines.push(`Reliability ${rel.score}/100: reached ${r.target}+ in ${Math.round(rel.hit * 100)}% of wars, used ${Math.round(rel.deck * 100)}% of decks, average ${rel.avg.toLocaleString()}, last 3 wars ${rel.trend >= 0 ? '+' : ''}${rel.trend} vs before`);
+  const pt = playTimes(hist?.raceEvents || [], p.tag);
+  if (pt.total >= 4 && pt.window) lines.push(`Usually plays ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 UK (${Math.round(pt.window.share * 100)}% of ${pt.total} tracked decks)`);
+  const ms = modeStats(hist?.battles || [], p.tag), modes = [['duel', 'Duels'], ['pvp', '1v1'], ['boat', 'Boats']].filter(([k]) => ms[k].games);
+  if (modes.length) lines.push('All tracked war battles: ' + modes.map(([k, n]) => `${n} ${ms[k].won}W–${ms[k].lost}L (${Math.round(ms[k].rate * 100)}%, ~${Math.round(ms[k].perDeck)} per deck)`).join(' · '));
+  const bm = bestMode(ms);
+  if (bm) lines.push(`Earns most per deck in ${bm.mode}: ~${bm.gain} more than ${bm.next}`);
+  return `<div class="more">${spark(p, r.target)}${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}<div class="row">${moreControls(p)}</div></div>`;
 }
 function moreControls(p) {
   const ctl = [];
@@ -220,12 +234,13 @@ function row(p) {
   const why = mode === 'end' ? p.res.why
     : p.res.status === 'Out' ? `Most possible ${p.res.fame + p.res.max}` + (p.res.today === 0 ? ' · no decks today, kicking frees a slot' : '')
     : p.res.status === 'Need' ? `Needs ${p.res.need} more · up to ${p.res.max} still possible` : '';
+  const fcText = p.fc && p.res.status === 'Need' ? `Forecast: ${Math.round(p.fc.prob * 100)}% likely to reach ${p.res.target} · expect ~${p.fc.expected.toLocaleString()} (${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()})` : '';
   const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
   const isDone = p.done && (p.done.auto || p.done.manual);
   return `<div class="p ${isDone ? 'is-done' : ''}">
     <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
-    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${ask}
+    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${fcText ? `<div class="why fc" title="${esc(p.fc.basis)}">${esc(fcText)}</div>` : ''}${ask}
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
 }
 
@@ -257,7 +272,12 @@ function raceBox() {
   }).join('');
   const i = st.indexOf(me), above = st[i - 1], below = st[i + 1];
   const line = above ? `${(above.fame - me.fame).toLocaleString()} medals to catch ${esc(cleanName(above.name))}` : below ? `Leading by ${(me.fame - below.fame).toLocaleString()} medals` : '';
-  return `<div class="race"><div class="steps-head">Race ${line ? '<span class="count">' + line + '</span>' : ''}</div><table>${rows}</table></div>`;
+  const w = (hist?.wars || []).map(x => parseTime(x.ended_at)).filter(Boolean).sort((a, b) => b - a)[0];
+  const since = w ? (((Date.now() - w) % 864e5) + 864e5) % 864e5 : 864e5 / 2;
+  const proj = projectRace(st, raceInfo.day, since), pi = proj.findIndex(c => c.tag === me.tag);
+  const projLine = `At today's pace: finish ${['1st', '2nd', '3rd', '4th', '5th'][pi] || pi + 1 + 'th'} with ~${proj[pi].projected.toLocaleString()} medals`
+    + (pi > 0 ? `, ${(proj[pi - 1].projected - proj[pi].projected).toLocaleString()} behind ${esc(cleanName(proj[pi - 1].name))}` : proj[1] ? `, ${(proj[0].projected - proj[1].projected).toLocaleString()} ahead` : '');
+  return `<div class="race"><div class="steps-head">Race ${line ? '<span class="count">' + line + '</span>' : ''}</div><table>${rows}</table><div class="hint" style="margin-top:6px">${projLine}</div></div>`;
 }
 
 function contextLine() {
@@ -300,7 +320,10 @@ function render() {
       + (goneCount ? `<label class="toggle"><input type="checkbox" id="showgone" ${showGone ? 'checked' : ''}> Show ${goneCount} who left the clan</label>` : '');
   } else {
     const out = list.filter(p => p.res.status === 'Out').length, need = list.filter(p => p.res.status === 'Need').length;
-    $('#chips').innerHTML = `<a href="#g-Out" class="s-Out">${out} can't reach ${r.target}</a> · <a href="#g-Need" class="s-Need">${need} still need medals</a>`;
+    const fcs = list.filter(p => p.fc && p.res.status === 'Need');
+    const likely = fcs.filter(p => p.fc.prob >= 0.8).length, risk = fcs.filter(p => p.fc.prob >= 0.2 && p.fc.prob < 0.8).length, unlikely = fcs.filter(p => p.fc.prob < 0.2).length;
+    $('#chips').innerHTML = `<a href="#g-Out" class="s-Out">${out} can't reach ${r.target}</a> · <a href="#g-Need" class="s-Need">${need} still need medals</a>`
+      + (fcs.length ? `<div class="muted">Forecast for those still needing medals: ${likely} likely, ${risk} at risk, ${unlikely} unlikely</div>` : '');
   }
   $('#groups').innerHTML = parts.map(([s, ps]) => {
     const d = ps.filter(isDone).length;
@@ -319,6 +342,7 @@ function render() {
   fit();
   renderSteps(all, msgs);
   renderLog();
+  renderStats();
   renderFresh();
   renderNotify();
   autoSave(all);
@@ -437,6 +461,76 @@ function copyText(text, btn) {
     const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
   });
   const old = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = old, 1200);
+}
+
+// ---- Charts (inline SVG; one colour, thin marks, hover labels via <title>) ----
+function spark(p, target) {
+  const ws = p.weeks.slice(0, 20).reverse();
+  if (ws.length < 2) return '';
+  const W = 260, H = 54, pad = 6, max = Math.max(target * 1.2, ...ws.map(w => w.fame)), x = i => pad + i * (W - 2 * pad) / (ws.length - 1), y = v => H - pad - v / max * (H - 2 * pad);
+  const pts = ws.map((w, i) => `${x(i).toFixed(1)},${y(w.fame).toFixed(1)}`).join(' ');
+  const dots = ws.map((w, i) => `<g><circle cx="${x(i)}" cy="${y(w.fame)}" r="3.5" class="${w.fame < target ? 'miss' : 'ok'}"/><circle cx="${x(i)}" cy="${y(w.fame)}" r="10" fill="transparent"><title>War ${esc(w.key)}: ${w.fame} medals, ${w.decks}/16 decks</title></circle></g>`).join('');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Medals per war, oldest to newest: ${ws.map(w => w.fame).join(', ')}. Dashed line is the ${target} target.">
+    <line x1="${pad}" x2="${W - pad}" y1="${y(target)}" y2="${y(target)}" class="target"/><polyline points="${pts}" class="line"/>${dots}</svg>`;
+}
+function bars(items, { h = 110, fmt = v => v, ref = null, label = '' } = {}) {
+  if (!items.length) return '';
+  const W = Math.max(260, items.length * 22), pad = 18, max = Math.max(ref || 0, ...items.map(i => i.value)) || 1, bw = (W - pad) / items.length;
+  const y = v => h - pad - v / max * (h - pad - 6);
+  const rects = items.map((it, i) => `<g><rect x="${(i * bw + 1).toFixed(1)}" y="${y(it.value).toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${(h - pad - y(it.value)).toFixed(1)}" rx="2"/>
+    <rect x="${(i * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${h}" fill="transparent"><title>${esc(it.title || it.label + ': ' + fmt(it.value))}</title></rect>
+    ${it.show ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${h - 4}" class="ax">${esc(it.label)}</text>` : ''}</g>`).join('');
+  const refLine = ref ? `<line x1="0" x2="${W}" y1="${y(ref)}" y2="${y(ref)}" class="target"/>` : '';
+  return `<div class="chartwrap"><svg class="bars" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(label)}">${refLine}${rects}</svg></div>`;
+}
+
+function renderStats() {
+  const box = $('#statsbody');
+  if (!model) { box.innerHTML = '<div class="empty">Load a clan to see stats</div>'; return; }
+  const r = rules(), parts = [];
+  // 1. Clan medals and pass rate per war (from the war log, all members who took part)
+  const byWeek = {};
+  for (const x of data.log || []) { const k = x.season_key; (byWeek[k] ||= []).push({ fame: +x.player_fame || 0, decks: +x.player_decks_used || 0 }); }
+  const weeks = Object.keys(byWeek).sort((a, b) => { const [a1, a2] = a.split('-').map(Number), [b1, b2] = b.split('-').map(Number); return a1 - b1 || a2 - b2; });
+  const wars = Object.fromEntries((hist?.wars || []).map(w => [w.week, w]));
+  const place = n => n > 0 ? ['1st', '2nd', '3rd', '4th', '5th'][n - 1] || n + 'th' : '';
+  const ser = weeks.map(k => { const ps = byWeek[k].filter(p => p.decks > 0); return { week: k, medals: ps.reduce((s, p) => s + p.fame, 0), played: ps.length, passed: ps.filter(p => p.fame >= r.target).length, w: wars[k] }; });
+  if (ser.length) {
+    const step = Math.ceil(ser.length / 6), showAt = i => i % step === 0 && (ser.length - 1 - i >= step || i === ser.length - 1) || i === ser.length - 1;
+    parts.push(`<h3>Clan medals per war</h3>` + bars(ser.map((x, i) => ({ label: x.week, value: x.medals, show: showAt(i),
+      title: `War ${x.week}: ${x.medals.toLocaleString()} medals${x.w && x.w.rank ? ', ' + place(x.w.rank) + ' place' : ''}${x.w && x.w.trophy_change ? ', ' + (x.w.trophy_change > 0 ? '+' : '') + x.w.trophy_change + ' trophies' : ''}` })), { label: 'Clan medals per war, oldest to newest' })
+      + (() => { const last = ser[ser.length - 1], avg = Math.round(ser.reduce((t, x) => t + x.medals, 0) / ser.length);
+        return `<div class="hint">Last war ${last.week}: <b>${last.medals.toLocaleString()}</b> medals${last.w && last.w.rank ? ', ' + place(last.w.rank) + ' place' : ''} · average ${avg.toLocaleString()} over ${ser.length} wars</div>`; })());
+    parts.push(`<h3>Members reaching ${r.target}+ per war</h3>` + bars(ser.map((x, i) => ({ label: x.week, value: x.played ? Math.round(100 * x.passed / x.played) : 0, show: showAt(i),
+      title: `War ${x.week}: ${x.passed} of ${x.played} (${x.played ? Math.round(100 * x.passed / x.played) : 0}%)` })), { label: 'Percent of members reaching the target, per war' })
+      + (() => { const last = ser[ser.length - 1], pct = x => x.played ? Math.round(100 * x.passed / x.played) : 0, avg = Math.round(ser.reduce((t, x) => t + pct(x), 0) / ser.length);
+        return `<div class="hint">Last war: <b>${last.passed} of ${last.played}</b> (${pct(last)}%) · average ${avg}%</div>`; })());
+  }
+  // 2. Reliability ranking (current members)
+  const rel = model.players.filter(p => !p.gone).map(p => ({ p, r: reliability(p, r.target, r.lookback) })).filter(x => x.r).sort((a, b) => b.r.score - a.r.score);
+  if (rel.length) {
+    const row = x => `<tr><td>${esc(x.p.name)}</td><td class="num">${x.r.score}</td><td class="muted">${Math.round(x.r.hit * 100)}% wars at target · avg ${x.r.avg.toLocaleString()}</td></tr>`;
+    parts.push(`<h3>Most reliable</h3><table class="tbl">${rel.slice(0, 10).map(row).join('')}</table>`);
+    if (rel.length > 15) parts.push(`<h3>Least reliable</h3><table class="tbl">${rel.slice(-5).reverse().map(row).join('')}</table>`);
+    parts.push(`<div class="hint">Reliability (0–100): 40% wars at target, 30% decks used, 20% medals vs target, 10% recent trend. Last ${r.lookback} wars.</div>`);
+  }
+  // 3. Battle types, whole clan
+  const ms = modeStats(hist?.battles || []), modes = [['duel', 'Duels'], ['pvp', '1v1'], ['boat', 'Boat attacks']].filter(([k]) => ms[k].games);
+  parts.push(`<h3>War battles by type</h3>` + (modes.length ? `<table class="tbl">${modes.map(([k, n]) => `<tr><td>${n}</td><td class="num">${ms[k].won}W–${ms[k].lost}L</td><td class="muted">${Math.round(ms[k].rate * 100)}% won · ~${Math.round(ms[k].perDeck)} medals per deck</td></tr>`).join('')}</table>
+    <div class="hint">From players' battle logs, read a few at a time. Duel games pay 250/100, 1v1 200/100, boats 125/75.</div>` : '<div class="empty">Collecting from battle logs on battle days</div>'));
+  // 4. When the clan plays (UK time)
+  const pt = playTimes(hist?.raceEvents || []);
+  parts.push(`<h3>When the clan plays (UK time)</h3>` + (pt.total >= 10
+    ? bars(pt.hours.map((v, h) => ({ label: String(h).padStart(2, '0'), value: v, show: h % 6 === 0, title: `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00: ${v} decks` })), { label: 'War decks played by hour of day, UK time' })
+      + `<div class="hint">Busiest 4 hours: ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 (${Math.round(pt.window.share * 100)}% of ${pt.total} decks). Remind people just before.</div>`
+    : '<div class="empty">Collecting on battle days (timed to within 15 minutes)</div>'));
+  // 5. Donations this week
+  const don = model.players.filter(p => !p.gone && p.donations != null).sort((a, b) => b.donations - a.donations);
+  if (don.length) parts.push(`<h3>Top donors this week</h3><table class="tbl">${don.slice(0, 5).map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.donations}</td><td class="muted">received ${p.received ?? 0}</td></tr>`).join('')}</table>`);
+  // 6. Inactive outside war
+  const idle = model.players.filter(p => !p.gone && p.offlineDays != null && p.offlineDays >= 7).sort((a, b) => b.offlineDays - a.offlineDays);
+  parts.push(`<h3>Offline 7+ days</h3>` + (idle.length ? `<table class="tbl">${idle.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${Math.floor(p.offlineDays)} days</td><td></td></tr>`).join('')}</table>` : '<div class="empty">Nobody</div>'));
+  box.innerHTML = parts.join('');
 }
 
 function renderLog() {

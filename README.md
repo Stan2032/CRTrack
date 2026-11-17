@@ -22,6 +22,15 @@ Folded at the bottom: **Clan log** (joins, leaves, promotions) and **Rules**.
 Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
 or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
+## Stats and forecasts
+
+- **Forecast** (This war): each player's chance of reaching the target, from their own habits (share of decks they play, medals per deck, how much that varies), simulated 2,000 times. New players use the clan's typical habits.
+- **Race**: every clan's medals, the gap to yours and how it moved since yesterday, plus a projected finish at today's pace.
+- **Player panel** (tap a name): medals chart, reliability score with its breakdown, when they usually play, win rates and medals per deck by battle type, and which type earns them most.
+- **Clan stats**: medals and pass rate per war, most and least reliable, battle types clan-wide, when the clan plays (UK time), top donors, offline 7+ days.
+
+Reliability (0–100) = 40% wars at target + 30% decks used + 20% medals vs target (1.5× target = full) + 10% recent trend.
+
 ## History (hosted link only)
 
 Every 15 minutes on battle days (twice a day on training days) the site saves the clan's members, donations, every clan's medals in the race, and players' war battles. Over time that gives:
@@ -77,7 +86,7 @@ All numbers and switches can be changed.
 
 ## Files
 
-- `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `app.js` for the screen)
+- `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `stats.js` for forecasts and stats, `app.js` for the screen)
 - `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
 - `samples/`: real exports from #WINNING, week 138-2
 - `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs` (also run automatically on GitHub for every push)
