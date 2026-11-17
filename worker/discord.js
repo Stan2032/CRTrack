@@ -148,14 +148,17 @@ export async function handleDiscord(request, env, ctx) {
     case 'setup': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       const roles = { member: opt.member_role || cfg?.roles?.member, elder: opt.elder_role || cfg?.roles?.elder, coLeader: opt.coleader_role || cfg?.roles?.coLeader, leader: opt.leader_role || cfg?.roles?.leader };
+      const test = await dapi(env, 'POST', `/channels/${opt.channel}/messages`, { content: 'War Audit will post war reminders and results here.', allowed_mentions: { parse: [] } }).then(() => '', e => e.message);
+      if (test) return Response.json(reply(cantPost(opt.channel, test) + ' Nothing was changed; run /setup again after fixing it.'));
       await setConfig(env, guild, { clan, channel: opt.channel, roles });
       return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ' Roles follow the game for linked members (run `/sync` once now).' : ' Add roles any time by running /setup again.')));
     }
     case 'rules': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       const text = rulesText(await clanRules(env, clan));
-      later(upsert(env, 'discord:rules:' + guild, i.channel_id || i.channel?.id, text));
-      return Response.json(reply('Posting the rules here. I\'ll edit that message whenever the rules change on the site. Pin it to keep it handy.'));
+      const ch = i.channel_id || i.channel?.id;
+      const err = await upsert(env, 'discord:rules:' + guild, ch, text).then(() => '', e => e.message);
+      return Response.json(reply(err ? cantPost(ch, err) : 'Rules posted here. I\'ll edit that message whenever the rules change on the site. Pin it to keep it handy.'));
     }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
@@ -229,10 +232,18 @@ export function rulesText(r) {
 }
 
 // Edit a remembered message, or post a new one if it's gone. Remembers the message id under `key`.
+// Plain-language reason when Discord refuses a post.
+function cantPost(channel, err) {
+  const code = (String(err).match(/: (\d{3})$/) || [])[1];
+  if (code === '403') return `I can't post in <#${channel}>: I'm missing permission there. Open that channel's settings → Permissions → add the **War Audit** role (or member) and allow **View Channel**, **Send Messages**, **Embed Links** and **Read Message History**.`;
+  if (code === '404') return `I can't see <#${channel}>. Add the **War Audit** role to that channel's permissions with **View Channel** allowed.`;
+  return `Discord refused the post in <#${channel}> (${code || 'error'}). Try again in a minute.`;
+}
+
 async function upsert(env, key, channel, content) {
   const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first();
   const body = { content: content.slice(0, 1990), allowed_mentions: { parse: [] } };
-  if (saved) {
+  if (saved && JSON.parse(saved.v).channel === channel) {   // same channel: edit; a new channel gets a new message
     const { channel: ch, id } = JSON.parse(saved.v);
     const ok = await dapi(env, 'PATCH', `/channels/${ch}/messages/${id}`, body).then(() => true).catch(() => false);
     if (ok) return id;

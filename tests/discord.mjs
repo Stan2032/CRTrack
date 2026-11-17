@@ -85,13 +85,20 @@ assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
 
 // Rules: posted with /rules, then edited when the rules change.
 calls.length = 0;
-assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'rules', options: [] } })), /Posting the rules/);
-await Promise.all(pending);
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'rules', options: [] } })), /Rules posted here/);
 assert.match(calls.find(c => c.method === 'POST').body.content, /1,800\+ medals every war/);
 await DB.exec(`INSERT OR REPLACE INTO notes (clan,week,tag,kind,value,at) VALUES ('PPCCR8VU','*','*','rules','{"target":2000}','x')`);
 calls.length = 0;
 assert.equal(await updateRulesMessages(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /2,000\+ medals every war/);
+
+// A channel the bot can't post in: told why, in plain words, and /setup changes nothing.
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url, opt = {}) => /channels\/LOCKED\//.test(url) ? new Response('{}', { status: 403 }) : realFetch(url, opt);
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'LOCKED', member: leader, data: { name: 'rules', options: [] } })), /missing permission[\s\S]*Send Messages/);
+assert.match(await text(await cmd('setup', [{ name: 'channel', value: 'LOCKED' }], leader)), /missing permission[\s\S]*Nothing was changed/);
+assert.match(await text(await cmd('me')), /Luke|linked/i);
+globalThis.fetch = realFetch;
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };
