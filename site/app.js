@@ -595,11 +595,21 @@ function renderRules() {
   const changed = k => r[k] !== DEFAULT_RULES[k];
   $('#rules').innerHTML = Object.entries(groups).map(([g, items]) => `<fieldset class="rgroup"><legend>${esc(g)}</legend>${items.map(([k, spec]) => typeof DEFAULT_RULES[k] === 'boolean'
     ? `<label class="rule"><span>${esc(spec.label)}</span><input type="checkbox" role="switch" class="switch" data-rule="${k}" ${r[k] ? 'checked' : ''}></label>`
+    // Short ranges (days, wars, %) get a slider; medal amounts keep − / + for precision.
+    : spec.unit !== 'medals' && (spec.max - spec.min) / spec.step <= 30
+      ? `<div class="rule slide"><span>${esc(spec.label)}<small>${spec.min}–${spec.max} ${esc(spec.unit)}${changed(k) ? ` · default ${DEFAULT_RULES[k]}` : ''}</small></span>
+          <span class="sl"><input type="range" data-rule="${k}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${r[k]}" aria-label="${esc(spec.label)}"><output id="o-${k}">${r[k]}${spec.unit === '%' ? '%' : ''}</output></span></div>`
     : `<div class="rule"><span>${esc(spec.label)}<small>${spec.min.toLocaleString()}–${spec.max.toLocaleString()} ${esc(spec.unit)}${changed(k) ? ` · default ${DEFAULT_RULES[k].toLocaleString()}` : ''}</small></span>
         <span class="stepper"><button type="button" data-step="${k}" data-dir="-1" aria-label="Less" ${r[k] <= spec.min ? 'disabled' : ''}>−</button>
         <input type="number" inputmode="numeric" data-rule="${k}" value="${r[k]}" min="${spec.min}" max="${spec.max}" step="${spec.step}" aria-label="${esc(spec.label)}">
         <button type="button" data-step="${k}" data-dir="1" aria-label="More" ${r[k] >= spec.max ? 'disabled' : ''}>+</button></span></div>`).join('')}</fieldset>`).join('')
     + (ruleProblems(r).length ? `<div class="rprob">${ruleProblems(r).map(x => `<div>⚠️ ${esc(x)}</div>`).join('')}</div>` : '');
+  // Changes apply straight away on this device; "Save for everyone" shares them.
+  const mine = Object.keys(local.rules).filter(k => RULE_SPEC[k]);
+  $('#rulenote').innerHTML = mine.length
+    ? `<b>${mine.length} change${mine.length === 1 ? '' : 's'} on this device only</b> (${mine.map(k => esc(RULE_SPEC[k].label.toLowerCase())).join('; ')}). They apply here straight away.${codeOk ? ' Save them so every leader uses them.' : ''}`
+    : 'Changes apply straight away. With the leader code you can save them for every leader.';
+  $('#rulenote').classList.toggle('pending', mine.length > 0);
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
   $('#discordrow').classList.toggle('hidden', !(codeOk && site.discord));
@@ -710,12 +720,13 @@ document.addEventListener('change', e => {
   if (el.dataset.rule) setRule(el.dataset.rule, el.type === 'checkbox' ? el.checked : el.value);
 });
 document.addEventListener('input', e => {
+  if (e.target.type === 'range' && e.target.dataset.rule) { const k = e.target.dataset.rule; $('#o-' + k).textContent = e.target.value + (RULE_SPEC[k].unit === '%' ? '%' : ''); return; }
   if (e.target.dataset.i == null) return;
   const n = e.target.value.length, c = $('#c' + e.target.dataset.i), lim = rules().chatLimit;
   c.textContent = `${n}/${lim}`; c.classList.toggle('over', n > lim); fit(e.target);
 });
 window.addEventListener('resize', () => fit());
-$('#reset').onclick = () => { local.rules = {}; saveLocal(); render(); say('Rules reset on this device'); };
+$('#reset').onclick = () => { local.rules = {}; saveLocal(); render(); say('Back to the clan\'s saved rules'); };
 $('#export').onclick = exportMd;
 
 // ---- Spreadsheet (CSV) export: opens in Excel, Numbers or Google Sheets ----

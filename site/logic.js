@@ -299,10 +299,30 @@ function split(text, limit) {
   const parts = []; let cur = '';
   for (const ln of text.split('\n')) {
     const next = cur ? cur + '\n' + ln : ln;
-    if (next.length > limit && cur) { parts.push(cur.trim()); cur = ln; } else cur = next;
+    if (next.length > limit && cur) {
+      // Keep a heading ("Promoted to Elder:") and blank lines with the list that follows it.
+      const ls = cur.split('\n'); let carry = [];
+      while (ls.length > 1 && (/:\s*$/.test(ls[ls.length - 1]) || !ls[ls.length - 1].trim())) carry.unshift(ls.pop());
+      parts.push(ls.join('\n').trim()); cur = [...carry.filter(l => l.trim()), ln].join('\n');
+    } else cur = next;
   }
   if (cur.trim()) parts.push(cur.trim());
   return parts;
+}
+
+// A short reason for the clan chat, e.g. "1,350, 2nd miss in a row" or "10/10 wars at 1800+, avg 2,270".
+function shortReason(x, r) {
+  const fame = x.cur ? x.cur.fame.toLocaleString('en-GB') : '', why = x.res.why || '', s = x.res.status;
+  if (s === 'Promote') {
+    const n = recent(x, r).length, m = missCount(x, r);
+    return n ? `${n - m}/${n} wars ${r.target}+, avg ${avgMedals(x, r).toLocaleString('en-GB')}` : '';
+  }
+  const reason = /warning/i.test(why) ? 'missed again after a warning'
+    : /boats/i.test(why) ? 'still on boats'
+    : /second miss|2nd miss/i.test(why) ? '2nd miss in a row'
+    : /new member/i.test(why) ? 'new, under target'
+    : s === 'Demote' ? 'missed as Elder' : 'under target';
+  return [fame && fame + ' medals', reason].filter(Boolean).join(', ');
 }
 
 function chatEnd(list, r) {
@@ -310,9 +330,9 @@ function chatEnd(list, r) {
   const msgs = [];
   const update = [
     'War update:',
-    lines('Kicked:', by('Kick').map(x => x.name)),
-    lines('Demoted:', by('Demote').map(x => x.name)),
-    lines('Promoted to Elder:', by('Promote').map(x => x.name)),
+    lines('Kicked:', by('Kick').map(x => `${x.name} (${shortReason(x, r)})`)),
+    lines('Demoted:', by('Demote').map(x => `${x.name} (${shortReason(x, r)})`)),
+    lines('Promoted to Elder:', by('Promote').map(x => `${x.name} (${shortReason(x, r)})`)),
   ].filter(Boolean);
   if (update.length > 1) msgs.push({ title: 'Update', text: update.join('\n\n') });
 
@@ -331,7 +351,7 @@ function chatEnd(list, r) {
   }
 
   const promo = by('Promote');
-  if (promo.length) msgs.push({ title: 'Promotions', text: lines(`Congrats to our new Elder${promo.length === 1 ? '' : 's'} 🎉`, promo.map(x => x.name)) + `\nThanks for hitting ${r.target}+ week after week! ⭐` });
+  if (promo.length) msgs.push({ title: 'Promotions', text: lines(`Congrats to our new Elder${promo.length === 1 ? '' : 's'} 🎉`, promo.map(x => `${x.name}: ${shortReason(x, r)}`)) + `\nThanks for hitting ${r.target}+ week after week! ⭐` });
 
   const check = by('Check');
   if (check.length) {
@@ -495,4 +515,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

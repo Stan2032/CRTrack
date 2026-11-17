@@ -55,8 +55,10 @@ try {
   await p.selectOption('#week', '138-2');
   // Rules: steppers and limits
   await p.click('#rulesbox summary');
-  await p.fill('input[data-rule="lookback"]', '0'); await p.dispatchEvent('input[data-rule="lookback"]', 'change');
-  assert.equal(await p.inputValue('input[data-rule="lookback"]'), '3'); assert.match(await p.textContent('#status'), /must be 3–26/);
+  await p.fill('input[data-rule="chatLimit"]', '999'); await p.dispatchEvent('input[data-rule="chatLimit"]', 'change');
+  assert.equal(await p.inputValue('input[data-rule="chatLimit"]'), '256'); assert.match(await p.textContent('#status'), /must be 50–256/);
+  assert.equal(await p.getAttribute('input[data-rule="boatShare"]', 'type'), 'range', 'short ranges use a slider');
+  assert.match(await p.textContent('#rulenote'), /on this device only/);
   await p.click('[data-step="target"][data-dir="1"]'); assert.equal(await p.inputValue('input[data-rule="target"]'), '1850');
   // Leader code, then a shared tick
   await p.fill('#code', 'code'); await p.click('#savecode'); await p.waitForTimeout(200);
