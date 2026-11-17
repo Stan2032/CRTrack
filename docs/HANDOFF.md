@@ -35,7 +35,7 @@ These need the user's own key from developer.clashroyale.com, allowed for IP 45.
 `apiToRows()` turns the replies into the same rows as the CSVs. Week key = `seasonId-(sectionIndex+1)`.
 Battle day = `periodIndex % 7 - 2` when `periodType` is `warDay` or `colosseum`.
 
-Hosted on Cloudflare Pages: `functions/api/[[path]].js` serves `/api/v1/clans/...`, adds the `CR_API_KEY` secret, and only allows clan endpoints (optionally only the clans in `ALLOWED_CLANS`).
+Hosted on Cloudflare Workers (`wrangler.jsonc`, `worker/index.js` serves `site/` as static assets; `worker/api.js`) or Pages (`functions/api/[[path]].js`). `worker/api.js` serves `/api/v1/clans/...`, adds the `CR_API_KEY` secret, and only allows clan endpoints (optionally only the clans in `ALLOWED_CLANS`).
 The page uses `/api` when it's served over http(s) and the browser has no key of its own.
 
 ## Data (RoyaleAPI CSV exports)

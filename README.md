@@ -21,19 +21,19 @@ Then work down the page:
 
 Opening the page with `#CLANTAG` on the end pulls straight away. Choices are saved in your browser for each clan.
 
-## Share it (Cloudflare Pages, free)
+## Share it (Cloudflare Workers, free)
 
-Gives you a link like `https://your-name.pages.dev/#PPCCR8VU` that anyone can open. Nobody else needs a key.
+Gives you a link like `https://crtrack.<you>.workers.dev/#PPCCR8VU` that anyone can open. Nobody else needs a key.
 
-1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** → pick `CRTrack`.
-2. Build settings: framework **None**, build command *empty*, output directory **`site`**. Deploy.
-3. **Settings → Variables and Secrets**, add:
+1. Cloudflare → **Workers & Pages** → **Create** → **Import a repository** → `CRTrack`.
+2. Leave the defaults (build command empty, deploy command `npx wrangler deploy`). Deploy.
+3. Open the Worker → **Settings → Variables and Secrets** → **Add**:
    - `CR_API_KEY` (type **Secret**): your key from developer.clashroyale.com, allowed IP `45.79.218.79`
-   - `ALLOWED_CLANS` (optional): e.g. `PPCCR8VU`, so the link only works for your clan
-4. Redeploy (Deployments → ⋯ → Retry). Send the link.
+   - `ALLOWED_CLANS` (type Text, optional): e.g. `PPCCR8VU`, so the link only works for your clan
+4. Open the `workers.dev` link and send it.
 
-Only `site/` is published. Samples and notes stay private. To limit who can open the page, add
-**Cloudflare Access** (Zero Trust, free for up to 50 people) and allow only your emails.
+Only `site/` is published. Samples and notes stay private. Every push redeploys.
+To limit who can open the page, turn on **Cloudflare Access** for the Worker and allow only your emails.
 
 Join days and overrides are saved in each person's own browser, not shared.
 
@@ -54,7 +54,8 @@ Join days and overrides are saved in each person's own browser, not shared.
 ## Files
 
 - `site/index.html`: the app
-- `functions/api/`: the Cloudflare piece that adds the key for Pull
+- `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key for Pull)
+- `functions/api/`: the same for Cloudflare Pages, if used instead
 - `samples/`: real exports from #WINNING, week 138-2
 - `tests/`: `node tests/check.mjs` and `node tests/function.mjs`
 - `docs/HANDOFF.md`: background, maths, and decisions so far
