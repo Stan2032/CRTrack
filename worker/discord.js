@@ -56,6 +56,8 @@ async function dapi(env, method, path, body) {
 export async function registerCommands(env) {
   const path = env.DISCORD_GUILD_ID ? `/applications/${env.DISCORD_APP_ID}/guilds/${env.DISCORD_GUILD_ID}/commands` : `/applications/${env.DISCORD_APP_ID}/commands`;
   const r = await dapi(env, 'PUT', path, COMMANDS);
+  // Registering for one server: clear any older all-servers copy, or Discord lists every command twice.
+  if (env.DISCORD_GUILD_ID) await dapi(env, 'PUT', `/applications/${env.DISCORD_APP_ID}/commands`, []).catch(() => {});
   return { registered: (r || []).length, where: env.DISCORD_GUILD_ID ? 'your server (instant)' : 'all servers (can take up to an hour)' };
 }
 

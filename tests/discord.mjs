@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { fakeD1 } from './fake-d1.mjs';
 import { handleApi } from '../worker/api.js';
-import { discordPost, syncGuild, warBoard, daySummary, rulesText, RULE_DEFAULTS, updateRulesMessages } from '../worker/discord.js';
+import { registerCommands, discordPost, syncGuild, warBoard, daySummary, rulesText, RULE_DEFAULTS, updateRulesMessages } from '../worker/discord.js';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { SCHEMA } from '../worker/history.js';
@@ -107,6 +107,12 @@ assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 
 assert.match(await text(await cmd('setup', [{ name: 'channel', value: 'LOCKED' }], leader)), /missing permission[\s\S]*Nothing was changed/);
 assert.match(await text(await cmd('me')), /Luke|linked/i);
 globalThis.fetch = realFetch;
+
+// Registering for one server also clears the all-servers copy (no duplicate commands).
+calls.length = 0;
+await registerCommands({ ...env, DISCORD_GUILD_ID: 'G' });
+assert.ok(calls.some(c => c.method === 'PUT' && /applications\/A\/guilds\/G\/commands$/.test(c.url)));
+assert.deepEqual(calls.find(c => c.method === 'PUT' && /applications\/A\/commands$/.test(c.url)).body, []);
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };
