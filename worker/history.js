@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts, updateStatsBoards } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -265,7 +265,7 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
         if (due) {
           await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
-          out.push({ clan, todo: await postTodo(env, clan, null, true).catch(e => String(e.message || e)) });
+          out.push({ clan, todo: await postTodo(env, clan, null, true).catch(e => String(e.message || e)), stats: await updateStatsBoards(env, clan).catch(() => 0) });
           continue;
         }
       }

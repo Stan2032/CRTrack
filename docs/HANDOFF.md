@@ -31,6 +31,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/history.js` | Snapshots into D1, alerts, history and member reads, shared notes |
 | `worker/push.js` | Web Push (VAPID keys made on first use, kept in D1) |
 | `worker/discord.js` | Discord bot |
+| `worker/cards.js` | `/me` report and the clan stats board |
 | `worker/leaders.js` | After-war to-do list for the leaders' channel (decisions from `logic.gen.js`) |
 | `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
 | `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
@@ -118,7 +119,9 @@ reached the target, who didn't), battle day 4 can't-reach (per-player targets), 
 4 hours, data pulls failing. Pushes carry no data; the phone fetches `/api/alerts/latest?clan=` and shows unseen ones.
 
 Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
-- Anyone: `/link #TAG`, `/unlink`, `/me`, `/away days reason` (absence: saved as a shared `away` note; under target while
+- Anyone: `/link #TAG`, `/unlink`, `/me` (full report in cards: this war with forecast and place in the clan, last 10 wars
+  as bars, consistency breakdown, streak, battle types, play times; `share` to post publicly), `/stats` (clan stats board),
+  `/away days reason` (absence: saved as a shared `away` note; under target while
   away during a war → **Leaders decide** instead of kick/warn, shown on the page), `/remind hours` (private message when a
   battle day has that long left and they still have decks; checked on turn-on; once per day; max 8 per run).
 - Leaders (Manage Roles): `/linkuser`, `/links`, `/setup` (shows what goes where; finds roles named Member / Elder /
@@ -129,7 +132,9 @@ Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
 Channel jobs (`/post-here`): **war** (live war board with text bars, refreshed every pull; "under 4 hours" pings),
 **results** (battle day summary with +/- % after each reset; war result), **joins** (welcomes, promotion congrats,
 after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (after-war to-do list + absences),
-**rules** and **how to link** (messages kept up to date by editing). Config in kv `discord:{guild}` =
+**rules**, **how to link** and the **clan stats board** (messages kept up to date by editing; stats after every war:
+last 8 wars as bars, pass-rate trend, most reliable, streaks, most improved, battle types, busiest hours, joins/leaves,
+top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
 `{clan, channels: {war, results, joins, leaders}, roles}`.
 
 **Leaders' to-do list**: when a war ends, the next 15-minute run (a run of its own) works out the decisions with the

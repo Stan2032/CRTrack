@@ -55,7 +55,8 @@ assert.deepEqual(patch.body, { roles: ['OTHER', 'RE'], nick: 'Luke' }, 'Elder ro
 
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#QQQQQ' }], member('U2'))), /isn't in the clan/);
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }], member('U2'))), /already linked/);
-assert.match(await text(await cmd('me')), /Luke/);
+{ const me = (await (await cmd('me')).json()).data; assert.equal(me.embeds[0].author.name, 'Luke'); assert.equal(me.flags, 64, 'only you'); }
+assert.equal((await (await cmd('me', [{ name: 'share', value: true }])).json()).data.flags, 0, 'shared');
 assert.match(await text(await cmd('links', [], leader)), /Linked: 1 of 2[\s\S]*Not linked yet:\*\* perc/);
 
 // /away: saved as a shared note the page reads, posted to the leaders' channel.
@@ -185,6 +186,27 @@ assert.match(await text(await cmd('player', [{ name: 'tag', value: '#2VJ9V2PV' }
 const rc = await recruitCard(env, 'PPCCR8VU', 'YVJRGLCC');
 assert.match(rc, /perc[\s\S]*Clan: Other \(Elder\)[\s\S]*Recent war battles: 1W–0L, 1 boat attack \([\s\S]*Been in this clan before\*\* \(in it now\): 1 tracked war, average 1,500/);
 await assert.rejects(recruitCard(env, 'PPCCR8VU', 'QQQQQQ'));
+
+// In-depth /me and the clan stats board, with a war in progress and battle history.
+const { meCard, statsBoard } = await import('../worker/cards.js');
+await DB.exec(`INSERT INTO wars (clan,week,ended_at,rank,fame) VALUES ('PPCCR8VU','1-1','2026-10-01T09:43:00Z',2,0),('PPCCR8VU','1-2','2026-10-08T09:43:00Z',1,0),
+  ('PPCCR8VU','1-3','2026-10-15T09:43:00Z',3,0),('PPCCR8VU','1-4','2026-10-22T09:43:00Z',1,0),('PPCCR8VU','2-1','2026-10-29T09:43:00Z',1,0);
+  INSERT INTO periods (clan,week,period,type,first_seen) VALUES ('PPCCR8VU','2-2',4,'warDay','2026-11-17T09:43:00Z');
+  INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES ('PPCCR8VU','2-2',1,'2VJ9V2PV','Luke',600,4,4,0,'x'),('PPCCR8VU','2-2',2,'2VJ9V2PV','Luke',900,6,2,0,'x'),('PPCCR8VU','2-2',2,'YVJRGLCC','perc',1100,8,4,0,'x');
+  INSERT INTO war_battles (clan,tag,at,type,won,lost) VALUES ('PPCCR8VU','2VJ9V2PV','2026-10-01T10:00:00Z','duel',6,2),('PPCCR8VU','2VJ9V2PV','2026-10-02T10:00:00Z','boat',2,4);
+  INSERT INTO member_stats (clan,week,tag,donations) VALUES ('PPCCR8VU','2-2','2VJ9V2PV',320),('PPCCR8VU','2-2','YVJRGLCC',150);`);
+const meC = await meCard(env, 'PPCCR8VU', '2VJ9V2PV');
+const all = JSON.stringify(meC);
+assert.equal(meC.embeds[0].title, '⚔️ This war · battle day 2 of 4');
+assert.match(meC.embeds[0].description, /\*\*900\*\* \/ 2,000 medals[\s\S]*1,100\*\* more[\s\S]*2\*\* decks left today[\s\S]*Forecast: \*\*\w[\s\S]*2nd of 2 in the clan[\s\S]*Day 1: 4\/4 decks · Day 2: 2\/4 decks/);
+assert.match(meC.embeds[1].description, /Last war \(2-1\): \*\*2,600\*\*[\s\S]*```[\s\S]*2-1 .*2,600 ✓[\s\S]*🔥 \*\*5 wars in a row\*\*/);
+assert.match(meC.embeds[1].fields[0].name, /Consistency: \d+\/100/);
+assert.match(meC.embeds[2].description, /Duels:\*\* 6W–2L \(75% won\)[\s\S]*Boat attacks:\*\* 2W–4L/);
+assert.ok(all.length < 6000, 'within Discord\'s embed limit');
+const sb = await statsBoard(env, 'PPCCR8VU');
+assert.match(sb, /Clan stats\*\* · 2\/50 members[\s\S]*Last 5 wars[\s\S]*2-1 .*4,100 +1\/2 +🥇[\s\S]*Most reliable:\*\* 1\. Luke[\s\S]*Streaks at 2,000\+:\*\* Luke 5[\s\S]*Battle types:\*\* Duels 75% won \(~213\/deck\) · Boats 33% won[\s\S]*Top donors this week:\*\* Luke 320 · perc 150/);
+assert.ok(sb.length <= 1990);
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: member('U1'), data: { name: 'stats', options: [] } })), /Clan stats/);
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };

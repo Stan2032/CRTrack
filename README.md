@@ -29,10 +29,10 @@ left today, their forecast, their war history and consistency, how they play, an
 
 ## Discord
 
-A bot run by the same Worker. Members: `/link #TAG`, `/me`, `/away` (going away: leaders see it, no automatic kick),
+A bot run by the same Worker. Members: `/link #TAG`, `/me` (a full personal war report), `/stats` (clan stats), `/away` (going away: leaders see it, no automatic kick),
 `/remind` (private message when a battle day is ending with decks left). Leaders: `/post-here` in each channel to choose
 what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only to-do list with tick buttons,
-rules, how to link), `/setup`, `/sync`, `/todo`, `/player #TAG`, `/check #TAG` (someone applying). Roles and nicknames
+rules, how to link, a clan stats board), `/setup`, `/sync`, `/todo`, `/player #TAG`, `/check #TAG` (someone applying). Roles and nicknames
 follow the game. Setup steps are in `docs/HANDOFF.md`.
 
 ## Stats and forecasts

@@ -4,6 +4,7 @@
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes, cr } from './history.js';
 import { reliability } from './stats.gen.js';
+import { meCard, statsBoard } from './cards.js';
 import { PUSH_SCHEMA } from './push.js';
 import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
@@ -20,7 +21,10 @@ const cleanTag = t => String(t || '').trim().toUpperCase().replace(/^#/, '').rep
 export const COMMANDS = [
   { name: 'link', description: 'Link your Discord to your Clash Royale account', options: [{ type: 3, name: 'tag', description: 'Your player tag, e.g. #ABC123', required: true }] },
   { name: 'unlink', description: 'Remove the link between your Discord and Clash Royale accounts' },
-  { name: 'me', description: 'Your war progress this war (only you see it)' },
+  { name: 'me', description: 'Your full war report: this war, forecast, history, consistency, how you play', options: [
+    { type: 5, name: 'share', description: 'Post it for everyone to see (default: only you)' }] },
+  { name: 'stats', description: 'Clan stats: recent wars, most reliable, streaks, battle types, busiest hours', options: [
+    { type: 5, name: 'share', description: 'Post it for everyone to see (default: only you)' }] },
   { name: 'linkuser', description: 'Leaders: link someone else', options: [
     { type: 6, name: 'user', description: 'Discord member', required: true },
     { type: 3, name: 'tag', description: 'Their player tag', required: true }] },
@@ -37,6 +41,7 @@ export const COMMANDS = [
       { name: 'Battle day summaries + war results', value: 'results' },
       { name: 'Welcomes + shout-outs', value: 'joins' },
       { name: 'Leaders only: to-do list after each war + absences', value: 'leaders' },
+      { name: 'Clan stats board (updated after each war)', value: 'stats' },
       { name: 'Rules (kept up to date)', value: 'rules' },
       { name: 'How to link (for newcomers)', value: 'welcome' },
       { name: 'Nothing (stop posting here)', value: 'none' }] }] },
@@ -116,6 +121,7 @@ async function overview(env, guild, cfg) {
     ...Object.entries(JOBS).map(([k, label]) => `• ${label} → ${at(chan(cfg, k))}`),
     `• Rules → ${at(await saved('discord:rules:' + guild))}`,
     `• How to link → ${at(await saved('discord:welcome:' + guild))}`,
+    `• Clan stats board → ${at(await saved('discord:stats:' + guild))}`,
     ``, `**Roles that follow the game:** ${[['Member', r.member], ['Elder', r.elder], ['Co-leader', r.coLeader], ['Leader', r.leader]].map(([k, id]) => `${k} → ${id ? `<@&${id}>` : 'none'}`).join(', ')}`,
     ``, `To change a channel: go to it and run \`/post-here\`.`].join('\n');
 }
@@ -177,18 +183,12 @@ export async function handleDiscord(request, env, ctx) {
     case 'me': {
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
       if (!link) return Response.json(reply('Link your account first: `/link #YOURTAG`'));
-      const m = await readMember(env, clan, link.tag);
-      if (!m) return Response.json(reply('Couldn\'t find you in the clan.'));
-      const target = Number(m.rules?.target) || 1800, last = m.war?.days?.[m.war.days.length - 1];
-      const lines = [`**${cleanName(m.name)}**`];
-      if (m.war?.day) {
-        const fame = last?.fame ?? 0, used = last && last.day === m.war.day ? last.today : 0;
-        lines.push(`Battle day ${m.war.day} of 4: **${fame.toLocaleString()}** medals, ${4 - used} deck${4 - used === 1 ? '' : 's'} left today.`,
-          fame >= target ? `✅ You've reached ${target}.` : `${(target - fame).toLocaleString()} more to reach ${target}.`);
-      } else lines.push('Training days: battle days start soon.');
-      const lw = m.weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))[0];
-      if (lw) lines.push(`Last war (${lw.week}): ${lw.fame.toLocaleString()} medals ${lw.fame >= target ? '✅' : '❌'}`);
-      return Response.json(reply(lines.join('\n')));
+      const card = await meCard(env, clan, link.tag);
+      if (!card) return Response.json(reply('Couldn\'t find you in the clan.'));
+      return Response.json({ type: 4, data: { ...card, flags: opt.share ? 0 : EPHEMERAL, allowed_mentions: { parse: [] } } });
+    }
+    case 'stats': {
+      return Response.json(reply(await statsBoard(env, clan), !opt.share));
     }
     case 'remind': {
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
@@ -237,10 +237,11 @@ export async function handleDiscord(request, env, ctx) {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       const ch = i.channel_id || i.channel?.id, what = opt.what;
       const next = { clan, channels: { ...(cfg?.channels || {}) }, roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
-      if (what === 'rules' || what === 'welcome') {
-        const err = await upsert(env, `discord:${what}:${guild}`, ch, what === 'rules' ? rulesText(await clanRules(env, clan)) : WELCOME).then(() => '', e => e.message);
+      if (what === 'rules' || what === 'welcome' || what === 'stats') {
+        const text = what === 'rules' ? rulesText(await clanRules(env, clan)) : what === 'stats' ? await statsBoard(env, clan) : WELCOME;
+        const err = await upsert(env, `discord:${what}:${guild}`, ch, text).then(() => '', e => e.message);
         if (err) return Response.json(reply(cantPost(ch, err)));
-        return Response.json(reply(`Posted. Long-press it → **Pin**. I'll keep it up to date${what === 'rules' ? ' when the rules change on the site' : ''}.`));
+        return Response.json(reply(`Posted. Long-press it → **Pin**. I'll keep it up to date${what === 'rules' ? ' when the rules change on the site' : what === 'stats' ? ' after every war' : ''}.`));
       }
       if (what === 'none') {
         for (const k of Object.keys(next.channels)) if (next.channels[k] === ch) delete next.channels[k];
@@ -594,6 +595,20 @@ export async function shoutOuts(env, clan, week, target) {
   const body = [`${now.slice(0, 3).map((x, i) => `${medal[i]} ${cleanName(x.name)} ${n(x.fame)}`).join(' · ')}`,
     streaks.length ? `🔥 ${streaks.join('\n🔥 ')}` : ''].filter(Boolean).join('\n');
   return discordPost(env, clan, `🏆 War ${week} shout-outs`, body, [], 'joins');
+}
+
+// Re-write every posted stats board for this clan (after each war).
+export async function updateStatsBoards(env, clan) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  let text = null, sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:stats:' + cfg.guild).first();
+    if (!saved) continue;
+    text ||= await statsBoard(env, clan);
+    if (await upsert(env, 'discord:stats:' + cfg.guild, JSON.parse(saved.v).channel, text).catch(() => null)) sent++;
+  }
+  return sent;
 }
 
 // Re-write every posted rules message for this clan (after the rules change on the site).
