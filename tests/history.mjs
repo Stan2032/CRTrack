@@ -60,10 +60,26 @@ assert.ok(DB.count() <= 50, 'queries ' + DB.count());
 
 const h = await readHistory(env, 'PPCCR8VU');
 assert.equal(h.wars.length, 10);
+const h3 = await readHistory(env, 'PPCCR8VU', { weeks: 3 });
+assert.equal(h3.wars.length, 3, 'recent wars only');
+assert.ok(h3.players.every(p => h3.wars.some(w => w.week === p.week)), 'players only for those wars');
+assert.equal(h3.days.length, h.days.length, 'war in progress always included');
 assert.ok(h.players.length > 500);
 assert.deepEqual(h.events.filter(e => e.kind !== 'seen').map(e => e.kind).sort(), ['join', 'leave', 'role']);
 assert.equal(h.days.length, 1); assert.equal(h.periods.length, 2);
 assert.equal(h.raceEvents.length, 1, 'one deck-count change recorded'); assert.equal(h.raceEvents[0].decks, 4);
+
+// members' page: one player's own data, no notes
+{
+  const { readMember } = await import('../worker/history.js');
+  const me = await readMember(env, 'PPCCR8VU', '9R2UUCVY');
+  assert.equal(me.name, 'Ninja'); assert.ok(me.weeks.length >= 5); assert.equal(me.war.week, '138-3');
+  assert.ok(!('notes' in me) && !JSON.stringify(me).includes('"result"'), 'no leader notes');
+  assert.equal(await readMember(env, 'PPCCR8VU', 'NOPE'), null);
+  const r = await handleApi(new Request('https://x.dev/api/member?tag=%239R2UUCVY'), env);
+  assert.equal(r.status, 200);
+  assert.equal((await handleApi(new Request('https://x.dev/api/member?tag=bad!'), env)).status, 400);
+}
 
 // notes: save and delete; SQL-unsafe text stays as data
 await writeNotes(env, 'PPCCR8VU', [{ week: '138-2', tag: 'YCU8RGVJY', kind: 'join', value: '3' },

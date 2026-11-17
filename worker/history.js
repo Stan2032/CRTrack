@@ -264,26 +264,57 @@ export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
   return res[0]?.error ? { status: 502, body: res[0] } : { status: 200, body: res[0] };
 }
 
-export async function readHistory(env, clan) {
+// weeks: how many recent wars to send (the page needs ~half a year); 0 = everything (backups).
+export async function readHistory(env, clan, { weeks = 0 } = {}) {
   const db = env.DB;
   await db.exec(SCHEMA);
   const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
+  // Recent wars, plus the war in progress (not in the wars table yet).
+  const recent = weeks > 0 ? ` AND (week IN (SELECT week FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT ${Math.floor(weeks)}) OR week NOT IN (SELECT week FROM wars WHERE clan = ?1))` : '';
+  const since = weeks > 0 ? ` AND at > COALESCE((SELECT min(ended_at) FROM (SELECT ended_at FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT ${Math.floor(weeks) + 1})), '')` : '';
   const [members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents] = await Promise.all([
     all('SELECT tag,name,role,in_clan,first_seen,last_seen_game,updated_at FROM members WHERE clan = ?'),
     all('SELECT tag,name,kind,detail,at FROM member_events WHERE clan = ? ORDER BY at'),
-    all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?'),
-    all('SELECT week,tag,name,fame,decks,boats FROM war_players WHERE clan = ?'),
+    all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?1' + recent),
+    all('SELECT week,tag,name,fame,decks,boats FROM war_players WHERE clan = ?1' + recent),
     all('SELECT week,period,type,first_seen FROM periods WHERE clan = ? ORDER BY first_seen'),
-    all('SELECT week,day,tag,fame,decks,today,boats,at FROM race_days WHERE clan = ?'),
+    all('SELECT week,day,tag,fame,decks,today,boats,at FROM race_days WHERE clan = ?1' + recent),
     all('SELECT week,tag,kind,value,at FROM notes WHERE clan = ?'),
     all('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?'),
-    all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?'),
-    all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?'),
+    all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?1' + recent),
+    all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?1' + since),
     all('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60'),
     all("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')"),
   ]);
   const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
   return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents };
+}
+
+// One member's own data for the members' page: no leader notes, decisions or other players.
+export async function readMember(env, clan, tag) {
+  const db = env.DB;
+  await db.exec(SCHEMA);
+  const one = (sql, ...a) => db.prepare(sql).bind(clan, ...a).first();
+  const all = (sql, ...a) => db.prepare(sql).bind(clan, ...a).all().then(r => r.results);
+  const m = await one('SELECT tag, name, role, in_clan, last_seen_game, updated_at FROM members WHERE clan = ?1 AND tag = ?2', tag);
+  if (!m) return null;
+  const period = await one("SELECT week, period, type, first_seen FROM periods WHERE clan = ?1 ORDER BY first_seen DESC LIMIT 1");
+  const lastWar = await one('SELECT week, ended_at FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT 1');
+  const rulesNote = await one("SELECT value FROM notes WHERE clan = ?1 AND kind = 'rules' AND week = '*' AND tag = '*'");
+  const day = period && period.type !== 'training' ? Math.min(4, Math.max(1, (period.period % 7) - 2)) : 0;
+  const [weeks, today, battles, events] = await Promise.all([
+    all('SELECT week, fame, decks, boats FROM war_players WHERE clan = ?1 AND tag = ?2', tag),
+    period ? all('SELECT day, fame, decks, today, boats, at FROM race_days WHERE clan = ?1 AND week = ?2 AND tag = ?3 ORDER BY day', period.week, tag) : [],
+    all('SELECT at, type, won, lost FROM war_battles WHERE clan = ?1 AND tag = ?2', tag),
+    all("SELECT week, at, decks FROM race_events WHERE clan = ?1 AND tag = ?2 AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')", tag),
+  ]);
+  let rules = {};
+  try { rules = JSON.parse(rulesNote?.value || '{}'); } catch (e) {}
+  return {
+    tag: m.tag, name: m.name, role: m.role, inClan: !!m.in_clan, lastSeen: m.last_seen_game, updated: m.updated_at,
+    war: period ? { week: period.week, day, days: today } : null, resetAt: lastWar?.ended_at || null, rules,
+    weeks, battles: battles.map(b => ({ ...b, tag })), events: events.map(e => ({ ...e, tag })),
+  };
 }
 
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];

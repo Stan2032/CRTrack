@@ -5,9 +5,10 @@
 //   GET  /api/history?clan=TAG             stored history (needs D1 binding DB)
 //   POST /api/notes?clan=TAG               shared choices (needs EDIT_KEY in X-Edit-Key)
 //   POST /api/snapshot[?clan=TAG]          take a snapshot now (anyone: once per 5 min per clan; all clans needs EDIT_KEY)
+//   GET  /api/member?tag=TAG               one member's own data (members' page)
 //   GET  /api/push/key, /api/alerts/latest; POST /api/push/subscribe|unsubscribe|test   app notifications
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
-import { readHistory, writeNotes, snapshotAll, requestSnapshot } from './history.js';
+import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
 
 const PROXY_PATH = /^v1\/clans\/%23[0289PYLQGRJCUV]{3,12}(\/(members|currentriverrace|riverracelog))?$/;
@@ -53,6 +54,17 @@ export async function handleApi(request, env) {
     return json({ reason: 'notFound' }, 404);
   }
 
+  // Members' page: one player's own data only.
+  if (url.pathname === '/api/member') {
+    if (!env.DB) return json({ reason: 'noHistory' }, 501);
+    const clan = (url.searchParams.get('clan') || allowed[0] || '').toUpperCase().replace(/^#/, '');
+    const tag = (url.searchParams.get('tag') || '').toUpperCase().replace(/^#/, '').replace(/O/g, '0');
+    if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);
+    if (!TAG.test(tag)) return json({ reason: 'badTag' }, 400);
+    const m = await readMember(env, clan, tag);
+    return m ? json(m, 200, 'no-store') : json({ reason: 'notInClan' }, 404);
+  }
+
   if (url.pathname === '/api/history' || url.pathname === '/api/notes' || url.pathname === '/api/snapshot') {
     if (!env.DB) return json({ reason: 'noHistory' }, 501);
     if (url.pathname === '/api/snapshot') {
@@ -72,7 +84,8 @@ export async function handleApi(request, env) {
     if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);
     if (url.pathname === '/api/history') {
       if (request.method !== 'GET') return json({ reason: 'methodNotAllowed' }, 405);
-      return json(await readHistory(env, clan), 200, 'no-store');
+      // The page gets the last 26 wars; ?all=1 (backups) gets everything.
+      return json(await readHistory(env, clan, { weeks: url.searchParams.get('all') ? 0 : 26 }), 200, 'no-store');
     }
     if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
     if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);

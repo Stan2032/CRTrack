@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My War Stats</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<meta name="theme-color" content="#1a7f37">
+</head>
+<body>
+<h1>My War Stats</h1>
+<div id="sub">Your own war progress and history</div>
+
+<section class="step">
+  <div class="row">
+    <label class="tagin"><span>#</span><input id="tag" placeholder="YOUR PLAYER TAG" autocomplete="off" spellcheck="false" aria-label="Your player tag"></label>
+    <button class="btn main" id="go">Show</button>
+  </div>
+  <div class="hint" style="margin-top:6px">Your tag is under your name on your Clash Royale profile.</div>
+  <div class="status" id="status" role="status"></div>
+</section>
+
+<div id="out"></div>
+
+<details class="step" id="explainbox">
+  <summary>Clan rules explained</summary>
+  <div id="explain"></div>
+</details>
+
+<script src="logic.js"></script>
+<script src="stats.js"></script>
+<script src="ui.js"></script>
+<script src="me.js"></script>
+</body>
+</html>
