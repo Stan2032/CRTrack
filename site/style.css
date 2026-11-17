@@ -140,3 +140,8 @@ span.tick { cursor: default; }
 .copybtn { border: 1px solid var(--blue); color: var(--blue); background: var(--card); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .steps .hint { margin-top: 2px; }
 .alldone { color: var(--green); font-weight: 600; }
+.pout { margin-top: 10px; font-size: 13px; }
+.pout table { border-collapse: collapse; width: 100%; }
+.pout th { text-align: left; color: var(--muted); font-weight: 400; padding: 5px 10px 5px 0; white-space: nowrap; vertical-align: top; }
+.pout td { padding: 5px 0; }
+.pout tr + tr th, .pout tr + tr td { border-top: 1px solid var(--line); }

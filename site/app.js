@@ -8,7 +8,7 @@ let raceInfo = { week: null, day: 0, period: null };
 let local = { notes: {}, rules: {} };          // this device
 let settings = { key: '', tag: '', code: '' };
 let site = { key: false, clans: [], history: false, edit: false };
-let codeOk = false;
+let codeOk = false, leaderName = '';
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
@@ -280,6 +280,7 @@ function render() {
   }).join('');
 
   const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
+  if (mode === 'end') { const rc = recap(all, r); if (rc) msgs.push({ title: 'Recap', text: rc }); }
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
@@ -289,6 +290,25 @@ function render() {
   renderLog();
   renderFresh();
   autoSave(all);
+}
+// Weekly recap: placing, trophies, top scorers, most improved.
+function recap(list, r) {
+  if (!model.season) return '';
+  const war = hist?.wars?.find(w => w.week === model.season);
+  const played = list.filter(p => p.cur && p.cur.decks > 0);
+  if (!played.length) return '';
+  const top = played.slice().sort((a, b) => b.cur.fame - a.cur.fame).slice(0, 3);
+  const up = played.filter(p => p.prev).map(p => ({ p, d: p.cur.fame - p.prev.fame })).sort((a, b) => b.d - a.d)[0];
+  const passed = played.filter(p => p.cur.fame >= r.target).length;
+  const place = war && war.rank > 0 ? `${['1st', '2nd', '3rd', '4th', '5th'][war.rank - 1] || war.rank + 'th'} place` : '';
+  const trophies = war && war.trophy_change ? `${war.trophy_change > 0 ? '+' : ''}${war.trophy_change} trophies` : '';
+  return [
+    `War ${model.season} recap${[place, trophies].filter(Boolean).length ? ': ' + [place, trophies].filter(Boolean).join(', ') : ''}`,
+    `${passed} of ${played.length} hit ${r.target}+`,
+    `Top: ${top.map(p => `${p.name} ${p.cur.fame}`).join(', ')}`,
+    up && up.d > 0 ? `Most improved: ${up.p.name} (+${up.d})` : '',
+    'Thanks all! ⚔️',
+  ].filter(Boolean).join('\n');
 }
 const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'First & only warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
 
@@ -356,6 +376,7 @@ function renderSteps(list, msgs) {
     if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
     players(w, 'Warn', `Post the <b>first &amp; only warnings</b> ${names(w)}`, copy('First & only'));
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
+    posted('RECAP', 'Post the <b>war recap</b> (optional)', copy('Recap'));
     players(c, 'Check', `Post the <b>check-in</b> ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
@@ -387,9 +408,15 @@ function copyText(text, btn) {
 function renderLog() {
   if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
   const h = model.history, words = { join: 'joined', leave: 'left', role: 'role' };
-  const ev = h.events.map(e => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(e.at)))}</span> <b>${esc(e.name || e.tag)}</b> ${
+  const ev = h.events.map(e => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(e.at)))}</span> <b>${esc(cleanName(e.name) || e.tag)}</b> ${
     e.kind === 'role' ? esc(String(e.detail).replace('>', ' → ')) : words[e.kind] || esc(e.kind)}</div>`).join('');
-  $('#log').innerHTML = `<div class="hint">${h.weeks} wars stored${h.since ? ' · tracking since ' + esc(fmtDate(h.since)) : ''}</div>${ev || '<div class="empty">No joins or leaves yet</div>'}`;
+  const names = Object.fromEntries((hist.members || []).map(m => [m.tag, cleanName(m.name)]));
+  const what = n => n.kind === 'done' ? (n.value ? 'ticked done' : 'unticked') : n.kind === 'over' ? (n.value ? `changed to ${label(n.value)}` : 'reset to suggested')
+    : n.kind === 'join' ? `set join day: ${n.value || 'auto'}` : n.kind === 'rules' ? 'saved the rules' : n.kind;
+  const who = (hist.noteLog || []).filter(n => n.by).slice(0, 15).map(n => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(n.at)))}</span> <b>${esc(n.by)}</b> ${esc(what(n))}${
+    n.tag && n.tag !== '*' ? ' · ' + esc(names[n.tag] || (n.tag.startsWith('STEP-') ? n.tag.slice(5).toLowerCase() + ' step' : n.tag)) : ''} <span class="muted">(war ${esc(n.week)})</span></div>`).join('');
+  $('#log').innerHTML = `<div class="hint">${h.weeks} wars stored${h.since ? ' · tracking since ' + esc(fmtDate(h.since)) : ''}</div>${ev || '<div class="empty">No joins or leaves yet</div>'}`
+    + (who ? `<div class="hint" style="margin-top:12px">Leader changes</div>${who}` : '');
 }
 
 function fit(el) { (el ? [el] : document.querySelectorAll('textarea')).forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }); }
@@ -401,7 +428,7 @@ function renderRules() {
       : `<input type="number" data-rule="${k}" value="${r[k]}">`}</label>`).join('');
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
-  $('#codehint').textContent = codeOk ? 'Leader code accepted. Changes are saved for everyone.' : 'With the leader code, your changes are saved for everyone.';
+  $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone.` : 'With the leader code, your changes are saved for everyone.';
 }
 
 function setMode(m) {
@@ -415,6 +442,7 @@ async function checkCode(code) {
   if (!site.edit || !code || !settings.tag) return false;
   try {
     const r = await fetch('api/notes?clan=' + settings.tag, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': code }, body: '{"items":[]}' });
+    if (r.ok) leaderName = (await r.json().catch(() => ({}))).by || 'Leader';
     return r.ok;
   } catch (e) { return false; }
 }
@@ -453,7 +481,9 @@ $('#savecode').onclick = async () => {
   say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render();
 };
 $('#saverules').onclick = async () => {
-  const ok = await postNotes([{ week: '*', tag: '*', kind: 'rules', value: JSON.stringify(rules()) }]);
+  // Save only what differs from the defaults, so future default changes still apply.
+  const cur = rules(), diff = Object.fromEntries(Object.keys(DEFAULT_RULES).filter(k => cur[k] !== DEFAULT_RULES[k]).map(k => [k, cur[k]]));
+  const ok = await postNotes([{ week: '*', tag: '*', kind: 'rules', value: JSON.stringify(diff) }]);
   if (ok) { local.rules = {}; saveLocal(); }
   say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
 };
@@ -490,6 +520,51 @@ document.addEventListener('input', e => {
 window.addEventListener('resize', () => fit());
 $('#reset').onclick = () => { local.rules = {}; saveLocal(); render(); say('Rules reset on this device'); };
 $('#export').onclick = exportMd;
+$('#backup').onclick = async () => {
+  const t = model?.clan.tag || cleanInputTag();
+  try {
+    const r = await fetch('api/history?clan=' + t);
+    if (!r.ok) throw 0;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([await r.text()], { type: 'application/json' }));
+    a.download = `clan-history-${t}-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  } catch (e) { say('Backup needs the hosted site with history', true); }
+};
+
+// ---- Check a player (recruits) ----
+async function checkPlayer() {
+  const t = $('#ptag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'), out = $('#pout');
+  if (!VALID_TAG.test(t)) { out.textContent = 'Check the player tag'; return; }
+  const viaSite = !settings.key && site.key;
+  const call = path => fetch((viaSite ? 'api/v1' : PROXY) + '/players/' + encodeURIComponent('#' + t) + path, viaSite ? {} : { headers: { Authorization: 'Bearer ' + settings.key } })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status));
+  out.textContent = 'Checking…';
+  try {
+    const [pl, log] = await Promise.all([call(''), call('/battlelog').catch(() => [])]);
+    const wars = (Array.isArray(log) ? log : []).filter(b => /^riverRace|^boatBattle/.test(b.type || ''));
+    let won = 0, lost = 0, boats = 0;
+    for (const b of wars) {
+      if (b.type === 'boatBattle') { boats++; continue; }
+      const me = b.team?.[0] || {}, op = b.opponent?.[0] || {};
+      if (me.rounds && op.rounds) me.rounds.forEach((x, i) => x.crowns > (op.rounds[i]?.crowns ?? 0) ? won++ : lost++);
+      else me.crowns > op.crowns ? won++ : lost++;
+    }
+    const last = log && log[0] ? parseTime(log[0].battleTime) : null;
+    const rows = [
+      ['Name', `${pl.name} (level ${pl.expLevel})`],
+      ['Clan', pl.clan ? `${pl.clan.name} (${ROLE[pl.role] || 'Member'})` : 'No clan'],
+      ['Trophies', `${pl.trophies} (best ${pl.bestTrophies})`],
+      ['War day wins, all time', pl.warDayWins ?? '–'],
+      ['Clan cards collected', pl.clanCardsCollected ?? '–'],
+      ['Donations, all time', pl.totalDonations ?? '–'],
+      ['Recent war battles', wars.length ? `${won}W–${lost}L${boats ? `, ${boats} boat attacks` : ''} (from last 25 battles)` : 'None in last 25 battles'],
+      ['Last battle', last ? `${fmtDate(last)} ${fmtTime(last)}` : '–'],
+    ];
+    out.innerHTML = `<table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>`;
+  } catch (e) { out.textContent = e === 404 ? 'Player not found' : viaSite || settings.key ? "Couldn't load that player" : 'Needs the hosted site or your own key'; }
+}
+$('#pcheck').onclick = checkPlayer;
+$('#ptag').addEventListener('keydown', e => { if (e.key === 'Enter') checkPlayer(); });
 
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
 $('#key').value = settings.key || '';

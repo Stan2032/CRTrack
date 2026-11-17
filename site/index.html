@@ -55,6 +55,15 @@
   <div class="cards" id="cards"><div class="empty">Nothing yet</div></div>
 </section>
 
+<details class="step" id="recruitbox">
+  <summary>Check a player</summary>
+  <div class="row">
+    <label class="tagin"><span>#</span><input id="ptag" placeholder="PLAYERTAG" autocomplete="off" spellcheck="false" aria-label="Player tag"></label>
+    <button class="btn" id="pcheck">Check</button>
+  </div>
+  <div id="pout" class="pout"></div>
+</details>
+
 <details class="step" id="logbox">
   <summary>Clan log</summary>
   <div id="log" class="log"><div class="empty">No history on this site</div></div>
@@ -67,6 +76,7 @@
     <button class="btn" id="reset">Reset rules</button>
     <button class="btn hidden" id="saverules">Save rules for everyone</button>
     <button class="btn" id="export">Download report</button>
+    <button class="btn" id="backup">Download full history (backup)</button>
   </div>
   <div id="leader" class="hidden" style="margin-top:14px">
     <div class="row"><input id="code" type="password" class="grow" placeholder="Leader code" autocomplete="off" aria-label="Leader code"><button class="btn" id="savecode">Use code</button></div>

@@ -79,6 +79,15 @@ assert.equal((await call('/api/history?clan=2PP')).status, 403);
 assert.equal((await call('/api/notes?clan=PPCCR8VU', { method: 'POST', body: '{"items":[]}' })).status, 401);
 assert.equal((await call('/api/notes?clan=PPCCR8VU', { method: 'POST', body: '{"items":[]}', headers: { 'X-Edit-Key': 'secret' } })).status, 200);
 assert.equal((await call('/api/snapshot', { method: 'POST' })).status, 401);
+// per-leader codes: the log records who
+{
+  const env2 = { ...env, EDIT_KEYS: 'Stan:abc, Baki:xyz' };
+  const r2 = await handleApi(new Request('https://x.dev/api/notes?clan=PPCCR8VU', { method: 'POST', body: JSON.stringify({ items: [{ week: '138-3', tag: 'X', kind: 'done', value: '1' }] }), headers: { 'X-Edit-Key': 'xyz' } }), env2);
+  assert.equal((await r2.json()).by, 'Baki');
+  assert.equal((await readHistory(env2, 'PPCCR8VU')).noteLog[0].by, 'Baki');
+  const r3 = await handleApi(new Request('https://x.dev/api/notes?clan=PPCCR8VU', { method: 'POST', body: '{"items":[]}', headers: { 'X-Edit-Key': 'secret' } }), env2);
+  assert.equal((await r3.json()).by, 'Leader');
+}
 
 assert.equal(weekOf({ sectionIndex: 0 }, [{ seasonId: 138, sectionIndex: 3 }]), '139-1');
 assert.equal(battleDay({ periodType: 'warDay', periodIndex: 20 }), 4);

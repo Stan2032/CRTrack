@@ -57,6 +57,8 @@ function detect(rows) {
 }
 
 const cleanTag = t => String(t || '').replace(/^#/, '').toUpperCase();
+// In-game colour codes in names, e.g. "<c4>Baki" (shown in game as a coloured name).
+const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
 const keyParts = k => String(k).split('-').map(Number);
 const cmpKey = (a, b) => { const [x1, y1] = keyParts(a), [x2, y2] = keyParts(b); return x1 - x2 || y1 - y2; };
 
@@ -106,16 +108,16 @@ function build({ roster = [], log = [], race = [], history = [] }, opts = {}) {
   const ref = seen.length ? Math.max(...seen) : Date.now();
 
   let base = roster.length
-    ? roster.map(r => ({ tag: cleanTag(r.tag), name: r.name, role: r.role || 'member', lastSeen: parseTime(r.lastSeen),
+    ? roster.map(r => ({ tag: cleanTag(r.tag), name: cleanName(r.name), role: r.role || 'member', lastSeen: parseTime(r.lastSeen),
         donations: r.donations === '' || r.donations == null ? null : +r.donations, received: r.donationsReceived === '' || r.donationsReceived == null ? null : +r.donationsReceived }))
     : Object.keys(raceBy).length
-      ? Object.values(raceBy).map(r => ({ tag: cleanTag(r.player_tag), name: r.player_name, role: 'member', lastSeen: null }))
+      ? Object.values(raceBy).map(r => ({ tag: cleanTag(r.player_tag), name: cleanName(r.player_name), role: 'member', lastSeen: null }))
       : [];
   if (opts.withGone && season) {
     const here = new Set(base.map(p => p.tag));
     for (const r of log) if (r.season_key === season && !here.has(cleanTag(r.player_tag))) {
       here.add(cleanTag(r.player_tag));
-      base.push({ tag: cleanTag(r.player_tag), name: r.player_name, role: 'member', lastSeen: null, gone: true });
+      base.push({ tag: cleanTag(r.player_tag), name: cleanName(r.player_name), role: 'member', lastSeen: null, gone: true });
     }
   }
 
@@ -422,4 +424,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS notes (clan TEXT, week TEXT, tag TEXT, kind TEXT, val
 CREATE TABLE IF NOT EXISTS member_stats (clan TEXT, week TEXT, tag TEXT, donations INTEGER, received INTEGER, trophies INTEGER, exp INTEGER, at TEXT, PRIMARY KEY (clan, week, tag));
 CREATE TABLE IF NOT EXISTS race_standings (clan TEXT, week TEXT, day INTEGER, rival TEXT, name TEXT, fame INTEGER, at TEXT, PRIMARY KEY (clan, week, day, rival));
 CREATE TABLE IF NOT EXISTS war_battles (clan TEXT, tag TEXT, at TEXT, type TEXT, won INTEGER, lost INTEGER, PRIMARY KEY (clan, tag, at));
+CREATE TABLE IF NOT EXISTS note_log (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, by TEXT, at TEXT);
 `.trim();
 
 export const q = v => v == null ? 'NULL'
@@ -187,7 +188,7 @@ export async function readHistory(env, clan) {
   const db = env.DB;
   await db.exec(SCHEMA);
   const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
-  const [members, events, wars, players, periods, days, notes, stats, standings, battles] = await Promise.all([
+  const [members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog] = await Promise.all([
     all('SELECT tag,name,role,in_clan,first_seen,last_seen_game,updated_at FROM members WHERE clan = ?'),
     all('SELECT tag,name,kind,detail,at FROM member_events WHERE clan = ? ORDER BY at'),
     all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?'),
@@ -198,22 +199,26 @@ export async function readHistory(env, clan) {
     all('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?'),
     all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?'),
     all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?'),
+    all('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60'),
   ]);
   const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
-  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles };
+  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog };
 }
 
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];
 
-export async function writeNotes(env, clan, items, now = new Date().toISOString()) {
+export async function writeNotes(env, clan, items, now = new Date().toISOString(), by = null) {
   const ok = (items || []).filter(i => i && NOTE_KINDS.includes(i.kind) && typeof i.week === 'string' && typeof i.tag === 'string'
     && i.week.length < 20 && i.tag.length < 20 && (i.value == null || String(i.value).length < 4000)).slice(0, 200);
   const put = ok.filter(i => i.value != null).map(i => [clan, i.week, clean(i.tag) || '*', i.kind, String(i.value), now]);
   const del = ok.filter(i => i.value == null);
   const sql = [];
   if (put.length) sql.push(`INSERT OR REPLACE INTO notes (clan,week,tag,kind,value,at) VALUES ${rows(put)}`);
+  // Who changed what (results are saved automatically, so they're left out of the log).
+  const logged = ok.filter(i => i.kind !== 'result').map(i => [clan, i.week, clean(i.tag) || '*', i.kind, i.value == null ? null : String(i.value), by, now]);
+  if (logged.length) sql.push(`INSERT INTO note_log (clan,week,tag,kind,value,by,at) VALUES ${rows(logged)}`);
   if (del.length) sql.push(`DELETE FROM notes WHERE clan = ${q(clan)} AND (${del.map(i => `(week = ${q(i.week)} AND tag = ${q(clean(i.tag) || '*')} AND kind = ${q(i.kind)})`).join(' OR ')})`);
   await env.DB.exec(SCHEMA);
   if (sql.length) await env.DB.batch(sql.map(s => env.DB.prepare(s)));
-  return { saved: put.length, removed: del.length };
+  return { saved: put.length, removed: del.length, by };
 }

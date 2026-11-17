@@ -11,7 +11,9 @@ assert.equal((await go('v1/clans/%23PPCCR8VU/members', { CR_API_KEY: 'K' })).sta
 assert.deepEqual(calls.pop(), { url: 'https://proxy.royaleapi.dev/v1/clans/%23PPCCR8VU/members', auth: 'Bearer K' });
 await go('v1/clans/%23PPCCR8VU/riverracelog?limit=10', { CR_API_KEY: 'K' });
 assert.equal(calls.pop().url, 'https://proxy.royaleapi.dev/v1/clans/%23PPCCR8VU/riverracelog?limit=10');
-assert.equal((await go('v1/players/%23ABC', { CR_API_KEY: 'K' })).status, 400);
+assert.equal((await go('v1/players/%232PP', { CR_API_KEY: 'K' })).status, 200);   // recruit check
+assert.equal((await go('v1/players/%232PP/upcomingchests', { CR_API_KEY: 'K' })).status, 400);
+assert.equal((await go('v1/cards', { CR_API_KEY: 'K' })).status, 400);
 assert.equal((await go('v1/clans/%23PPCCR8VU', { CR_API_KEY: 'K', ALLOWED_CLANS: '#ABC123' })).status, 403);
 assert.equal((await go('v1/clans/%23PPCCR8VU', { CR_API_KEY: 'K', ALLOWED_CLANS: 'abc123, #ppccr8vu' })).status, 200);
 const st = await (await go('status', { CR_API_KEY: 'K', ALLOWED_CLANS: 'ppccr8vu' })).json();
