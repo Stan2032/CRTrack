@@ -30,7 +30,7 @@ Gives you a link like `https://crtrack.<you>.workers.dev/#PPCCR8VU` that anyone 
 3. Open the Worker → **Settings → Variables and Secrets** → **Add**:
    - `CR_API_KEY` (type **Secret**): your key from developer.clashroyale.com, allowed IP `45.79.218.79`
    - `ALLOWED_CLANS` (type Text, optional): e.g. `PPCCR8VU`, so the link only works for your clan
-4. Open the `workers.dev` link and send it.
+4. Open the `workers.dev` link and send it. With a key on the site, the page hides key setup, fills in the clan (if `ALLOWED_CLANS` has one) and pulls on open.
 
 Only `site/` is published. Samples and notes stay private. Every push redeploys.
 To limit who can open the page, turn on **Cloudflare Access** for the Worker and allow only your emails.

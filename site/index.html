@@ -95,21 +95,22 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
   <div class="row">
     <label class="tagin"><span>#</span><input id="tag" placeholder="CLANTAG" autocomplete="off" spellcheck="false"></label>
     <button class="btn main" id="pull">Pull</button>
-    <span class="links" id="links"></span>
   </div>
-  <details class="setup" id="setup">
-    <summary>Pull setup (one time)</summary>
-    <ol>
-      <li>Make a free key at <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a></li>
-      <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
-      <li>Paste the key here. It stays on this device.</li>
-      <li>Not needed if whoever hosts this site has added a key.</li>
-    </ol>
-    <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off"><button class="btn" id="savekey">Save</button></div>
+  <details class="setup" id="other">
+    <summary id="other-sum">Other ways: own key or CSVs</summary>
+    <div id="setup">
+      <ol>
+        <li>Make a free key at <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a></li>
+        <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
+        <li>Paste the key here. It stays on this device.</li>
+      </ol>
+      <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off"><button class="btn" id="savekey">Save</button></div>
+    </div>
+    <div class="links" id="links" style="margin-top:10px"></div>
+    <label class="drop" id="drop">Drop RoyaleAPI CSVs here
+      <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
+    </label>
   </details>
-  <label class="drop" id="drop">Or drop RoyaleAPI CSVs here
-    <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
-  </label>
   <div class="status" id="status"></div>
 </section>
 
@@ -437,6 +438,7 @@ let data = { roster: [], log: [], race: [], history: [] };
 let model = null, mode = 'end', day = 4, source = '';
 let store = { rules: { ...DEFAULT_RULES }, join: {}, over: {} };
 let settings = { key: '', tag: '' };
+let site = { key: false, clans: [] }; // what the hosting server offers
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late join, per day left', effortNet: 'Late join passes if all decks used',
@@ -485,8 +487,8 @@ async function pull() {
   const t = cleanInputTag();
   if (!VALID_TAG.test(t)) return say('Check the clan tag', true);
   // Own key: call the proxy directly. No key on a hosted copy: use the site's /api (key kept on the server).
-  const viaSite = !settings.key && /^https?:$/.test(location.protocol);
-  if (!settings.key && !viaSite) { $('#setup').open = true; $('#key').focus(); return say('Add an API key first', true); }
+  const viaSite = !settings.key && site.key;
+  if (!settings.key && !viaSite) { $('#other').open = true; $('#key').focus(); return say('Add an API key first', true); }
   say('Pulling…');
   const call = async path => {
     const url = (viaSite ? 'api/v1' : PROXY) + '/clans/' + encodeURIComponent('#' + t) + path;
@@ -507,7 +509,7 @@ async function pull() {
       : e === 404 ? (viaSite ? 'Clan not found, or this site has no pull' : 'Clan not found')
       : typeof e === 'number' ? 'Error ' + e : "Couldn't connect";
     say(msg, true);
-    if (e === 403 || e === 501) $('#setup').open = true;
+    if (e === 403 || e === 501) $('#other').open = true;
   }
 }
 
@@ -618,7 +620,7 @@ $('#pick').addEventListener('change', e => addFiles(e.target.files));
 $('#pull').onclick = pull;
 $('#tag').addEventListener('input', setLinks);
 $('#tag').addEventListener('keydown', e => { if (e.key === 'Enter') pull(); });
-$('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-war-audit:settings', settings); $('#setup').open = false; say(settings.key ? 'Key saved' : 'Key removed'); };
+$('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-war-audit:settings', settings); $('#other').open = false; say(settings.key ? 'Key saved' : 'Key removed'); };
 $('#m-end').onclick = () => setMode('end');
 $('#m-live').onclick = () => setMode('live');
 $('#day').onchange = e => { day = +e.target.value; render(); };
@@ -646,11 +648,20 @@ $('#export').onclick = exportMd;
 
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
 $('#key').value = settings.key || '';
-const hashTag = location.hash.replace(/^#/, '');
-$('#tag').value = hashTag || settings.tag || '';
-setLinks();
-renderRules();
-if ((settings.key || /^https?:$/.test(location.protocol)) && VALID_TAG.test(cleanInputTag())) pull();
+(async () => {
+  if (/^https?:$/.test(location.protocol)) {
+    try { const r = await fetch('api/status'); if (r.ok) site = await r.json(); } catch (e) {}
+  }
+  if (site.key) {
+    $('#setup').classList.add('hidden');
+    $('#other-sum').textContent = 'Use CSVs instead';
+  }
+  const hashTag = location.hash.replace(/^#/, '');
+  $('#tag').value = hashTag || settings.tag || (site.clans.length === 1 ? site.clans[0] : '');
+  setLinks();
+  renderRules();
+  if ((settings.key || site.key) && VALID_TAG.test(cleanInputTag())) pull();
+})();
 </script>
 </body>
 </html>
