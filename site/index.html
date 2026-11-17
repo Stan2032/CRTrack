@@ -120,6 +120,8 @@ span.tick { cursor: default; }
 #context { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
 .fresh { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted);
   background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: -6px 0 14px; }
+.freshmsg { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.freshmsg:empty { display: none; }
 .btn.small { padding: 5px 10px; font-size: 13px; }
 .btn:disabled { opacity: .6; cursor: default; }
 </style>
@@ -128,7 +130,7 @@ span.tick { cursor: default; }
 
 <h1>Clan War Audit</h1>
 <div id="sub"></div>
-<div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button></div>
+<div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button><span id="freshmsg" class="freshmsg" role="status"></span></div>
 
 <section class="step">
   <h2><span class="n">1</span>Clan</h2>
@@ -640,8 +642,8 @@ const label = s => s === 'Out' ? `Can't reach ${rules().target}` : s === 'Safe' 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
 function put(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
-const fmtDate = t => t ? new Date(t).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : '';
-const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const fmtDate = t => t ? new Date(t).toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const fmtTime = t => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
 
 // ---- choices: shared (server notes) with this-device fallback ----
 const localKey = () => 'cr-war-audit:' + (model?.clan.tag || 'none');
@@ -914,10 +916,11 @@ async function requestUpdate() {
   try {
     const r = await fetch('api/snapshot?clan=' + t, { method: 'POST', headers: codeOk ? { 'X-Edit-Key': settings.code } : {} });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 429) say(`Updated less than 5 minutes ago. Try again in ${Math.ceil(j.retryAfter / 60)} min.`, true);
-    else if (!r.ok) say("Couldn't update right now", true);
-    else await pull();
-  } catch (e) { say("Couldn't connect", true); }
+    const msg = m => { $('#freshmsg').textContent = m; setTimeout(() => { if ($('#freshmsg').textContent === m) $('#freshmsg').textContent = ''; }, 8000); };
+    if (r.status === 429) msg(`Already fresh. You can ask again in ${Math.max(1, Math.ceil(j.retryAfter / 60))} min.`);
+    else if (!r.ok) msg("Couldn't update right now. Try again shortly.");
+    else { await pull(); msg('Updated'); }
+  } catch (e) { $('#freshmsg').textContent = "Couldn't connect"; }
   b.disabled = false; b.textContent = 'Request updated data';
 }
 
