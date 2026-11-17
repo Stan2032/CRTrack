@@ -4,7 +4,7 @@ One HTML file. Works for any Clash Royale clan. Runs on your device, with no acc
 
 ## Use
 
-Open `index.html` in a browser, type the clan tag, then either:
+Open `site/index.html` in a browser (or your hosted link), type the clan tag, then either:
 
 - **Pull**: gets everything automatically. One-time setup: make a free key at
   [developer.clashroyale.com](https://developer.clashroyale.com) with allowed IP `45.79.218.79`
@@ -19,7 +19,23 @@ Then work down the page:
    **Week end** checks the last finished war. **Live** shows, during battle days, who can't reach the target any more.
 3. **Chat**: copy the messages into clan chat.
 
-Opening `index.html#CLANTAG` with a saved key pulls straight away. Choices are saved in your browser for each clan.
+Opening the page with `#CLANTAG` on the end pulls straight away. Choices are saved in your browser for each clan.
+
+## Share it (Cloudflare Pages, free)
+
+Gives you a link like `https://your-name.pages.dev/#PPCCR8VU` that anyone can open. Nobody else needs a key.
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** → pick `CRTrack`.
+2. Build settings: framework **None**, build command *empty*, output directory **`site`**. Deploy.
+3. **Settings → Variables and Secrets**, add:
+   - `CR_API_KEY` (type **Secret**): your key from developer.clashroyale.com, allowed IP `45.79.218.79`
+   - `ALLOWED_CLANS` (optional): e.g. `PPCCR8VU`, so the link only works for your clan
+4. Redeploy (Deployments → ⋯ → Retry). Send the link.
+
+Only `site/` is published. Samples and notes stay private. To limit who can open the page, add
+**Cloudflare Access** (Zero Trust, free for up to 50 people) and allow only your emails.
+
+Join days and overrides are saved in each person's own browser, not shared.
 
 ## Rules (defaults, change them in Rules)
 
@@ -37,8 +53,9 @@ Opening `index.html#CLANTAG` with a saved key pulls straight away. Choices are s
 
 ## Files
 
-- `index.html`: the app
+- `site/index.html`: the app
+- `functions/api/`: the Cloudflare piece that adds the key for Pull
 - `samples/`: real exports from #WINNING, week 138-2
-- `tests/check.mjs`: `node tests/check.mjs` checks the logic against the samples
+- `tests/`: `node tests/check.mjs` and `node tests/function.mjs`
 - `docs/HANDOFF.md`: background, maths, and decisions so far
 - `docs/gemini/`: the earlier Gemini work, kept for reference

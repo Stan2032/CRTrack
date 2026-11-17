@@ -103,6 +103,7 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
       <li>Make a free key at <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a></li>
       <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
       <li>Paste the key here. It stays on this device.</li>
+      <li>Not needed if whoever hosts this site has added a key.</li>
     </ol>
     <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off"><button class="btn" id="savekey">Save</button></div>
   </details>
@@ -483,10 +484,13 @@ function load(rows, src) {
 async function pull() {
   const t = cleanInputTag();
   if (!VALID_TAG.test(t)) return say('Check the clan tag', true);
-  if (!settings.key) { $('#setup').open = true; $('#key').focus(); return say('Add an API key first', true); }
+  // Own key: call the proxy directly. No key on a hosted copy: use the site's /api (key kept on the server).
+  const viaSite = !settings.key && /^https?:$/.test(location.protocol);
+  if (!settings.key && !viaSite) { $('#setup').open = true; $('#key').focus(); return say('Add an API key first', true); }
   say('Pulling…');
   const call = async path => {
-    const r = await fetch(PROXY + '/clans/' + encodeURIComponent('#' + t) + path, { headers: { Authorization: 'Bearer ' + settings.key } });
+    const url = (viaSite ? 'api/v1' : PROXY) + '/clans/' + encodeURIComponent('#' + t) + path;
+    const r = await fetch(url, viaSite ? {} : { headers: { Authorization: 'Bearer ' + settings.key } });
     if (!r.ok) throw r.status;
     return r.json();
   };
@@ -497,8 +501,13 @@ async function pull() {
     if (d) { day = d; $('#day').value = d; setMode('live'); } else setMode('end');
     say(`Pulled ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${d ? 'battle day ' + d : 'training days'}`);
   } catch (e) {
-    say(e === 403 ? 'Key refused. Check the allowed IP in pull setup.' : e === 404 ? 'Clan not found' : typeof e === 'number' ? 'Error ' + e : "Couldn't connect", true);
-    if (e === 403) $('#setup').open = true;
+    const msg = viaSite && e === 501 ? 'No key on this site. Add your own in pull setup.'
+      : viaSite && e === 403 ? 'Clan not allowed here, or key refused'
+      : e === 403 ? 'Key refused. Check the allowed IP in pull setup.'
+      : e === 404 ? (viaSite ? 'Clan not found, or this site has no pull' : 'Clan not found')
+      : typeof e === 'number' ? 'Error ' + e : "Couldn't connect";
+    say(msg, true);
+    if (e === 403 || e === 501) $('#setup').open = true;
   }
 }
 
@@ -641,7 +650,7 @@ const hashTag = location.hash.replace(/^#/, '');
 $('#tag').value = hashTag || settings.tag || '';
 setLinks();
 renderRules();
-if (settings.key && VALID_TAG.test(cleanInputTag())) pull();
+if ((settings.key || /^https?:$/.test(location.protocol)) && VALID_TAG.test(cleanInputTag())) pull();
 </script>
 </body>
 </html>

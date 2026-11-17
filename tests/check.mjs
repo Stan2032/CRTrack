@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
-const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
 const code = html.match(/<script id="logic">([\s\S]*?)<\/script>/)[1];
 const ctx = { module: { exports: {} } };
 vm.runInNewContext(code, ctx);
