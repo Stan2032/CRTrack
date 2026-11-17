@@ -48,7 +48,7 @@ function forecast(p, ctx) {
   if (fame >= target) return { prob: 1, expected: fame, low: fame, high: fame, basis: 'already reached' };
   const own = ctx.habits !== undefined ? ctx.habits : habits(p, ctx.lookback), h = own || clan;
   const daysAfter = Math.max(0, 4 - day);
-  const r = rng(p.tag + ':' + day + ':' + leftToday), runs = 2000, finals = [];
+  const r = rng(p.tag + ':' + day + ':' + leftToday), runs = ctx.runs || 2000, finals = [];
   const sd = Math.max(15, h.sd || 25);
   for (let i = 0; i < runs; i++) {
     let total = fame;
@@ -172,12 +172,13 @@ function calibrate(h, target, lookback = 10, perDay = 450) {
     const clan = clanHabits(ps, lookback);
     for (const p of ps) {
       const seen = dayRows[week][p.tag], first = Math.min(...Object.keys(seen).map(Number));
-      const goal = first > 1 ? (4 - first + 1) * perDay : target;   // joined during battle day `first`: that day and later count
+      if (first >= 4) continue;                                       // joined on the last day: excused, as on the page
+      const goal = first > 1 ? (4 - first) * perDay : target;         // same as the page: joined during day N -> (4 - N) days x perDay
       const own = habits(p, lookback);
       for (let day = first; day <= 4; day++) {
         const so = day === first ? 0 : seen[day - 1];
         if (so == null || so >= goal) continue;
-        const f = forecast(p, { target: goal, day, leftToday: 4, fame: so, lookback, clan, habits: own });
+        const f = forecast(p, { target: goal, day, leftToday: 4, fame: so, lookback, clan, habits: own, runs: 400 });
         samples.push({ prob: f.prob, hit: resultsBy[week][p.tag] >= goal ? 1 : 0 });
       }
     }

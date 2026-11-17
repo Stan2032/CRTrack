@@ -36,7 +36,11 @@ export async function handleApi(request, env) {
   // Notifications for the installed app
   if (url.pathname.startsWith('/api/push/') || url.pathname === '/api/alerts/latest') {
     if (!env.DB) return json({ reason: 'noHistory' }, 501);
-    if (url.pathname === '/api/alerts/latest') return json(await latestAlerts(env, allowed), 200, 'no-store');
+    if (url.pathname === '/api/alerts/latest') {
+      const c = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
+      if (c && !clanOk(c)) return json({ reason: 'clanNotAllowed' }, 403);
+      return json(await latestAlerts(env, allowed, c), 200, 'no-store');
+    }
     if (url.pathname === '/api/push/key') return json({ key: await publicKey(env) }, 200);
     if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
     let body; try { body = await request.json(); } catch (e) { return json({ reason: 'badJson' }, 400); }
@@ -56,6 +60,7 @@ export async function handleApi(request, env) {
       const one = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
       if (one) {
         if (!clanOk(one)) return json({ reason: 'clanNotAllowed' }, 403);
+        if (!allowed.length && !isEditor()) return json({ reason: 'needLeaderCode' }, 401);   // no clan list set: only leaders may pull
         if (!env.CR_API_KEY) return json({ reason: 'noServerKey' }, 501);
         const r = await requestSnapshot(env, one, isEditor());
         return json(r.body, r.status, 'no-store');

@@ -58,6 +58,7 @@ async function postNotes(items) {
   if (!codeOk || !model) return false;
   const r = await fetch('api/notes?clan=' + model.clan.tag, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ items }) });
   if (!r.ok) return false;
+  model.history ||= { notes: {}, events: [], weeks: 0, since: null, saved: false };
   for (const i of items) { const k = `${i.kind}|${i.week}|${i.tag}`; if (i.value == null) delete model.history.notes[k]; else model.history.notes[k] = i.value; }
   return true;
 }
@@ -100,13 +101,13 @@ async function pull() {
   say('Loading…');
   const call = async path => {
     const url = (viaSite ? 'api/v1' : PROXY) + '/clans/' + encodeURIComponent('#' + t) + path;
-    const r = await fetch(url, viaSite ? {} : { headers: { Authorization: 'Bearer ' + settings.key } });
+    const r = await fetch(url, viaSite ? { cache: 'no-store' } : { cache: 'no-store', headers: { Authorization: 'Bearer ' + settings.key } });
     if (!r.ok) throw r.status;
     return r.json();
   };
   try {
     const [clan, members, race, log, h] = await Promise.all([call(''), call('/members'), call('/currentriverrace'), call('/riverracelog?limit=10'),
-      site.history ? fetch('api/history?clan=' + t).then(r => r.ok ? r.json() : null).catch(() => null) : null]);
+      site.history ? fetch('api/history?clan=' + t, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : null]);
     hist = h;
     const rows = apiToRows({ clan, members, race, log });
     raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod, standings: rows.standings };
@@ -537,7 +538,8 @@ function renderStats() {
       + `<div class="hint">Busiest 4 hours: ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 (${Math.round(pt.window.share * 100)}% of ${pt.total} decks). Remind people just before.</div>`
     : '<div class="empty">Collecting on battle days (timed to within 15 minutes)</div>'));
   // Forecast accuracy, rerun on past battle days with only what was known then
-  const ck = [hist && hist.lastRun, (hist?.days || []).length, (hist?.notes || []).length, r.target, r.lookback, r.perDay].join('|');
+  const done = new Set((hist?.wars || []).map(w => w.week));
+  const ck = [[...done].join(','), (hist?.days || []).filter(d => done.has(d.week)).length, (hist?.notes || []).filter(n => n.kind === 'join').length, r.target, r.lookback, r.perDay].join('|');
   if (_cal.key !== ck) _cal = { key: ck, val: calibrate(hist, r.target, r.lookback, r.perDay) };
   const cal = _cal.val;
   parts.push(`<h3>How accurate the forecasts are</h3>` + (cal
@@ -742,7 +744,8 @@ async function toggleNotify() {
       const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((key.length + 3) % 4)), c => c.charCodeAt(0));
       const s2 = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
       const r = await fetch('api/push/subscribe', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ clan: model?.clan.tag || settings.tag, subscription: s2.toJSON() }) });
-      if (!r.ok) throw new Error('subscribe');
+      if (!r.ok) { await s2.unsubscribe().catch(() => {}); throw new Error('subscribe'); }
+      await (await caches.open('war-audit-meta')).put('/__clan', new Response(model?.clan.tag || settings.tag));
       await fetch('api/push/test', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ clan: model?.clan.tag || settings.tag }) });
     }
   } catch (e) { $('#notifytext').textContent = '🔔 Couldn’t turn on alerts. Try again.'; btn.disabled = false; return; }

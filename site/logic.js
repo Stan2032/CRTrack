@@ -287,8 +287,8 @@ function chatEnd(list, r) {
 function chatLive(list, r, opts = {}) {
   const here = list.filter(x => !x.gone);
   const left = here.filter(x => x.res.today < 4).sort((a, b) => a.res.today - b.res.today || a.name.localeCompare(b.name));
-  const out = list.filter(x => x.res.status === 'Out');
-  const close = list.filter(x => x.res.status === 'Need').sort((a, b) => b.res.need - a.res.need);
+  const out = here.filter(x => x.res.status === 'Out');
+  const close = here.filter(x => x.res.status === 'Need').sort((a, b) => b.res.need - a.res.need);
   const msgs = [];
   if (left.length) msgs.push({ title: 'Decks left', text: lines(`Battle day ${opts.day || ''}: ${opts.reset ? `decks reset at ${opts.reset} UK` : 'decks reset soon'}! Still to play:`.replace('day :', 'day:'),
     left.map(x => `${x.name} (${4 - x.res.today} left)`)) });

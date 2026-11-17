@@ -32,9 +32,8 @@ async function vapid(env) {
 
 export async function publicKey(env) { return (await vapid(env)).pub; }
 
-async function vapidAuth(env, endpoint) {
-  const { key, pub } = await vapid(env);
-  const sub = (await kvGet(env.DB, 'origin')) || 'https://github.com';
+async function vapidAuth(env, endpoint, keys) {
+  const { key, pub, sub } = keys;
   const head = enc({ typ: 'JWT', alg: 'ES256' });
   const body = enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub });
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(`${head}.${body}`));
@@ -62,10 +61,12 @@ export async function sendAlert(env, clan, key, title, body) {
   const changes = r?.meta?.changes ?? r?.changes ?? 1;
   if (!changes) return 0;
   const subs = (await env.DB.prepare('SELECT endpoint FROM push_subs WHERE clan = ?').bind(clan).all()).results;
+  if (!subs.length) return 0;
+  const keys = { ...(await vapid(env)), sub: (await kvGet(env.DB, 'origin')) || 'https://github.com' };   // once per alert, not per device
   let sent = 0;
   for (const { endpoint } of subs.slice(0, 20)) {
     try {
-      const res = await fetch(endpoint, { method: 'POST', headers: { TTL: '86400', Urgency: 'normal', Authorization: await vapidAuth(env, endpoint), 'Content-Length': '0' } });
+      const res = await fetch(endpoint, { method: 'POST', headers: { TTL: '86400', Urgency: 'normal', Authorization: await vapidAuth(env, endpoint, keys), 'Content-Length': '0' } });
       if (res.status === 404 || res.status === 410) await unsubscribe(env, endpoint);
       else if (res.ok) sent++;
     } catch (e) { /* one bad endpoint must not stop the rest */ }
@@ -73,8 +74,9 @@ export async function sendAlert(env, clan, key, title, body) {
   return sent;
 }
 
-export async function latestAlerts(env, clans) {
+export async function latestAlerts(env, clans, clan = '') {
   await env.DB.exec(PUSH_SCHEMA);
-  const where = clans.length ? `WHERE clan IN (${clans.map(q).join(',')})` : '';
-  return (await env.DB.prepare(`SELECT clan, key, title, body, at FROM alerts ${where} ORDER BY id DESC LIMIT 10`).all()).results;
+  const list = clan ? [clan] : clans;
+  const where = list.length ? `WHERE clan IN (${list.map(q).join(',')})` : '';
+  return (await env.DB.prepare(`SELECT id, clan, key, title, body, at FROM alerts ${where} ORDER BY id DESC LIMIT 10`).all()).results;
 }

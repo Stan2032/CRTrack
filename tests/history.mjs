@@ -142,6 +142,23 @@ console.log('History checks passed');
   await snapshotAll(env, { force: true, only: 'PPCCR8VU', now: Date.parse('2026-11-19T11:00:00.000Z') });
   const a = await latestAlerts(env, ['PPCCR8VU']);
   assert.ok(a.some(x => x.title === 'Clan members changed' && /Bob/.test(x.body) && /spots open/.test(x.body)), JSON.stringify(a));
+  // alerts are filtered by clan and carry ids (so the phone can show each one once)
+  await sendAlert(env, 'OTHER', 'o1', 'Other clan', 'x');
+  const mine = await latestAlerts(env, ['PPCCR8VU', 'OTHER'], 'PPCCR8VU');
+  assert.ok(mine.length && mine.every(a => a.clan === 'PPCCR8VU' && a.id > 0));
   globalThis.fetch = realFetch;
   console.log('Notification checks passed');
+}
+
+// "Request updated data" is limited even while pulls are failing
+{
+  const { requestSnapshot } = await import('../worker/history.js');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', { status: 403 });
+  const t0 = Date.parse('2026-11-21T12:00:00.000Z');
+  const a = await requestSnapshot(env, 'PPCCR8VU', false, t0);
+  assert.equal(a.status, 502, 'pull failed');
+  assert.equal((await requestSnapshot(env, 'PPCCR8VU', false, t0 + 60e3)).status, 429, 'still limited after a failure');
+  globalThis.fetch = realFetch;
+  console.log('Request limit checks passed');
 }

@@ -71,7 +71,7 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   hist.players.push({ week: '9-1', tag: 'L', fame: 950, decks: 8 });
   hist.days.push({ week: '9-1', tag: 'L', day: 3, fame: 500 });
   const c3 = S.calibrate(hist, 1800);
-  assert.equal(c3.n, c2.n + 2, 'late joiner forecast from their first day only (days 3 and 4)');
+  assert.equal(c3.n, c2.n + 1, 'late joiner: forecast from day 3 against 1 day x 450 (already past it by day 4)');
   // excused players are skipped
   hist.notes = [{ week: '9-1', tag: 'L', kind: 'join', value: 'excused' }];
   assert.equal(S.calibrate(hist, 1800).n, c2.n);

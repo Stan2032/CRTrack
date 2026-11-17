@@ -2,7 +2,7 @@
 // Free plan limits: 50 D1 queries and 10 ms CPU per run, so rows are written with one
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
-import { sendAlert } from './push.js';
+import { sendAlert, PUSH_SCHEMA } from './push.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -131,9 +131,22 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   if (sql.length) await db.batch(sql.map(s => db.prepare(s)));
   // For alerts: who joined/left this run, finished wars, and (on battle day 4) who can no longer reach the target.
   const TODAY_MAX = [0, 200, 400, 700, 900];
-  let target = 1800;
-  try { const n = await db.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first(); if (n) target = JSON.parse(n.value).target || target; } catch (e) {}
-  const out = day === 4 ? live.filter(p => here.has(clean(p.tag)) && p.fame + TODAY_MAX[Math.max(0, 4 - p.decksUsedToday)] < target).map(p => p.name) : [];
+  let target = 1800, perDay = 450;
+  try { const n = await db.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first(); if (n) { const j = JSON.parse(n.value); target = j.target || target; perDay = j.perDay || perDay; } } catch (e) {}
+  let out = [];
+  if (day === 4) {
+    // Each player's own target, as the page works it out: excused players skipped; late joiners
+    // (set by a leader, or seen joining after a battle day started) need perDay per battle day left.
+    const joins = Object.fromEntries((await db.prepare("SELECT tag, value FROM notes WHERE clan = ? AND week = ? AND kind = 'join'").bind(clan, week).all()).results.map(r => [r.tag, r.value]));
+    const starts = (await db.prepare("SELECT first_seen FROM periods WHERE clan = ? AND week = ? AND type != 'training' ORDER BY first_seen").bind(clan, week).all()).results.map(r => Date.parse(r.first_seen));
+    const joinedAt = Object.fromEntries((await db.prepare("SELECT tag, max(at) AS at FROM member_events WHERE clan = ? AND kind = 'join' GROUP BY tag").bind(clan).all()).results.map(r => [r.tag, Date.parse(r.at)]));
+    const goalFor = tag => {
+      const j = joins[tag] || (() => { const t = joinedAt[tag]; if (!t || !starts.length || t < starts[0]) return 'full'; return String(starts.filter(s => s <= t).length); })();
+      if (j === 'excused' || j === '4') return null;
+      return !j || j === 'full' || j === 'unknown' ? target : (4 - Number(j)) * perDay;
+    };
+    out = live.filter(p => here.has(clean(p.tag))).filter(p => { const g = goalFor(clean(p.tag)); return g != null && p.fame + TODAY_MAX[Math.max(0, 4 - p.decksUsedToday)] < g; }).map(p => p.name);
+  }
   return {
     clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
     joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
@@ -233,10 +246,12 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
 
 // On request from the page: anyone may ask, at most once every 5 minutes per clan.
 export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
-  await env.DB.exec(SCHEMA);
-  const r = await env.DB.prepare('SELECT max(updated_at) AS last FROM members WHERE clan = ?').bind(clan).first();
-  const last = r?.last ? Date.parse(r.last) : 0;
-  if (!isEditor && now - last < 5 * 60e3) return { status: 429, body: { reason: 'tooSoon', lastRun: r.last, retryAfter: Math.ceil((last + 5 * 60e3 - now) / 1000) } };
+  await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);
+  // Limited by the last request (successful or not) and the last successful pull, whichever is later.
+  const r = await env.DB.prepare("SELECT (SELECT max(updated_at) FROM members WHERE clan = ?1) AS ok, (SELECT v FROM kv WHERE k = 'snapreq:' || ?1) AS asked").bind(clan).first();
+  const last = Math.max(r?.ok ? Date.parse(r.ok) : 0, r?.asked ? Number(r.asked) : 0);
+  if (!isEditor && now - last < 5 * 60e3) return { status: 429, body: { reason: 'tooSoon', lastRun: r?.ok || null, retryAfter: Math.ceil((last + 5 * 60e3 - now) / 1000) } };
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('snapreq:' + clan, String(now)).run();
   const res = await snapshotAll(env, { force: true, now, only: clan });
   return res[0]?.error ? { status: 502, body: res[0] } : { status: 200, body: res[0] };
 }
