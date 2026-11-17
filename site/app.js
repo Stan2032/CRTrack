@@ -613,7 +613,7 @@ function renderRules() {
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
   $('#discordrow').classList.toggle('hidden', !(codeOk && site.discord));
-  $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone.` : 'With the leader code, your changes are saved for everyone.';
+  $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone. Remembered on this device.` : 'With the leader code, your changes are saved for everyone.';
 }
 
 // Set one rule, corrected to its allowed range, and say if it had to be changed.
@@ -673,6 +673,7 @@ $('#savecode').onclick = async () => {
   const c = $('#code').value.trim();
   codeOk = await checkCode(c);
   settings.code = codeOk ? c : ''; put('cr-war-audit:settings', settings);
+  if (codeOk) $('#code').value = '';   // nothing left in the box, so the browser has no "password" to offer to save
   say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render(); renderNotify();
 };
 $('#discordreg').onclick = async () => {
@@ -876,7 +877,7 @@ $('#key').value = settings.key || '';
   const hashTag = location.hash.replace(/^#/, '');
   $('#tag').value = hashTag || settings.tag || (site.clans.length === 1 ? site.clans[0] : '');
   setLinks();
-  if (settings.code) { settings.tag ||= cleanInputTag(); codeOk = await checkCode(settings.code); $('#code').value = codeOk ? settings.code : ''; }
+  if (settings.code) { settings.tag ||= cleanInputTag(); codeOk = await checkCode(settings.code); $('#code').value = ''; }
   renderRules();
   if ((settings.key || site.key) && VALID_TAG.test(cleanInputTag())) pull();
 })();
