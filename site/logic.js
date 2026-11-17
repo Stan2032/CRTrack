@@ -7,6 +7,7 @@ const DEFAULT_RULES = {
   demoteElders: true,
   elderWarnFirst: true,  // elders get a warning before demotion
   boatRepeatKick: true,  // boat attackers still under after a warning are kicked
+  warnClear: 3,      // a first & only warning clears after this many wars in a row at the target
   spareBoats: true,  // active boat users get a warning, not a kick
   boatShare: 50,     // % of decks on boats to count as a boat user
   holdWeeks: 3,      // passed this many wars in a row before...
@@ -165,6 +166,17 @@ const recent = (p, r) => p.weeks.slice(0, (r && r.lookback) || 10);
 function missCount(p, r) { return recent(p, r).filter(w => w.fame < r.target).length; }
 function avgMedals(p, r) { const w = recent(p, r); return w.length ? Math.round(w.reduce((s, x) => s + x.fame, 0) / w.length) : 0; }
 
+// Is a first & only warning still active for this war?
+//   warnedIn: the latest war before this one where a leader posted (ticked) a warning for them.
+//   It clears once they reach the target r.warnClear wars in a row after it.
+function warnState(p, r) {
+  if (!p.warnedIn) return null;
+  const after = p.before.filter(w => cmpKey(w.key, p.warnedIn) > 0).sort((a, b) => cmpKey(a.key, b.key));
+  let run = 0, cleared = false;
+  for (const w of after) { run = w.fame >= r.target ? run + 1 : 0; if (run >= r.warnClear) { cleared = true; break; } }
+  return { week: p.warnedIn, active: !cleared, run };
+}
+
 function judgeEnd(p, r, join, override) {
   const t = targetFor(join, r);
   const w = p.cur;
@@ -182,13 +194,13 @@ function judgeEnd(p, r, join, override) {
     else res = out('OK', t.late ? `Joined late, needed ${t.medals}` : '');
     if (boatPct >= 25) res.why = [res.why, `${boatPct}% of decks on boats`].filter(Boolean).join(' · ');
   } else {
-    const streak = streakBefore(p, r);
+    const streak = streakBefore(p, r), warned = warnState(p, r)?.active;
     if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
       res = out('Check', `Offline ${Math.floor(p.offlineDays)} days, but reached ${r.target}+ the ${streak} wars before`);
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
-    else if (p.role === 'elder' && r.demoteElders) res = !r.elderWarnFirst || (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
-      ? out('Demote', r.elderWarnFirst ? 'Elder, second miss in a row' : `Elder under ${r.target}`) : out('Warn', 'Elder, first miss');
-    else if (p.lastResult === 'Warn' && !(isBoater && !r.boatRepeatKick)) res = out('Kick', 'Under again after their first & only warning');
+    else if (p.role === 'elder' && r.demoteElders) res = !r.elderWarnFirst || (p.prev && p.prev.fame < r.target) || warned
+      ? out('Demote', warned ? `Elder, under again while on a warning (from war ${p.warnedIn})` : r.elderWarnFirst ? 'Elder, second miss in a row' : `Elder under ${r.target}`) : out('Warn', 'Elder, first miss');
+    else if (warned && !(isBoater && !r.boatRepeatKick)) res = out('Kick', `Under again while on a first & only warning (from war ${p.warnedIn})`);
     else if (isBoater) {
       // Boat attackers: a first & only warning; if they were warned (or under on boats) last war and still are, kick.
       const prevBoats = p.prev && p.prev.decks && p.prev.boats != null && 100 * p.prev.boats / p.prev.decks >= r.boatShare;
@@ -392,6 +404,10 @@ function applyHistory(model, h, liveWeek) {
     const prevRes = model.prevSeason ? notes[`result|${model.prevSeason}|${p.tag}`] || null : null;
     // A first & only warning only counts if a leader marked it as posted.
     p.lastResult = prevRes === 'Warn' && notes[`done|${model.prevSeason}|${p.tag}`] !== '1' ? 'WarnNotPosted' : prevRes;
+    // Latest war before this one where a first & only warning was given and posted (ticked done).
+    p.warnedIn = Object.keys(notes).filter(k => k.startsWith('result|') && k.endsWith('|' + p.tag) && notes[k] === 'Warn')
+      .map(k => k.split('|')[1]).filter(w => model.season && cmpKey(w, model.season) < 0 && notes[`done|${w}|${p.tag}`] === '1')
+      .sort(cmpKey).pop() || null;
     p.roleEvents = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'role').map(e => ({ at: ms(e.at), detail: String(e.detail) }));
     const left = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'leave').map(e => ms(e.at));
     p.leftAt = left.length ? Math.max(...left) : null;
@@ -432,4 +448,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

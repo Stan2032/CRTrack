@@ -15,7 +15,7 @@ const RULE_LABELS = {
   demoteElders: 'Elders who miss are demoted, not kicked', elderWarnFirst: 'Elders get a first & only warning before demotion',
   boatRepeatKick: 'Boat attackers still under after a warning are kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
   holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
-  promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
+  warnClear: 'Warning clears after this many wars in a row at target', promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'First & only warning', Check: 'Check on them', Review: 'Leaders decide',
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
@@ -196,6 +196,8 @@ function more(p) {
   if (bt) lines.push(`War battles ${mode === 'end' ? 'that war' : 'this war'}: ${bt}`);
   if (p.donations != null && !p.gone) lines.push(`Donations this week: ${p.donations} given, ${p.received ?? 0} received`);
   if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
+  const ws0 = mode === 'end' ? warnState(p, r) : null;
+  if (ws0) lines.push(ws0.active ? `On a first & only warning from war ${ws0.week} (clears after ${r.warnClear} wars in a row at ${r.target}+; ${ws0.run} so far)` : `Warning from war ${ws0.week} cleared (${r.warnClear} wars in a row at ${r.target}+)`);
   const rel = reliability(p, r.target, r.lookback);
   if (rel) lines.push(`Reliability ${rel.score}/100: reached ${r.target}+ in ${Math.round(rel.hit * 100)}% of wars, used ${Math.round(rel.deck * 100)}% of decks, average ${rel.avg.toLocaleString()}, last 3 wars ${rel.trend >= 0 ? '+' : ''}${rel.trend} vs before`);
   const pt = playTimes(hist?.raceEvents || [], p.tag);
@@ -361,6 +363,7 @@ function render() {
   fit();
   renderSteps(all, msgs);
   renderLog();
+  renderExplain();
   renderStats();
   renderFresh();
   renderNotify();
@@ -604,6 +607,48 @@ function renderStats() {
     + `<details class="more-stats"><summary>Charts and tables</summary>${parts.join('')}</details>`;
 }
 
+// ---- Clan rules, explained for members (written from the current rule settings) ----
+function rulesExplained() {
+  const r = rules(), n = x => Number(x).toLocaleString();
+  const sections = [
+    ['🎯 The target', [
+      `Get <b>${n(r.target)}+ medals every war</b>. A war has 4 battle days with 4 decks each (16 decks).`,
+      `Every battle earns medals, win or lose: losing all 16 still gives 1,600, so <b>just 2 wins is enough</b> if you play every deck.`]],
+    ['📅 Joining mid-war', [
+      `Joined after the battle days started? You need <b>${n(r.perDay)} per battle day left</b> after the day you joined (joined on day 1 = ${n(r.perDay * 3)}, day 2 = ${n(r.perDay * 2)}, day 3 = ${n(r.perDay)}).`,
+      `Joined on day 4: excused that war.` + (r.effortNet ? ` If you played every deck you could, you pass either way.` : '')]],
+    ['⚠️ Missing the target', [
+      `First miss: a <b>first & only warning</b>.`,
+      `It stays until you reach ${n(r.target)}+ <b>${r.warnClear} wars in a row</b>. Miss again before then: <b>members are kicked</b>` + (r.demoteElders ? `, <b>Elders are demoted</b>.` : '.'),
+      `Two misses in a row is also a kick` + (r.demoteElders ? ` (Elders: demoted)` : '') + `. New members who miss their first full war are kicked.`]],
+    ['⚔️ Duels, 1v1 and boats', [
+      `Medals per battle: <b>duels 250</b> a game won (100 lost), <b>1v1 200</b> (100), <b>boat attacks 125</b> (75). Duels first, boats last.`,
+      r.spareBoats ? `Mostly on boats and under? You get the warning plus a tip. ` + (r.boatRepeatKick ? `Still under on boats next war: kick.` : '') : '']],
+    ['💬 Going away?', [
+      `Tell a leader in chat. Regulars who reached the target <b>${r.holdWeeks}+ wars in a row</b> and go quiet for ${r.holdOffline}+ days get a check-in, not a kick.`]],
+    ['⭐ Becoming Elder', [
+      `Members with <b>${r.promoWeeks}+ wars</b> in the clan, at most <b>${r.promoMisses} miss</b>, and an average of <b>${n(r.promoAvg)}+</b> are put forward for Elder.`]],
+    ['👑 Leaders decide', [
+      `Leaders and co-leaders under the target, members back after leaving, and new members whose join day isn't known are decided by the leaders.`]],
+  ];
+  const chat = [
+    `📜 War rules: ${n(r.target)}+ medals every war (play all 16 decks; 2 wins is enough). Joined mid-war? ${n(r.perDay)} per battle day left.`,
+    `Miss once: first & only warning, until you hit ${n(r.target)}+ ${r.warnClear} wars in a row. Miss again before then: kicked${r.demoteElders ? ' (Elders demoted)' : ''}.`,
+    `Duels pay most, boats least 🚤❌ Away? Tell a leader 💬 ${r.promoWeeks}+ wars, max ${r.promoMisses} miss, avg ${n(r.promoAvg)}+ = Elder ⭐`,
+  ].flatMap(t => split(t, r.chatLimit))
+    // fewer messages: join parts while they still fit one chat message
+    .reduce((acc, t) => { const last = acc[acc.length - 1]; if (last && last.length + 1 + t.length <= r.chatLimit) acc[acc.length - 1] = last + '\n' + t; else acc.push(t); return acc; }, []);
+  return { sections, chat };
+}
+let explainTexts = [];
+function renderExplain() {
+  const { sections, chat } = rulesExplained();
+  explainTexts = chat;
+  $('#explain').innerHTML = sections.map(([h, ps]) => `<h3>${h}</h3>${ps.filter(Boolean).map(x => `<p>${x}</p>`).join('')}`).join('')
+    + `<h3>Post in clan chat</h3>${chat.map((t, i) => `<div class="card"><b>Part ${i + 1} of ${chat.length}<span class="cnt">${t.length}/${rules().chatLimit}</span></b><div class="quote">${esc(t)}</div><button class="copybtn" data-explain="${i}">Copy</button></div>`).join('')}
+       <div class="hint">Written from the current rules, so it updates if a rule changes.</div>`;
+}
+
 function renderLog() {
   if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
   const h = model.history, words = { join: 'joined', leave: 'left', role: 'role' };
@@ -687,6 +732,8 @@ $('#saverules').onclick = async () => {
   say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
 };
 document.addEventListener('click', e => {
+  const ex = e.target.closest('[data-explain]');
+  if (ex) return copyText(explainTexts[+ex.dataset.explain], ex);
   const cs = e.target.closest('[data-copystep]');
   if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
   const ma = e.target.closest('[data-markall]');

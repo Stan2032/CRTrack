@@ -90,3 +90,22 @@ assert.equal(L.raceDay({ periodType: 'warDay', periodIndex: 10 }), 1);
 
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
 console.log('All checks passed');
+
+// First & only warning: lasts until the target is reached r.warnClear wars in a row.
+{
+  const r3 = { ...L.DEFAULT_RULES, warnClear: 3 };
+  const mk = (before, cur) => ({ role: 'member', isNew: false, offlineDays: 0, warnedIn: '1-1', weeks: [cur, ...before], cur, before, prev: before[0] });
+  const w = (key, fame) => ({ key, fame, decks: 16, boats: 0 });
+  // warned in 1-1, passed 1-2, misses 1-3 -> kick
+  let p = mk([w('1-2', 2000), w('1-1', 1500)], w('1-3', 1500));
+  assert.equal(L.judgeEnd(p, r3, 'full').status, 'Kick');
+  assert.equal(L.warnState(p, r3).active, true);
+  // warned in 1-1, then 3 good wars, then a miss -> first warning again
+  p = mk([w('2-1', 2000), w('1-4', 2000), w('1-3', 1500), w('1-2', 2000), w('1-1', 1500)], w('2-2', 1500));
+  assert.equal(L.warnState(p, r3).active, true, 'a miss in 1-3 restarts the count: only 2 good wars since');
+  assert.equal(L.judgeEnd(p, r3, 'full').status, 'Kick');
+  p = mk([w('2-1', 2000), w('1-4', 2000), w('1-3', 2000), w('1-2', 2000), w('1-1', 1500)], w('2-2', 1500));
+  assert.equal(L.warnState(p, r3).active, false);
+  assert.equal(L.judgeEnd(p, r3, 'full').status, 'Warn');
+  console.log('Warning duration checks passed');
+}

@@ -193,3 +193,7 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
 .guide { border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 10px; padding: 10px 12px; background: var(--card); margin-bottom: 14px; }
 .guide ol { margin: 6px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
 .guide li { margin: 4px 0; }
+#explain h3 { font-size: 14px; margin: 14px 0 4px; } #explain h3:first-child { margin-top: 0; }
+#explain p { margin: 4px 0; font-size: 14px; line-height: 1.5; }
+#explain .card { margin-top: 8px; }
+.quote { font-size: 13px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; white-space: pre-wrap; }

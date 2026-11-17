@@ -67,7 +67,7 @@ Every clan sets its own under **Rules** (saved for all leaders with the leader c
 |---|---|
 | Member, first miss | First & only warning |
 | Member, new or second miss in a row | Kick |
-| Member, under again after a first & only warning | Kick |
+| Member, under again while on a first & only warning (it clears after the target is reached 3 wars in a row) | Kick |
 | Elder, first miss | First & only warning *(switch: Elders get a warning before demotion)* |
 | Elder, second miss in a row or after a warning | Demote |
 | Mostly boat attacks (50%+ of decks, 8+ decks), including new members | First & only warning, with the boat attack tip |
