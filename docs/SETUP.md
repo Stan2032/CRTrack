@@ -12,7 +12,7 @@ Everything needed to set this up from nothing, or to fix one part. Work top to b
 8. [Tell the clan](#8-tell-the-clan)
 9. [Troubleshooting](#9-troubleshooting)
 
-The #WINNING site is **https://crtrack.stane203.workers.dev** (members' page: `/me`).
+The #WINNING site is **https://crtrack.stane203.workers.dev** (members' page: `/mystats`).
 
 ---
 
@@ -118,7 +118,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | Who | Command | What |
 |---|---|---|
 | Anyone | `/link #TAG`, `/unlink` | Link your Discord to your player; role and nickname follow the game |
-| Anyone | `/me` | Your full war report (only you see it; `share` to post it) |
+| Anyone | `/mystats` | Your full war report (only you see it; `share` to post it) |
 | Anyone | `/stats` | Clan stats |
 | Anyone | `/season` | Season recap (latest, or `number`) |
 | Anyone | `/scout` | The clans we're racing: their recent results vs ours |
@@ -155,7 +155,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 
 Clan chat (fits the 256-character limit):
 
-> Join our Discord! Link with /link #YOURTAG to get your role. /me = your war report, /remind 3 = reminder before
+> Join our Discord! Link with /link #YOURTAG to get your role. /mystats = your war report, /remind 3 = reminder before
 > reset, /away = tell leaders you're away.
 
 Clan description (128 characters): the site writes versions that fit, from your rules, under **Clan rules explained →

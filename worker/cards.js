@@ -57,17 +57,12 @@ export async function meCard(env, clan, tag) {
     const word = s => s >= 85 ? 'Very reliable' : s >= 70 ? 'Reliable' : s >= 55 ? 'Hit and miss' : 'Unreliable';
     embeds.push({ title: '📈 Your wars', color: rel ? (rel.score >= 70 ? COLOR.good : rel.score >= 55 ? COLOR.mid : COLOR.bad) : COLOR.info,
       description: [
-        `Last war (${last.key}): **${n(last.fame)}** medals, ${last.decks}/16 decks ${last.fame >= T ? '✅' : '❌'}`,
-        '```', ...shown.map(w => `${w.key.padEnd(6)} ${bar(w.fame / top, 12)} ${n(w.fame).padStart(5)} ${w.fame >= T ? '✓' : '✗'}`), '```',
-        `Average **${n(avg)}** · best **${n(best.fame)}** (${best.key}) · ~${perDeck} medals per deck`,
-        streak ? `🔥 **${streak} war${streak === 1 ? '' : 's'} in a row** at ${n(T)}+` : `Reached ${n(T)}+ in ${shown.filter(w => w.fame >= T).length} of your last ${shown.length} wars`,
-        `${weeks.length} war${weeks.length === 1 ? '' : 's'} tracked`,
+        '```', `War    Medals (✓ = ${n(T)}+)`, ...shown.map(w => `${w.key.padEnd(6)} ${n(w.fame).padStart(5)} ${w.fame >= T ? '✓' : '✗'} ${bar(w.fame / 3600, 10)}`), '```',
+        `Average **${n(avg)}** · best **${n(best.fame)}** · ${perDeck} medals per battle`,
+        streak ? `🔥 **${streak} war${streak === 1 ? '' : 's'} in a row** at ${n(T)}+` : `${n(T)}+ in ${shown.filter(w => w.fame >= T).length} of your last ${shown.length} wars`,
       ].join('\n'),
-      fields: rel ? [{ name: `Consistency: ${rel.score}/100 · ${word(rel.score)}`, value: [
-        `${bar(rel.hit, 8)} Reached target ${pct(rel.hit)} of wars (40%)`,
-        `${bar(rel.deck, 8)} Decks used ${pct(rel.deck)} (30%)`,
-        `${bar(Math.min(1, rel.avg / (T * 1.5)), 8)} Medals vs target, average ${n(rel.avg)} (20%)`,
-        `${bar(Math.max(0, Math.min(1, 0.5 + rel.trend / (2 * T))), 8)} Last 3 wars ${rel.trend >= 0 ? '+' : ''}${n(rel.trend)} vs before (10%)`].join('\n') }] : [] });
+      fields: rel ? [{ name: `Reliability: ${rel.score}/100 · ${word(rel.score).toLowerCase()}`, value:
+        `From your last ${rel.wars} wars: ${n(T)}+ in ${Math.round(rel.hit * rel.wars)}, ${pct(rel.deck)} of battles played, average ${n(rel.avg)}, last 3 wars ${rel.trend >= 0 ? '+' : ''}${n(rel.trend)} vs earlier.` }] : [] });
   }
 
   // How you play
@@ -111,11 +106,11 @@ export async function statsBoard(env, clan) {
   // Recent wars
   const recent = ws.slice(0, 8).map(w => { const ps = (byWeek[w.week] || []).filter(x => x.decks > 0); return { ...w, total: ps.reduce((s, x) => s + x.fame, 0), passed: ps.filter(x => x.fame >= T).length, played: ps.length }; });
   if (recent.length) {
-    const top = Math.max(...recent.map(w => w.total)) || 1;
-    lines.push('', `**Last ${recent.length} wars** (medals · reached ${n(T)})`, '```',
-      ...recent.map(w => `${w.week.padEnd(6)} ${bar(w.total / top, 10)} ${n(w.total).padStart(7)}  ${String(w.passed).padStart(2)}/${String(w.played).padEnd(2)} ${w.rank > 0 ? ['🥇', '🥈', '🥉'][w.rank - 1] || `#${w.rank}` : ''}`), '```');
+    const pl = k => ['1st', '2nd', '3rd', '4th', '5th'][k - 1] || '';
+    lines.push('', `**Last ${recent.length} wars**`, '```', `War    Place  Got ${n(T)}+      Clan medals`,
+      ...recent.map(w => `${w.week.padEnd(6)} ${pl(w.rank).padEnd(5)}  ${`${w.passed}/${w.played}`.padStart(5)} ${bar(w.played ? w.passed / w.played : 0, 6)}  ${n(w.total).padStart(7)}`), '```');
     const rates = recent.filter(w => w.played).map(w => w.passed / w.played);
-    if (rates.length >= 4) { const a = rates.slice(0, 2).reduce((s, x) => s + x, 0) / 2, b = rates.slice(2).reduce((s, x) => s + x, 0) / (rates.length - 2); lines.push(`Pass rate: ${pct(a)} over the last 2 wars vs ${pct(b)} before ${a > b + 0.03 ? '📈' : a < b - 0.03 ? '📉' : '➡️'}`); }
+    if (rates.length >= 4) { const a = rates.slice(0, 2).reduce((s, x) => s + x, 0) / 2, b = rates.slice(2).reduce((s, x) => s + x, 0) / (rates.length - 2); lines.push(`${a > b + 0.03 ? '📈' : a < b - 0.03 ? '📉' : '➡️'} Last 2 wars: ${pct(a)} of players got ${n(T)}+ (${pct(b)} the wars before)`); }
   }
 
   // Per member: reliability, streaks, improvement (current members, at least 3 wars)
@@ -126,19 +121,19 @@ export async function statsBoard(env, clan) {
   }).filter(x => x.wars >= 3 && x.rel);
   if (people.length) {
     const rel = people.slice().sort((a, b) => b.rel.score - a.rel.score).slice(0, 5);
-    lines.push('', `🏅 **Most reliable:** ${rel.map((x, i) => `${i + 1}. ${x.name} ${x.rel.score}`).join(' · ')}`);
+    lines.push('', `🏅 **Most reliable** (score out of 100): ${rel.map(x => `${x.name} ${x.rel.score}`).join(' · ')}`);
     const st = people.filter(x => x.streak >= 3).sort((a, b) => b.streak - a.streak).slice(0, 5);
-    if (st.length) lines.push(`🔥 **Streaks at ${n(T)}+:** ${st.map(x => `${x.name} ${x.streak}${x.streak >= 26 ? '+' : ''}`).join(' · ')}`);
+    if (st.length) lines.push(`🔥 **Wars in a row at ${n(T)}+:** ${st.map(x => `${x.name} ${x.streak}${x.streak >= 26 ? '+' : ''}`).join(' · ')}`);
     const imp = people.filter(x => x.rel.trend >= 200).sort((a, b) => b.rel.trend - a.rel.trend).slice(0, 3);
-    if (imp.length) lines.push(`📈 **Most improved** (last 3 wars vs before): ${imp.map(x => `${x.name} +${n(x.rel.trend)}`).join(' · ')}`);
+    if (imp.length) lines.push(`📈 **Most improved** (average medals, last 3 wars vs earlier): ${imp.map(x => `${x.name} +${n(x.rel.trend)}`).join(' · ')}`);
     const dist = [0, 0, 0, 0]; for (const x of people) dist[x.rel.score >= 85 ? 0 : x.rel.score >= 70 ? 1 : x.rel.score >= 55 ? 2 : 3]++;
-    lines.push(`Consistency: ${dist[0]} very reliable · ${dist[1]} reliable · ${dist[2]} hit and miss · ${dist[3]} unreliable`);
+    lines.push(`Of ${people.length} members with 3+ wars: ${[[dist[0], 'very reliable'], [dist[1], 'reliable'], [dist[2], 'hit and miss'], [dist[3], 'unreliable']].filter(x => x[0]).map(x => `${x[0]} ${x[1]}`).join(' · ')}`);
   }
 
   // Battle types (clan-wide)
   const PER = { duel: [250, 100], pvp: [200, 100], boat: [125, 75] }, names = { duel: 'Duels', pvp: '1v1', boat: 'Boats' };
   const bt = battles.results.filter(x => PER[x.type] && x.won + x.lost >= 5).sort((a, b) => Object.keys(PER).indexOf(a.type) - Object.keys(PER).indexOf(b.type));
-  if (bt.length) lines.push('', `⚔️ **Battle types:** ${bt.map(x => { const g = x.won + x.lost; return `${names[x.type]} ${pct(x.won / g)} won (~${Math.round((x.won * PER[x.type][0] + x.lost * PER[x.type][1]) / g)}/deck)`; }).join(' · ')}`);
+  if (bt.length) lines.push('', `⚔️ **Medals per battle:** ${bt.map(x => { const g = x.won + x.lost; return `${names[x.type]} ${Math.round((x.won * PER[x.type][0] + x.lost * PER[x.type][1]) / g)}${x.type === 'boat' ? '' : ` (${pct(x.won / g)} won)`}`; }).join(' · ')}`);
 
   // Busiest hours (UK), from deck plays in the last 5 weeks
   const hc = Array(24).fill(0), off = ukHourOffset();
@@ -152,7 +147,7 @@ export async function statsBoard(env, clan) {
 
   // Members and donations
   const mv = Object.fromEntries(moves.results.map(x => [x.kind, x.c]));
-  lines.push('', `👥 Last 7 days: ${mv.join || 0} joined · ${mv.leave || 0} left · ${50 - here.size} spot${50 - here.size === 1 ? '' : 's'} open`);
+  lines.push('', `👥 Last 7 days: ${mv.join || 0} joined · ${mv.leave || 0} left · ${here.size >= 50 ? 'clan full' : `${50 - here.size} spot${50 - here.size === 1 ? '' : 's'} open`}`);
   const dn = donors.results.filter(x => here.has(x.tag) && x.donations > 0);
   if (dn.length) lines.push(`🎁 **Top donors this week:** ${dn.map(x => `${here.get(x.tag)} ${n(x.donations)}`).join(' · ')}`);
   lines.push(`_Updated ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} UK_`);

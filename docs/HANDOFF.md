@@ -32,7 +32,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/push.js` | Web Push (VAPID keys made on first use, kept in D1) |
 | `worker/discord.js` | Discord bot |
 | `worker/extras.js` | Season recap, rival scouting, weekly digest, monthly backup |
-| `worker/cards.js` | `/me` report and the clan stats board |
+| `worker/cards.js` | `/mystats` report and the clan stats board |
 | `worker/leaders.js` | After-war to-do list for the leaders' channel (decisions from `logic.gen.js`) |
 | `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
 | `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
@@ -113,7 +113,7 @@ reached the target, who didn't), battle day 4 can't-reach (per-player targets), 
 4 hours, data pulls failing. Pushes carry no data; the phone fetches `/api/alerts/latest?clan=` and shows unseen ones.
 
 Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
-- Anyone: `/link #TAG`, `/unlink`, `/me` (full report in cards: this war with forecast and place in the clan, last 10 wars
+- Anyone: `/link #TAG`, `/unlink`, `/mystats` (full report in cards: this war with forecast and place in the clan, last 10 wars
   as bars, consistency breakdown, streak, battle types, play times; `share` to post publicly), `/stats` (clan stats board),
   `/away days reason` (absence: saved as a shared `away` note; under target while
   away during a war → **Leaders decide** instead of kick/warn, shown on the page), `/remind hours` (private message when a

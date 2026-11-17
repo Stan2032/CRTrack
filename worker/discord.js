@@ -23,7 +23,7 @@ const cleanTag = t => String(t || '').trim().toUpperCase().replace(/^#/, '').rep
 export const COMMANDS = [
   { name: 'link', description: 'Link your Discord to your Clash Royale account', options: [{ type: 3, name: 'tag', description: 'Your player tag, e.g. #ABC123', required: true }] },
   { name: 'unlink', description: 'Remove the link between your Discord and Clash Royale accounts' },
-  { name: 'me', description: 'Your full war report: this war, forecast, history, consistency, how you play', options: [
+  { name: 'mystats', description: 'Your full war report: this war, forecast, history, consistency, how you play', options: [
     { type: 5, name: 'share', description: 'Post it for everyone to see (default: only you)' }] },
   { name: 'stats', description: 'Clan stats: recent wars, most reliable, streaks, battle types, busiest hours', options: [
     { type: 5, name: 'share', description: 'Post it for everyone to see (default: only you)' }] },
@@ -191,7 +191,7 @@ export async function handleDiscord(request, env, ctx) {
       later(syncOne(env, guild, cfg, user, null));
       return Response.json(reply('Unlinked.'));
     }
-    case 'me': {
+    case 'mystats': case 'me': {
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
       if (!link) return Response.json(reply('Link your account first: `/link #YOURTAG`'));
       const card = await meCard(env, clan, link.tag);

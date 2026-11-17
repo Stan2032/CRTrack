@@ -200,12 +200,12 @@ const meC = await meCard(env, 'PPCCR8VU', '2VJ9V2PV');
 const all = JSON.stringify(meC);
 assert.equal(meC.embeds[0].title, '⚔️ This war · battle day 2 of 4');
 assert.match(meC.embeds[0].description, /\*\*900\*\* \/ 2,000 medals[\s\S]*1,100\*\* more[\s\S]*2\*\* decks left today[\s\S]*Forecast: \*\*\w[\s\S]*2nd of 2 in the clan[\s\S]*Day 1: 4\/4 decks · Day 2: 2\/4 decks/);
-assert.match(meC.embeds[1].description, /Last war \(2-1\): \*\*2,600\*\*[\s\S]*```[\s\S]*2-1 .*2,600 ✓[\s\S]*🔥 \*\*5 wars in a row\*\*/);
-assert.match(meC.embeds[1].fields[0].name, /Consistency: \d+\/100/);
+assert.match(meC.embeds[1].description, /```\nWar    Medals \(✓ = 2,000\+\)\n2-1    2,600 ✓ [█░]+[\s\S]*🔥 \*\*5 wars in a row\*\*/);
+assert.match(meC.embeds[1].fields[0].name, /Reliability: \d+\/100/); assert.match(meC.embeds[1].fields[0].value, /From your last 5 wars: 2,000\+ in 5, 100% of battles played, average 2,120/);
 assert.match(meC.embeds[2].description, /Duels:\*\* 6W–2L \(75% won\)[\s\S]*Boat attacks:\*\* 2W–4L/);
 assert.ok(all.length < 6000, 'within Discord\'s embed limit');
 const sb = await statsBoard(env, 'PPCCR8VU');
-assert.match(sb, /Clan stats\*\* · 2\/50 members[\s\S]*Last 5 wars[\s\S]*2-1 .*4,100 +1\/2 +🥇[\s\S]*Most reliable:\*\* 1\. Luke[\s\S]*Streaks at 2,000\+:\*\* Luke 5[\s\S]*Battle types:\*\* Duels 75% won \(~213\/deck\) · Boats 33% won[\s\S]*Top donors this week:\*\* Luke 320 · perc 150/);
+assert.match(sb, /Clan stats\*\* · 2\/50 members[\s\S]*Last 5 wars\*\*\n```\nWar    Place  Got 2,000\+      Clan medals\n2-1    1st      1\/2 [█░]{6}    4,100[\s\S]*Most reliable\*\* \(score out of 100\): Luke[\s\S]*Wars in a row at 2,000\+:\*\* Luke 5[\s\S]*Medals per battle:\*\* Duels 213 \(75% won\) · Boats 92[\s\S]*Top donors this week:\*\* Luke 320 · perc 150/);
 assert.ok(sb.length <= 1990);
 assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: member('U1'), data: { name: 'stats', options: [] } })), /Clan stats/);
 
