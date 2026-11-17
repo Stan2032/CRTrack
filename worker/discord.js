@@ -29,6 +29,7 @@ export const COMMANDS = [
     { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
     { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
+  { name: 'rules', description: 'Leaders: post the clan rules here (kept up to date automatically)' },
 ];
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
@@ -150,6 +151,12 @@ export async function handleDiscord(request, env, ctx) {
       await setConfig(env, guild, { clan, channel: opt.channel, roles });
       return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ' Roles follow the game for linked members (run `/sync` once now).' : ' Add roles any time by running /setup again.')));
     }
+    case 'rules': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const text = rulesText(await clanRules(env, clan));
+      later(upsert(env, 'discord:rules:' + guild, i.channel_id || i.channel?.id, text));
+      return Response.json(reply('Posting the rules here. I\'ll edit that message whenever the rules change on the site. Pin it to keep it handy.'));
+    }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       later(syncGuild(env, guild, cfg, clan, 25));
@@ -190,4 +197,122 @@ export async function discordAfterSnapshot(env, clan, changedTags) {
   if (!discordReady(env) || !changedTags.length) return;
   await setupDB(env);
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) await syncGuild(env, cfg.guild, cfg, clan, 10, changedTags);
+}
+
+// ---------------------------------------------------------------------------
+// Messages the bot keeps up to date by editing them: the live war board, battle-day summaries, and the rules.
+
+// Defaults for the rules (same as DEFAULT_RULES in site/logic.js; tests/discord.mjs checks they match).
+export const RULE_DEFAULTS = { target: 1800, perDay: 450, effortNet: true, demoteElders: true, elderWarnFirst: true, boatRepeatKick: true,
+  warnClear: 3, spareBoats: true, boatShare: 50, holdWeeks: 3, holdOffline: 3, promoWeeks: 6, promoMisses: 1, promoAvg: 2200 };
+const n = x => Number(x).toLocaleString('en-GB');
+const ukClock = t => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
+const place = i => ['1st', '2nd', '3rd', '4th', '5th'][i] || `${i + 1}th`;
+
+async function clanRules(env, clan) {
+  const row = await env.DB.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first();
+  let saved = {}; try { saved = JSON.parse(row?.value || '{}'); } catch (e) {}
+  return { ...RULE_DEFAULTS, ...saved };
+}
+
+export function rulesText(r) {
+  return [
+    `📜 **Clan war rules**`,
+    `🎯 **${n(r.target)}+ medals every war.** 4 battle days × 4 decks. Every battle earns medals, win or lose: lose all 16 and you still get 1,600, so 2 wins is enough if you play every deck.`,
+    `📅 **Joined mid-war?** ${n(r.perDay)} per battle day left after the day you joined (day 1 = ${n(r.perDay * 3)}, day 2 = ${n(r.perDay * 2)}, day 3 = ${n(r.perDay)}). Joined on day 4: excused.${r.effortNet ? ' Played every deck you could? You pass either way.' : ''}`,
+    `⚠️ **Miss once:** a first & only warning. It stays until you reach ${n(r.target)}+ ${r.warnClear} wars in a row. **Miss again before then:** kicked${r.demoteElders ? ' (Elders demoted)' : ''}. Two misses in a row is also a kick.`,
+    `⚔️ **Duels pay most** (250 a game won), then 1v1 (200), boats least (125).${r.spareBoats ? ` Mostly on boats and under? Warning plus a tip${r.boatRepeatKick ? '; still under on boats next war: kick' : ''}.` : ''}`,
+    `💬 **Going away?** Tell a leader. Regulars (${r.holdWeeks}+ wars in a row at target) who go quiet ${r.holdOffline}+ days get a check-in, not a kick.`,
+    `⭐ **Elder:** ${r.promoWeeks}+ wars in the clan, at most ${r.promoMisses} miss, average ${n(r.promoAvg)}+.`,
+    `_Kept up to date automatically when the rules change._`,
+  ].join('\n\n');
+}
+
+// Edit a remembered message, or post a new one if it's gone. Remembers the message id under `key`.
+async function upsert(env, key, channel, content) {
+  const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first();
+  const body = { content: content.slice(0, 1990), allowed_mentions: { parse: [] } };
+  if (saved) {
+    const { channel: ch, id } = JSON.parse(saved.v);
+    const ok = await dapi(env, 'PATCH', `/channels/${ch}/messages/${id}`, body).then(() => true).catch(() => false);
+    if (ok) return id;
+  }
+  const m = await dapi(env, 'POST', `/channels/${channel}/messages`, body);
+  if (m?.id) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, JSON.stringify({ channel, id: m.id })).run();
+  return m?.id;
+}
+
+// The live war board: one message per war, edited after every pull on battle days.
+export async function warBoard(env, r, now) {
+  if (!discordReady(env) || !r.day || !r.week || !r.board) return 0;
+  await setupDB(env);
+  const b = r.board, st = b.standings, i = st.findIndex(c => c.tag === r.clan), me = st[i];
+  const y = Object.fromEntries((await env.DB.prepare('SELECT rival, fame FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(r.clan, r.week, r.day - 1).all()).results.map(x => [x.rival, x.fame]));
+  let gap = '';
+  if (me && st.length > 1) {
+    const other = i > 0 ? st[i - 1] : st[1], g = Math.abs(other.fame - me.fame), gy = y[other.tag] != null && y[me.tag] != null ? Math.abs(y[other.tag] - y[me.tag]) : null;
+    gap = i > 0 ? ` · ${n(g)} behind ${cleanName(other.name)}` : ` · leading ${cleanName(other.name)} by ${n(g)}`;
+    if (gy != null && gy !== g) gap += i > 0 ? (g < gy ? ' (closing ▲)' : ' (gap growing ▼)') : (g > gy ? ' (pulling away ▲)' : ' (they\'re closing ▼)');
+  }
+  const pct = b.decksTotal ? Math.round(100 * b.decksUsed / b.decksTotal) : 0;
+  const content = [
+    `⚔️ **War ${r.week} · battle day ${r.day} of 4**`,
+    me ? `🏁 ${place(i)} of ${st.length} · ${n(me.fame)} medals${gap}` : '',
+    `🎯 ${b.reached} of ${b.members} have reached ${n(r.target)}`,
+    `🃏 Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
+    b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
+    `_Updated ${ukClock(now)} UK_`,
+  ].filter(Boolean).join('\n');
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && c.channel)) {
+    if (await upsert(env, `discord:board:${cfg.guild}:${r.week}`, cfg.channel, content).catch(() => null)) sent++;
+  }
+  return sent;
+}
+
+// Summary of a finished battle day (posted once): medals gained and the change vs the day before,
+// decks used, place, and the day's top scorers. day = the battle day that just ended (1–4).
+export async function daySummary(env, clan, week, day) {
+  if (!discordReady(env) || day < 1 || day > 4) return 0;
+  await setupDB(env);
+  const once = `dsum:${clan}:${week}:${day}`;
+  if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(once).first()) return 0;
+  const rows = d => env.DB.prepare('SELECT tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
+  const stand = d => env.DB.prepare('SELECT rival, name, fame FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
+  const [today, before, st, stBefore, stTwo] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1), stand(day - 2)]);
+  if (!today.length) return 0;
+  const prevFame = Object.fromEntries(before.map(p => [p.tag, p.fame]));
+  const gains = today.map(p => ({ name: p.name, gain: p.fame - (prevFame[p.tag] || 0) })).sort((a, b) => b.gain - a.gain);
+  const used = today.reduce((t, p) => t + Math.min(4, p.today), 0), total = today.length * 4;
+  const ours = rs => rs.find(x => x.rival === clan)?.fame;
+  const gain = ours(st) != null ? ours(st) - (ours(stBefore) ?? 0) : gains.reduce((t, x) => t + x.gain, 0);
+  const prevGain = day > 1 && ours(stBefore) != null ? ours(stBefore) - (ours(stTwo) ?? 0) : null;
+  const change = prevGain ? Math.round(100 * (gain - prevGain) / prevGain) : null;
+  const sorted = st.slice().sort((a, b) => b.fame - a.fame), i = sorted.findIndex(x => x.rival === clan);
+  const content = [
+    `📊 **Battle day ${day} summary · war ${week}**`,
+    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}`,
+    `Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
+    i >= 0 ? `Place: ${place(i)} of ${sorted.length}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
+    `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
+  ].filter(Boolean).join('\n');
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.channel)) {
+    await dapi(env, 'POST', `/channels/${cfg.channel}/messages`, { content, allowed_mentions: { parse: [] } }).then(() => sent++).catch(() => {});
+  }
+  return sent;
+}
+
+// Re-write every posted rules message for this clan (after the rules change on the site).
+export async function updateRulesMessages(env, clan) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  const text = rulesText(await clanRules(env, clan));
+  let n2 = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:rules:' + cfg.guild).first();
+    if (saved && await upsert(env, 'discord:rules:' + cfg.guild, JSON.parse(saved.v).channel, text).catch(() => null)) n2++;
+  }
+  return n2;
 }

@@ -11,7 +11,7 @@
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
 import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
-import { handleDiscord, registerCommands, discordReady } from './discord.js';
+import { handleDiscord, registerCommands, discordReady, updateRulesMessages } from './discord.js';
 
 const PROXY_PATH = /^v1\/clans\/%23[0289PYLQGRJCUV]{3,12}(\/(members|currentriverrace|riverracelog))?$/;
 const PLAYER_PATH = /^v1\/players\/%23[0289PYLQGRJCUV]{3,12}(\/battlelog)?$/;   // recruit check
@@ -105,7 +105,10 @@ export async function handleApi(request, env, ctx) {
     if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
     if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);
     let body; try { body = await request.json(); } catch (e) { return json({ reason: 'badJson' }, 400); }
-    return json(await writeNotes(env, clan, body.items, undefined, editorName()), 200);
+    const saved = await writeNotes(env, clan, body.items, undefined, editorName());
+    // Rules changed on the site: update the rules message in Discord too.
+    if ((body.items || []).some(i => i && i.kind === 'rules') && discordReady(env)) { const p = updateRulesMessages(env, clan).catch(() => {}); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; }
+    return json(saved, 200);
   }
 
   if (request.method !== 'GET') return json({ reason: 'methodNotAllowed' }, 405);

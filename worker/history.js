@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -131,6 +131,10 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
 
   if (sql.length) await db.batch(sql.map(s => db.prepare(s)));
   // For alerts: who joined/left this run, finished wars, and (on battle day 4) who can no longer reach the target.
+  // For the Discord war board: the daily reset time (UK), and the battle day of the previous snapshot.
+  const lastEnd = await db.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(clan).first();
+  const resetLabel = lastEnd ? (() => { const m = String(lastEnd.ended_at).match(/T(\d\d)(\d\d)/); return m ? new Date(Date.UTC(2026, 0, 1, +m[1], +m[2])).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false }) : ''; })() : '';
+  const prevDay = await db.prepare("SELECT week, max(day) AS day FROM race_days WHERE clan = ? AND week = ? AND day < ?").bind(clan, week || '', day || 99).first();
   const TODAY_MAX = [0, 200, 400, 700, 900];
   let target = 1800, perDay = 450;
   try { const n = await db.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first(); if (n) { const j = JSON.parse(n.value); target = j.target || target; perDay = j.perDay || perDay; } } catch (e) {}
@@ -160,6 +164,14 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     }),
     notPlayed: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday === 0).map(p => p.name) : [],
     leftToday: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday < 4).map(p => ({ tag: clean(p.tag), name: p.name, left: 4 - p.decksUsedToday })).sort((a, b) => b.left - a.left) : [],
+    board: day ? (() => {
+      const mine = live.filter(p => here.has(clean(p.tag)));
+      return { standings: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, fame: c.fame || 0 })).sort((a, b) => b.fame - a.fame),
+        members: here.size, reached: mine.filter(p => p.fame >= target).length,
+        decksUsed: mine.reduce((t, p) => t + Math.min(4, p.decksUsedToday), 0), decksTotal: here.size * 4,
+        notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };
+    })() : null,
+    prevDay: prevDay?.day || 0, prevWeek: prevDay?.week || null,
     changedTags: [...new Set(events.filter(e => ['join', 'leave', 'role'].includes(e[3])).map(e => e[1]))],
     decksLeft: day ? live.filter(p => here.has(clean(p.tag))).reduce((n, p) => n + Math.max(0, 4 - p.decksUsedToday), 0) : 0,
   };
@@ -256,6 +268,10 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push(res);
       await alertsFor(env, res, now).catch(() => {});
       await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
+      await warBoard(env, res, now).catch(() => {});
+      // A new battle day began: summarise the one that ended. A war ended: summarise its day 4.
+      if (res.day > 1 && res.prevDay === res.day - 1) await daySummary(env, clan, res.week, res.day - 1).catch(() => {});
+      for (const w of res.wars || []) await daySummary(env, clan, w.week, 4).catch(() => {});
     } catch (e) {
       out.push({ clan, error: String(e.message || e) });
       // Tell leaders once every 6 hours while pulls keep failing.

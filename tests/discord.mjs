@@ -2,7 +2,9 @@
 import assert from 'node:assert/strict';
 import { fakeD1 } from './fake-d1.mjs';
 import { handleApi } from '../worker/api.js';
-import { discordPost, syncGuild } from '../worker/discord.js';
+import { discordPost, syncGuild, warBoard, daySummary, rulesText, RULE_DEFAULTS, updateRulesMessages } from '../worker/discord.js';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { SCHEMA } from '../worker/history.js';
 
 // A test key pair, signing like Discord does.
@@ -18,6 +20,7 @@ let currentRoles = ['OTHER'];
 globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
+  if (/\/channels\/C\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
 
@@ -58,4 +61,40 @@ currentRoles = ['OTHER', 'RE'];
 calls.length = 0;
 await syncGuild(env, 'G', { roles: { member: 'RM', elder: 'RE' } }, 'PPCCR8VU');
 assert.deepEqual(calls.find(c => c.method === 'PATCH').body, { roles: ['OTHER'] });
+
+// Live war board: posted once, then edited in place.
+calls.length = 0;
+const board = { standings: [{ tag: 'AAA', name: 'Rival', fame: 22500 }, { tag: 'PPCCR8VU', name: '#WINNING', fame: 21000 }], members: 48, reached: 12, decksUsed: 140, decksTotal: 192, notPlayed: ['perc'], reset: '09:43' };
+const r = { clan: 'PPCCR8VU', week: '138-3', day: 2, target: 1800, board };
+await warBoard(env, r, Date.parse('2026-11-20T14:15:00Z'));
+await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
+assert.equal(calls.filter(c => c.method === 'POST' && /channels\/C\/messages/.test(c.url)).length, 1, 'posted once');
+const edit = calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url));
+assert.ok(edit, 'then edited'); assert.match(edit.body.content, /battle day 2 of 4[\s\S]*2nd of 2 · 21,000 medals · 1,500 behind Rival[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
+
+// Day summary: medals gained with the change vs the day before, posted once.
+await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES
+  ('PPCCR8VU','138-3',1,'2VJ9V2PV','Luke',800,4,4,0,'x'),('PPCCR8VU','138-3',2,'2VJ9V2PV','Luke',1700,8,4,0,'x'),
+  ('PPCCR8VU','138-3',1,'YVJRGLCC','perc',500,4,4,0,'x'),('PPCCR8VU','138-3',2,'YVJRGLCC','perc',900,6,2,0,'x');
+  INSERT INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ('PPCCR8VU','138-3',1,'PPCCR8VU','#WINNING',10000,'x'),('PPCCR8VU','138-3',2,'PPCCR8VU','#WINNING',21000,'x'),('PPCCR8VU','138-3',2,'AAA','Rival',22500,'x');`);
+calls.length = 0;
+assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 1);
+const sum = calls.find(c => c.method === 'POST').body.content;
+assert.match(sum, /Battle day 2 summary[\s\S]*\+11,000\*\* \(\+10% vs day 1\)[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*2nd of 2, 1,500 behind Rival[\s\S]*Luke \+900/);
+assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
+
+// Rules: posted with /rules, then edited when the rules change.
+calls.length = 0;
+assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'rules', options: [] } })), /Posting the rules/);
+await Promise.all(pending);
+assert.match(calls.find(c => c.method === 'POST').body.content, /1,800\+ medals every war/);
+await DB.exec(`INSERT OR REPLACE INTO notes (clan,week,tag,kind,value,at) VALUES ('PPCCR8VU','*','*','rules','{"target":2000}','x')`);
+calls.length = 0;
+assert.equal(await updateRulesMessages(env, 'PPCCR8VU'), 1);
+assert.match(calls.find(c => c.method === 'PATCH').body.content, /2,000\+ medals every war/);
+
+// The bot's default rules match the site's.
+const ctx = { module: { exports: {} } };
+vm.runInNewContext(readFileSync(new URL('../site/logic.js', import.meta.url), 'utf8'), ctx);
+for (const [k, v] of Object.entries(RULE_DEFAULTS)) assert.equal(v, ctx.module.exports.DEFAULT_RULES[k], 'default for ' + k);
 console.log('Discord checks passed');
