@@ -4,7 +4,7 @@ One HTML file. Works for any Clash Royale clan. Runs on your device, with no acc
 
 ## Use
 
-Open the hosted link (or `site/index.html`), and it loads the clan. Then work down the page:
+Open the hosted link (or `site/index.html` on your computer), and it loads the clan. Then work down the page:
 
 1. **Clan**: type a tag and tap *Load clan* (automatic on the hosted link).
 2. **Who to act on**
@@ -77,10 +77,10 @@ All numbers and switches can be changed.
 
 ## Files
 
-- `site/index.html`: the app
+- `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `app.js` for the screen)
 - `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
 - `samples/`: real exports from #WINNING, week 138-2
-- `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs`
+- `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs` (also run automatically on GitHub for every push)
 
 The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
 - `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources

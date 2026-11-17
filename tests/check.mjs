@@ -1,11 +1,10 @@
-// Runs the audit logic from index.html against samples/ and checks known calls.
+// Runs the audit logic (site/logic.js) against samples/ and checks known calls.
 // Usage: node tests/check.mjs
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
-const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
-const code = html.match(/<script id="logic">([\s\S]*?)<\/script>/)[1];
+const code = readFileSync(new URL('../site/logic.js', import.meta.url), 'utf8');
 const ctx = { module: { exports: {} } };
 vm.runInNewContext(code, ctx);
 const L = ctx.module.exports;
