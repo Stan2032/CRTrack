@@ -142,6 +142,11 @@ console.log('History checks passed');
   await snapshotAll(env, { force: true, only: 'PPCCR8VU', now: Date.parse('2026-11-19T11:00:00.000Z') });
   const a = await latestAlerts(env, ['PPCCR8VU']);
   assert.ok(a.some(x => x.title === 'Clan members changed' && /Bob/.test(x.body) && /spots open/.test(x.body)), JSON.stringify(a));
+  // after-war digest: a newly finished war sends placing, how many reached the target, and who didn't
+  DB.raw.exec("DELETE FROM wars WHERE week = '138-2'; DELETE FROM war_players WHERE week = '138-2';");
+  await snapshotAll(env, { force: true, only: 'PPCCR8VU', now: Date.parse('2026-11-19T11:30:00.000Z') });
+  const d = (await latestAlerts(env, ['PPCCR8VU'])).find(x => /^War 138-2 finished/.test(x.title));
+  assert.ok(d && /reached 1800/.test(d.body) && /Under: /.test(d.body), JSON.stringify(d));
   // alerts are filtered by clan and carry ids (so the phone can show each one once)
   await sendAlert(env, 'OTHER', 'o1', 'Other clan', 'x');
   const mine = await latestAlerts(env, ['PPCCR8VU', 'OTHER'], 'PPCCR8VU');

@@ -150,7 +150,13 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   return {
     clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
     joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
-    out, target, firstRun, wars: wars.map(w => ({ week: w[1], rank: w[3], trophies: w[5] })),
+    out, target, firstRun,
+    wars: wars.map(w => {
+      // For the after-war digest: how many current members took part and reached the target, and who didn't.
+      const ps = players.filter(p => p[1] === w[1] && here.has(p[2]) && p[5] > 0);
+      return { week: w[1], rank: w[3], trophies: w[5], played: ps.length, passed: ps.filter(p => p[4] >= target).length,
+        under: ps.filter(p => p[4] < target).sort((a, b) => a[4] - b[4]).map(p => p[3]) };
+    }),
     notPlayed: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday === 0).map(p => p.name) : [],
     decksLeft: day ? live.filter(p => here.has(clean(p.tag))).reduce((n, p) => n + Math.max(0, 4 - p.decksUsedToday), 0) : 0,
   };
@@ -200,7 +206,9 @@ async function alertsFor(env, r, now) {
   }
   for (const w of r.wars) {
     const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
-    await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}`, 'Open the app to see who to act on.');
+    const trophies = w.trophies ? `, ${w.trophies > 0 ? '+' : ''}${w.trophies} trophies` : '';
+    const body = `${w.passed} of ${w.played} reached ${r.target}.` + (w.under.length ? ` Under: ${list(w.under, 5)}.` : ' Everyone made it!') + ' Open the app for who to act on.';
+    await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
   }
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day && r.decksLeft) {

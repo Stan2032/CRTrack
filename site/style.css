@@ -189,3 +189,7 @@ svg.spark circle.ok { fill: var(--green); } svg.spark circle.miss { fill: var(--
 .fcb { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
 .fcb.ok { color: var(--green); } .fcb.risk { color: var(--yellow); } .fcb.bad { color: var(--red); }
 svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fill: var(--text); font-weight: 700; }
+.helpbtn { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-weight: 700; cursor: pointer; vertical-align: 2px; margin-left: 6px; }
+.guide { border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 10px; padding: 10px 12px; background: var(--card); margin-bottom: 14px; }
+.guide ol { margin: 6px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+.guide li { margin: 4px 0; }

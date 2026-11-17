@@ -770,6 +770,12 @@ function renderInstall() {
 $('#installbtn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; renderInstall(); };
 renderInstall();
 
+// ---- Quick guide: shown on first visit, reopened with the ? button ----
+function showGuide(on) { $('#guide').classList.toggle('hidden', !on); }
+if (!get('cr-war-audit:guideSeen', false)) showGuide(true);
+$('#guideok').onclick = () => { put('cr-war-audit:guideSeen', true); showGuide(false); };
+$('#helpbtn').onclick = () => showGuide($('#guide').classList.contains('hidden'));
+
 // ---- Check a player (recruits) ----
 async function checkPlayer() {
   const t = $('#ptag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'), out = $('#pout');
