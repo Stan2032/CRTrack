@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS member_stats (clan TEXT, week TEXT, tag TEXT, donatio
 CREATE TABLE IF NOT EXISTS race_standings (clan TEXT, week TEXT, day INTEGER, rival TEXT, name TEXT, fame INTEGER, at TEXT, PRIMARY KEY (clan, week, day, rival));
 CREATE TABLE IF NOT EXISTS war_battles (clan TEXT, tag TEXT, at TEXT, type TEXT, won INTEGER, lost INTEGER, PRIMARY KEY (clan, tag, at));
 CREATE TABLE IF NOT EXISTS note_log (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, by TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS race_events (clan TEXT, week TEXT, tag TEXT, at TEXT, day INTEGER, fame INTEGER, decks INTEGER, today INTEGER, boats INTEGER, PRIMARY KEY (clan, tag, at));
 `.trim();
 
 export const q = v => v == null ? 'NULL'
@@ -98,6 +99,13 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   const week = weekOf(race, log.items), day = battleDay(race);
   if (week) sql.push(`INSERT OR IGNORE INTO periods (clan,week,period,type,first_seen) VALUES ${rows([[clan, week, race.periodIndex, race.periodType, now]])}`);
   const live = (race.clan?.participants || []).filter(p => here.has(clean(p.tag)) || p.decksUsed > 0);
+  // Every time a player's deck count goes up, keep a timestamped row: when they played, and how it went.
+  if (week && day && live.length) {
+    const prev = new Map((await db.prepare('SELECT tag, max(decks) AS d FROM race_events WHERE clan = ? AND week = ? GROUP BY tag').bind(clan, week).all()).results.map(r => [r.tag, r.d]));
+    const moved = live.filter(p => p.decksUsed > (prev.get(clean(p.tag)) ?? 0));
+    if (moved.length) sql.push(`INSERT OR IGNORE INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${
+      rows(moved.map(p => [clan, week, clean(p.tag), now, day, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks]))}`);
+  }
   if (week && day && live.length) sql.push(`INSERT OR REPLACE INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES ${
     rows(live.map(p => [clan, week, day, clean(p.tag), p.name, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks, now]))}`);
 
@@ -130,6 +138,8 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
     joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
     out, target, firstRun, wars: wars.map(w => ({ week: w[1], rank: w[3], trophies: w[5] })),
+    notPlayed: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday === 0).map(p => p.name) : [],
+    decksLeft: day ? live.filter(p => here.has(clean(p.tag))).reduce((n, p) => n + Math.max(0, 4 - p.decksUsedToday), 0) : 0,
   };
 }
 
@@ -178,6 +188,13 @@ async function alertsFor(env, r, now) {
   for (const w of r.wars) {
     const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
     await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}`, 'Open the app to see who to act on.');
+  }
+  // Every battle day, in its last 4 hours: who still has decks to play.
+  if (r.day && r.decksLeft) {
+    const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
+    const reset0 = st0 ? ms(st0.ended_at) : null, left0 = reset0 == null ? 864e5 : (((reset0 - now) % 864e5) + 864e5) % 864e5;
+    if (left0 < 4 * 3600e3) await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
+      (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + ' · under 4 hours left');
   }
   if (r.day === 4 && r.out.length) {
     const st = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
@@ -228,7 +245,7 @@ export async function readHistory(env, clan) {
   const db = env.DB;
   await db.exec(SCHEMA);
   const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
-  const [members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog] = await Promise.all([
+  const [members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents] = await Promise.all([
     all('SELECT tag,name,role,in_clan,first_seen,last_seen_game,updated_at FROM members WHERE clan = ?'),
     all('SELECT tag,name,kind,detail,at FROM member_events WHERE clan = ? ORDER BY at'),
     all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?'),
@@ -240,9 +257,10 @@ export async function readHistory(env, clan) {
     all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?'),
     all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?'),
     all('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60'),
+    all("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')"),
   ]);
   const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
-  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog };
+  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents };
 }
 
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];

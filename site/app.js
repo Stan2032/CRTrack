@@ -229,6 +229,37 @@ function row(p) {
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
 }
 
+// Daily reset time in UK time, from when the last war ended (wars end at the daily reset).
+function resetUK() {
+  const w = (hist?.wars || []).map(x => parseTime(x.ended_at)).filter(Boolean).sort((a, b) => b - a)[0];
+  return w ? new Date(w).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+}
+const liveOpts = () => ({ day, reset: resetUK() });
+
+// Rival clans in this race: medals, gap to us, and how the gap moved since yesterday.
+function raceBox() {
+  const st = raceInfo.standings || [];
+  if (mode !== 'live' || !raceInfo.day || st.length < 2) return '';
+  const me = st.find(c => c.tag === model.clan.tag);
+  if (!me) return '';
+  const yday = {};
+  for (const x of hist?.standings || []) if (x.week === raceInfo.week && x.day === raceInfo.day - 1) yday[x.rival] = x.fame;
+  const gapNow = c => c.fame - me.fame, gapY = c => yday[c.tag] != null && yday[me.tag] != null ? yday[c.tag] - yday[me.tag] : null;
+  const rows = st.map((c, i) => {
+    const us = c.tag === me.tag, g = gapNow(c), gy = gapY(c);
+    // Did the distance shrink or grow since yesterday? Good or bad depends on whether they're ahead or behind.
+    const shrank = gy != null && Math.abs(g) < Math.abs(gy), grew = gy != null && Math.abs(g) > Math.abs(gy);
+    const trend = us || gy == null || (!shrank && !grew) ? '' : g > 0
+      ? (shrank ? ' <span class="up">▲ we’re catching up</span>' : ' <span class="down">▼ they’re pulling away</span>')
+      : (shrank ? ' <span class="down">▼ they’re catching up</span>' : ' <span class="up">▲ we’re pulling away</span>');
+    const gap = us ? '<b>us</b>' : g > 0 ? `${g.toLocaleString()} ahead of us` : g < 0 ? `${(-g).toLocaleString()} behind us` : 'level';
+    return `<tr class="${us ? 'us' : ''}"><td>${i + 1}</td><td>${esc(cleanName(c.name))}</td><td class="num">${c.fame.toLocaleString()}</td><td>${gap}${trend}</td></tr>`;
+  }).join('');
+  const i = st.indexOf(me), above = st[i - 1], below = st[i + 1];
+  const line = above ? `${(above.fame - me.fame).toLocaleString()} medals to catch ${esc(cleanName(above.name))}` : below ? `Leading by ${(me.fame - below.fame).toLocaleString()} medals` : '';
+  return `<div class="race"><div class="steps-head">Race ${line ? '<span class="count">' + line + '</span>' : ''}</div><table>${rows}</table></div>`;
+}
+
 function contextLine() {
   if (!model) return '';
   if (mode === 'end') return model.season ? '' : 'No finished war found';
@@ -247,7 +278,7 @@ function render() {
   renderRules();
   $('#daywrap').classList.toggle('hidden', !(mode === 'live' && source === 'csv'));
   if (!model || !model.players.length) return;
-  $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>`;
+  $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>` + raceBox();
   if (mode === 'live' && source === 'api' && !raceInfo.day) {
     $('#steps').classList.add('hidden');
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
@@ -279,7 +310,7 @@ function render() {
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
-  const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
+  const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r, liveOpts())).map(m => ({ ...m, title: titleFor(m.title) }));
   if (mode === 'end') { const rc = recap(all, r); if (rc) msgs.push({ title: 'Recap', text: rc }); }
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
@@ -382,6 +413,8 @@ function renderSteps(list, msgs) {
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
     if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today) ${names(free)}`, tick: '<span class="tickbox auto"></span>' });
+    const left = list.filter(p => !p.gone && p.res.today < 4).sort((a, b) => a.res.today - b.res.today);
+    if (left.length) posted('DECKS-' + day, `Remind who still has <b>decks to play today</b> ${names(left)}`, copy('Decks left'));
     posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
@@ -454,7 +487,7 @@ function exportMd() {
   const md = [`# War audit: ${model.clan.name} #${model.clan.tag} · ${contextLine()}`, '',
     '| Player | Role | Result | Why |', '|---|---|---|---|',
     ...list.map(p => `| ${p.name} | ${p.role} | ${label(p.res.status)} | ${p.res.why || ''} |`),
-    '', '## Chat', '', ...(mode === 'end' ? chatEnd(list, r) : chatLive(list, r)).map(m => '```\n' + m.text + '\n```'),
+    '', '## Chat', '', ...(mode === 'end' ? chatEnd(list, r) : chatLive(list, r, liveOpts())).map(m => '```\n' + m.text + '\n```'),
   ].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));

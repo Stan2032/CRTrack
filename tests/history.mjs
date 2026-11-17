@@ -63,6 +63,7 @@ assert.equal(h.wars.length, 10);
 assert.ok(h.players.length > 500);
 assert.deepEqual(h.events.filter(e => e.kind !== 'seen').map(e => e.kind).sort(), ['join', 'leave', 'role']);
 assert.equal(h.days.length, 1); assert.equal(h.periods.length, 2);
+assert.equal(h.raceEvents.length, 1, 'one deck-count change recorded'); assert.equal(h.raceEvents[0].decks, 4);
 
 // notes: save and delete; SQL-unsafe text stays as data
 await writeNotes(env, 'PPCCR8VU', [{ week: '138-2', tag: 'YCU8RGVJY', kind: 'join', value: '3' },

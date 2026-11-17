@@ -153,3 +153,10 @@ span.tick { cursor: default; }
 .copybtn, .btn.small, .tick, select { min-height: 36px; }
 .name { min-height: 32px; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+.race { flex-basis: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--soft); margin-top: 6px; }
+.race table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.race td { padding: 5px 4px; border-top: 1px solid var(--line); }
+.race tr:first-child td { border-top: 0; }
+.race tr.us td { font-weight: 700; }
+.race .num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 10px; }
+.race .up { color: var(--green); font-size: 12px; } .race .down { color: var(--red); font-size: 12px; }

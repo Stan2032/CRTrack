@@ -283,10 +283,15 @@ function chatEnd(list, r) {
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
 
-function chatLive(list, r) {
+// opts: { day, reset } — battle day number and the daily reset time ("09:43") for the reminder.
+function chatLive(list, r, opts = {}) {
+  const here = list.filter(x => !x.gone);
+  const left = here.filter(x => x.res.today < 4).sort((a, b) => a.res.today - b.res.today || a.name.localeCompare(b.name));
   const out = list.filter(x => x.res.status === 'Out');
   const close = list.filter(x => x.res.status === 'Need').sort((a, b) => b.res.need - a.res.need);
   const msgs = [];
+  if (left.length) msgs.push({ title: 'Decks left', text: lines(`Battle day ${opts.day || ''}: ${opts.reset ? `decks reset at ${opts.reset} UK` : 'decks reset soon'}! Still to play:`.replace('day :', 'day:'),
+    left.map(x => `${x.name} (${4 - x.res.today} left)`)) });
   if (out.length) msgs.push({ title: 'Out', text: lines(`Can't reach ${r.target} now:`, out.map(x => `${x.name} (${x.res.fame})`)) });
   if (close.length) msgs.push({ title: 'Still need', text: lines('Still need:', close.map(x => `${x.name}: +${x.res.need}`)) });
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));

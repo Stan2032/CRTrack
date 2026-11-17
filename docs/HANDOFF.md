@@ -55,6 +55,9 @@ A cron fires every 15 minutes. On battle days every run snapshots; on training d
 | `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `done` (action ticked), `rules` |
 | `member_stats` | donations given/received, trophies, level, per war week |
 | `race_standings` | every clan in the race and its medals, per battle day |
+| `race_events` | a timestamped row each time a player's deck count goes up (when they played, to 15 min): play-time patterns and pace |
+| `note_log` | who changed what (per-leader codes) |
+| `push_subs`, `alerts`, `kv` | app notification subscriptions, sent alerts, server keys |
 | `war_battles` | (checked: iccyman2511 138-2 rebuilt to exactly 2,850 medals / 16 decks) |
 | `war_battles` | war battles from players' battle logs (duel / 1v1 / boat, games won and lost). 3 players per run in rotation, so each player's log is read about every 4 hours (the log holds their last 25 battles) |
 
