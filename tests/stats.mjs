@@ -49,3 +49,19 @@ assert.equal(pr[0].tag, 'R'); assert.equal(pr[1].projected, Math.round(10000 / 1
 const cs = S.clanSeries([{ week: '1-1', ended_at: 'a', rank: 2, fame: 7700, trophy_change: 10 }], [{ week: '1-1', fame: 2000, decks: 16 }, { week: '1-1', fame: 1500, decks: 16 }], 1800);
 assert.deepEqual([cs[0].medals, cs[0].passed, cs[0].played], [3500, 1, 2]);
 console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher ${rb.score}; AzzA from 500 on day 2: ${Math.round(f0.prob * 100)}%)`);
+
+// Calibration: rerun forecasts on stored battle-day data, scored against what happened.
+{
+  const hist = { wars: [{ week: '9-1' }], players: [], days: [] };
+  for (let i = 0; i < 20; i++) {
+    const tag = 'P' + i, good = i < 14;
+    for (const w of ['8-1', '8-2', '8-3']) hist.players.push({ week: w, tag, fame: good ? 2400 : 1200, decks: good ? 16 : 8 });
+    hist.players.push({ week: '9-1', tag, fame: good ? 2400 : 1200, decks: good ? 16 : 8 });
+    for (let d = 1; d <= 3; d++) hist.days.push({ week: '9-1', tag, day: d, fame: (good ? 600 : 300) * d });
+  }
+  const c = S.calibrate(hist, 1800);
+  assert.ok(c && c.n > 0 && c.brier < 0.1, JSON.stringify(c));
+  assert.ok(c.bands.Likely.hit / c.bands.Likely.n > 0.9, 'likely ones made it');
+  assert.equal(S.calibrate({ wars: [], players: [], days: [] }, 1800), null);
+  console.log(`Calibration checks passed (Brier ${c.brier.toFixed(3)} on ${c.n} forecasts)`);
+}

@@ -138,4 +138,36 @@ function clanSeries(wars, players, target) {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = { habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
+// How accurate the forecasts were, rerun after the fact using only what was known at the time.
+// For each finished war with stored battle-day data, at the start of battle days 1–4:
+//   medals so far = their total at the end of the previous battle day (0 on day 1),
+//   habits = their wars *before* this one, then compare with whether they actually reached the target.
+// Returns hit rates per forecast band and a Brier score (0 = perfect, 0.25 = coin toss).
+function calibrate(h, target, lookback = 10) {
+  if (!h) return null;
+  const key = k => k.split('-').map(Number), cmp = (a, b) => { const [a1, a2] = key(a), [b1, b2] = key(b); return a1 - b1 || a2 - b2; };
+  const weeksBy = {};
+  for (const r of h.players || []) (weeksBy[r.tag] ||= []).push({ key: r.week, fame: r.fame, decks: r.decks });
+  for (const t in weeksBy) weeksBy[t].sort((a, b) => cmp(b.key, a.key));
+  const dayRows = {};
+  for (const d of h.days || []) ((dayRows[d.week] ||= {})[d.tag] ||= {})[d.day] = d.fame;
+  const bands = { Likely: { n: 0, hit: 0 }, 'At risk': { n: 0, hit: 0 }, Unlikely: { n: 0, hit: 0 } };
+  let brier = 0, n = 0;
+  const wars = (h.wars || []).map(w => w.week).filter(w => dayRows[w]);
+  for (const week of wars) {
+    const finals = Object.fromEntries((h.players || []).filter(r => r.week === week && r.decks > 0).map(r => [r.tag, r.fame]));
+    const ps = Object.keys(finals).map(tag => ({ tag, weeks: (weeksBy[tag] || []).filter(w => cmp(w.key, week) < 0) }));
+    const clan = clanHabits(ps, lookback);
+    for (const p of ps) for (let day = 1; day <= 4; day++) {
+      const so = day === 1 ? 0 : dayRows[week][p.tag]?.[day - 1];
+      if (so == null || so >= target) continue;
+      const f = forecast(p, { target, day, leftToday: 4, fame: so, lookback, clan });
+      const hit = finals[p.tag] >= target ? 1 : 0;
+      const b = f.prob >= 0.8 ? 'Likely' : f.prob >= 0.2 ? 'At risk' : 'Unlikely';
+      bands[b].n++; bands[b].hit += hit; brier += (f.prob - hit) ** 2; n++;
+    }
+  }
+  return n ? { n, wars: wars.length, brier: brier / n, bands } : null;
+}
+
+if (typeof module !== 'undefined') module.exports = { calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };

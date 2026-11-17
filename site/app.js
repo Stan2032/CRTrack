@@ -534,6 +534,12 @@ function renderStats() {
     ? bars(pt.hours.map((v, h) => ({ label: String(h).padStart(2, '0'), value: v, show: h % 6 === 0, title: `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00: ${v} decks` })), { label: 'War decks played by hour of day, UK time' })
       + `<div class="hint">Busiest 4 hours: ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 (${Math.round(pt.window.share * 100)}% of ${pt.total} decks). Remind people just before.</div>`
     : '<div class="empty">Collecting on battle days (timed to within 15 minutes)</div>'));
+  // Forecast accuracy, rerun on past battle days with only what was known then
+  const cal = calibrate(hist, r.target, r.lookback);
+  parts.push(`<h3>How accurate the forecasts are</h3>` + (cal
+    ? `<table class="tbl">${Object.entries(cal.bands).filter(([, b]) => b.n).map(([k, b]) => `<tr><td>Rated “${k}”</td><td class="num">${Math.round(100 * b.hit / b.n)}%</td><td class="muted">actually reached ${r.target} (${b.hit} of ${b.n})</td></tr>`).join('')}</table>
+       <div class="hint">Forecasts rerun at the start of each battle day using only what was known then, over ${cal.wars} war${cal.wars === 1 ? '' : 's'}. Overall score ${cal.brier.toFixed(2)} (0 is perfect, 0.25 is guessing).</div>`
+    : `<div class="empty">First check after the current war ends (needs a war with battle-day data)</div>`));
   // 5. Donations this week
   const don = model.players.filter(p => !p.gone && p.donations != null).sort((a, b) => b.donations - a.donations);
   if (don.length) parts.push(`<h3>Top donors this week</h3><table class="tbl">${don.slice(0, 5).map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.donations}</td><td class="muted">received ${p.received ?? 0}</td></tr>`).join('')}</table>`);
@@ -561,6 +567,7 @@ function renderStats() {
   if (ms.boat.games >= 5 && ms.boat.perDeck < Math.max(ms.duel.perDeck || 0, ms.pvp.perDeck || 0) - 15)
     finds.push(`🚤 Boat attacks average ~${Math.round(ms.boat.perDeck)} per deck, the lowest of the three.`);
   if (pt.total >= 10) finds.push(`🕒 Most war decks are played ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 UK. Remind people just before.`);
+  if (cal && cal.bands.Likely.n >= 10) finds.push(`🎯 Forecasts: players rated “Likely” reached ${r.target} ${Math.round(100 * cal.bands.Likely.hit / cal.bands.Likely.n)}% of the time.`);
   if (rel.length) finds.push(`⭐ Most reliable: ${rel.slice(0, 3).map(x => esc(x.p.name)).join(', ')}.`);
   const imp = model.players.filter(p => !p.gone && p.cur && p.prev && p.cur.decks).map(p => ({ p, d: p.cur.fame - p.prev.fame })).sort((a, b) => b.d - a.d)[0];
   if (imp && imp.d >= 300) finds.push(`🚀 Most improved last war: ${esc(imp.p.name)} (+${imp.d.toLocaleString()}).`);
