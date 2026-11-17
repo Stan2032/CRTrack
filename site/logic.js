@@ -108,7 +108,9 @@ const cleanTag = t => String(t || '').replace(/^#/, '').toUpperCase();
 // In-game colour codes in names, e.g. "<c4>Baki" (shown in game as a coloured name).
 const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
 const keyParts = k => String(k).split('-').map(Number);
-const cmpKey = (a, b) => { const [x1, y1] = keyParts(a), [x2, y2] = keyParts(b); return x1 - x2 || y1 - y2; };
+const _keyNum = new Map();   // "138-2" -> 138002, cached: compared thousands of times when sorting
+const keyNum = k => { let v = _keyNum.get(k); if (v === undefined) { const [x, y] = keyParts(k); v = x * 1000 + (y || 0); _keyNum.set(k, v); } return v; };
+const cmpKey = (a, b) => keyNum(a) - keyNum(b);
 
 function parseTime(s) {
   // RoyaleAPI: 20261116T123806.000Z
@@ -444,37 +446,50 @@ function mergeLog(primary, extra) {
   const have = new Set(primary.map(r => r.season_key));
   return primary.concat(extra.filter(r => !have.has(r.season_key)));
 }
+// History looked up per player many times: indexed once per history object.
+const _idx = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+function idx(h) {
+  let x = _idx && _idx.get(h);
+  if (x) return x;
+  x = { ev: {}, days: {}, warned: {}, periods: {} };
+  for (const e of h.events || []) (x.ev[e.tag] ||= []).push({ ...e, t: ms(e.at) });
+  for (const d of h.days || []) (x.days[d.week + '|' + d.tag] ||= []).push(d);
+  for (const p of h.periods || []) (x.periods[p.week] ||= []).push(p);
+  for (const n of h.notes || []) if (n.kind === 'result' && n.value === 'Warn') (x.warned[n.tag] ||= []).push(n.week);
+  if (_idx) _idx.set(h, x);
+  return x;
+}
 function battleStarts(h, week) {
-  return (h.periods || []).filter(x => x.week === week && x.type !== 'training').map(x => ms(x.first_seen)).sort((a, b) => a - b);
+  return (idx(h).periods[week] || []).filter(x => x.type !== 'training').map(x => ms(x.first_seen)).sort((a, b) => a - b);
 }
 // Battle day a player joined on during `week`: 'full' (before battles), '1'-'4', or null if unknown.
 function autoJoin(h, week, tag) {
-  const all = (h.periods || []).filter(x => x.week === week).map(x => ms(x.first_seen));
+  const all = (idx(h).periods[week] || []).map(x => ms(x.first_seen));
   if (!all.length) return null;
   const starts = battleStarts(h, week);
   const war = (h.wars || []).find(x => x.week === week);
   const from = Math.min(...all), to = war ? ms(war.ended_at) : Infinity;
-  const joins = (h.events || []).filter(e => e.tag === tag && e.kind === 'join').map(e => ms(e.at)).filter(t => t >= from && t <= to);
+  const joins = (idx(h).ev[tag] || []).filter(e => e.kind === 'join').map(e => e.t).filter(t => t >= from && t <= to);
   if (!joins.length) return null;
   const j = joins[joins.length - 1];
   const day = starts.filter(t => t <= j).length;
   return day ? String(day) : 'full';
 }
 function roleAt(h, tag, role, t) {
-  const later = (h.events || []).filter(e => e.tag === tag && e.kind === 'role' && ms(e.at) > t).sort((a, b) => ms(b.at) - ms(a.at));
+  const later = (idx(h).ev[tag] || []).filter(e => e.kind === 'role' && e.t > t).sort((a, b) => b.t - a.t);
   for (const e of later) role = String(e.detail).split('>')[0];
   return role;
 }
 function dayDecks(h, week, tag) {
-  const rows = (h.days || []).filter(d => d.week === week && d.tag === tag);
+  const rows = idx(h).days[week + '|' + tag] || [];
   if (!rows.length) return null;
   const out = [null, null, null, null];
   for (const d of rows) out[d.day - 1] = d.today;
   return out;
 }
 function joinedAt(h, tag) {
-  const e = (h.events || []).filter(x => x.tag === tag && (x.kind === 'join' || x.kind === 'seen'));
-  return e.length ? { at: ms(e[e.length - 1].at), seen: e[e.length - 1].kind === 'seen' } : null;
+  const e = (idx(h).ev[tag] || []).filter(x => x.kind === 'join' || x.kind === 'seen');
+  return e.length ? { at: e[e.length - 1].t, seen: e[e.length - 1].kind === 'seen' } : null;
 }
 function notesMap(h) {
   const m = {};
@@ -507,11 +522,11 @@ function applyHistory(model, h, liveWeek) {
     // A first & only warning only counts if a leader marked it as posted.
     p.lastResult = prevRes === 'Warn' && notes[`done|${model.prevSeason}|${p.tag}`] !== '1' ? 'WarnNotPosted' : prevRes;
     // Latest war before this one where a first & only warning was given and posted (ticked done).
-    p.warnedIn = Object.keys(notes).filter(k => k.startsWith('result|') && k.endsWith('|' + p.tag) && notes[k] === 'Warn')
-      .map(k => k.split('|')[1]).filter(w => model.season && cmpKey(w, model.season) < 0 && notes[`done|${w}|${p.tag}`] === '1')
+    p.warnedIn = (idx(h).warned[p.tag] || []).filter(w => model.season && cmpKey(w, model.season) < 0 && notes[`done|${w}|${p.tag}`] === '1')
       .sort(cmpKey).pop() || null;
-    p.roleEvents = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'role').map(e => ({ at: ms(e.at), detail: String(e.detail) }));
-    const left = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'leave').map(e => ms(e.at));
+    const mine = idx(h).ev[p.tag] || [];
+    p.roleEvents = mine.filter(e => e.kind === 'role').map(e => ({ at: e.t, detail: String(e.detail) }));
+    const left = mine.filter(e => e.kind === 'leave').map(e => e.t);
     p.leftAt = left.length ? Math.max(...left) : null;
     p.away = parseAway(notes[`away|*|${p.tag}`]);
     p.awayWar = war ? awayDuring(p.away, ms(war.ended_at) - 4 * 864e5, ms(war.ended_at)) : null;

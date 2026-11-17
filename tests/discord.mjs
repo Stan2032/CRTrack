@@ -66,6 +66,15 @@ assert.match(await text(await cmd('away', [{ name: 'days', value: 1 }, { name: '
 assert.match(await text(await cmd('away', [{ name: 'days', value: 0 }])), /Welcome back/);
 assert.equal(await DB.prepare("SELECT 1 FROM notes WHERE kind = 'away'").first(), null, 'cleared');
 
+// To-do buttons: leaders only; a list that's gone says so.
+const btn = (m, id = 'todo|1-1|Warn|do') => interaction({ type: 3, guild_id: 'G', member: m, data: { custom_id: id } });
+assert.match(await text(await btn(member('U3'))), /Leaders only/);
+assert.match(await text(await btn(leader)), /list has gone/);
+const deferred = await (await cmd('todo', [], leader)).json();
+assert.equal(deferred.type, 5, '/todo answers "thinking…" first');
+await Promise.all(pending);
+assert.ok(calls.some(c => c.method === 'PATCH' && /webhooks\/A\/.*\/messages\/@original$/.test(c.url)), 'then edits that reply');
+
 // Battle-day reminder pings linked members by mention, names otherwise, and only those users.
 calls.length = 0;
 assert.equal(await discordPost(env, 'PPCCR8VU', 'Battle day 2 ends in under 4 hours', '6 decks still to play:', [{ tag: '2VJ9V2PV', name: 'Luke', text: '(4 left)' }, { tag: 'YVJRGLCC', name: 'perc', text: '(2 left)' }]), 1);

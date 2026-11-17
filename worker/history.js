@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -45,7 +45,7 @@ export function battleDay(race) {
   return Math.min(4, Math.max(1, (race.periodIndex % 7) - 2));
 }
 
-async function cr(env, path) {
+export async function cr(env, path) {
   const r = await fetch('https://proxy.royaleapi.dev/v1' + path, { headers: { Authorization: 'Bearer ' + env.CR_API_KEY } });
   if (!r.ok) throw new Error(`${path} ${r.status}`);
   return r.json();
@@ -255,6 +255,16 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
   const out = [];
   for (const clan of only ? [only] : trackedClans(env)) {
     try {
+      // A war ended last run: make the leaders' to-do list now, in a run of its own (it needs the full history).
+      if (!force && !only) {
+        await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);
+        const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
+        if (due) {
+          await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
+          out.push({ clan, todo: await postTodo(env, clan, null, true).catch(e => String(e.message || e)) });
+          continue;
+        }
+      }
       if (!force) {
         await env.DB.exec(SCHEMA);
         const st = await env.DB.prepare(`SELECT
@@ -268,6 +278,8 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push(res);
       await alertsFor(env, res, now).catch(() => {});
       await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
+      if (res.changedTags?.length) await refreshTodo(env, clan, res.changedTags).catch(() => {});
+      if (res.wars?.length) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('todo:due:' + clan, String(now)).run();
       await warBoard(env, res, now).catch(() => {});
       // A new battle day began: summarise the one that ended. A war ended: summarise its day 4.
       if (res.day > 1 && res.prevDay === res.day - 1) await daySummary(env, clan, res.week, res.day - 1).catch(() => {});
@@ -294,10 +306,12 @@ export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
 }
 
 // weeks: how many recent wars to send (the page needs ~half a year); 0 = everything (backups).
-export async function readHistory(env, clan, { weeks = 0 } = {}) {
+//   lite: only what decisions need (no battles, play times, donations, standings or change log).
+export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
   const db = env.DB;
   await db.exec(SCHEMA);
-  const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
+  const all = s => s ? db.prepare(s).bind(clan).all().then(r => r.results) : Promise.resolve([]);
+  const full = s => lite ? null : s;
   // Recent wars, plus the war in progress (not in the wars table yet).
   const recent = weeks > 0 ? ` AND (week IN (SELECT week FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT ${Math.floor(weeks)}) OR week NOT IN (SELECT week FROM wars WHERE clan = ?1))` : '';
   const since = weeks > 0 ? ` AND at > COALESCE((SELECT min(ended_at) FROM (SELECT ended_at FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT ${Math.floor(weeks) + 1})), '')` : '';
@@ -309,11 +323,11 @@ export async function readHistory(env, clan, { weeks = 0 } = {}) {
     all('SELECT week,period,type,first_seen FROM periods WHERE clan = ? ORDER BY first_seen'),
     all('SELECT week,day,tag,fame,decks,today,boats,at FROM race_days WHERE clan = ?1' + recent),
     all('SELECT week,tag,kind,value,at FROM notes WHERE clan = ?'),
-    all('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?'),
-    all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?1' + recent),
-    all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?1' + since),
-    all('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60'),
-    all("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')"),
+    all(full('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?')),
+    all(full('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?1' + recent)),
+    all(full('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?1' + since)),
+    all(full('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60')),
+    all(full("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')")),
   ]);
   const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
   return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents };

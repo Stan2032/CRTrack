@@ -11,7 +11,7 @@
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
 import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
-import { handleDiscord, registerCommands, discordReady, updateRulesMessages } from './discord.js';
+import { handleDiscord, registerCommands, discordReady, updateRulesMessages, refreshTodo } from './discord.js';
 
 const PROXY_PATH = /^v1\/clans\/%23[0289PYLQGRJCUV]{3,12}(\/(members|currentriverrace|riverracelog))?$/;
 const PLAYER_PATH = /^v1\/players\/%23[0289PYLQGRJCUV]{3,12}(\/battlelog)?$/;   // recruit check
@@ -108,6 +108,8 @@ export async function handleApi(request, env, ctx) {
     const saved = await writeNotes(env, clan, body.items, undefined, editorName());
     // Rules changed on the site: update the rules message in Discord too.
     if ((body.items || []).some(i => i && i.kind === 'rules') && discordReady(env)) { const p = updateRulesMessages(env, clan).catch(() => {}); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; }
+    // Ticked on the site: tick the leaders' to-do list in Discord too.
+    if ((body.items || []).some(i => i && i.kind === 'done') && discordReady(env)) { const p = refreshTodo(env, clan).catch(() => {}); if (ctx?.waitUntil) ctx.waitUntil(p); else await p; }
     return json(saved, 200);
   }
 

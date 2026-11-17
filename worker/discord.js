@@ -4,6 +4,7 @@
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes } from './history.js';
 import { PUSH_SCHEMA } from './push.js';
+import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
 const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));`;
@@ -40,6 +41,7 @@ export const COMMANDS = [
     { type: 8, name: 'elder_role', description: 'Role for Elders' },
     { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
     { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
+  { name: 'todo', description: 'Leaders: post (or refresh) the after-war to-do list in the leaders\' channel' },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
 ];
 
@@ -133,6 +135,7 @@ export async function handleDiscord(request, env, ctx) {
   if (!(await verifyDiscord(request, body, env.DISCORD_PUBLIC_KEY))) return new Response('bad signature', { status: 401 });
   const i = JSON.parse(body);
   if (i.type === 1) return Response.json({ type: 1 });                       // Discord's endpoint check
+  if (i.type === 3) return handleButton(i, env);
   if (i.type !== 2) return Response.json(reply('Not supported'));
   await setupDB(env);
   const guild = i.guild_id, user = i.member?.user?.id || i.user?.id, opt = Object.fromEntries((i.data.options || []).map(o => [o.name, o.value]));
@@ -228,6 +231,16 @@ export async function handleDiscord(request, env, ctx) {
       await setConfig(env, guild, next);
       return Response.json(reply('Done.\n\n' + await overview(env, guild, next)));
     }
+    case 'todo': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!chan(cfg, 'leaders')) return Response.json(reply('Choose the leaders\' channel first: go to it and run `/post-here` → **Leaders only**.'));
+      // Working it out can take a few seconds: answer "thinking…" now, then edit that reply.
+      later((async () => {
+        const msg = await postTodo(env, clan, guild, true).then(n => n ? `Posted in <#${chan(cfg, 'leaders')}>.` : 'No finished war found yet.', e => `Couldn't make the list: ${String(e.message || e).slice(0, 100)}`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       later(syncGuild(env, guild, cfg, clan, 25));
@@ -235,6 +248,50 @@ export async function handleDiscord(request, env, ctx) {
     }
   }
   return Response.json(reply('Unknown command'));
+}
+
+// A to-do button: tick (or untick) a group for everyone, then redraw the list in place.
+async function handleButton(i, env) {
+  await setupDB(env);
+  const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
+  if (kind !== 'todo') return Response.json(reply('Not supported'));
+  if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+  const cfg = await getConfig(env, i.guild_id), clan = cfg?.clan;
+  const by = 'Discord: ' + cleanName(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || 'leader');
+  const t = await tickTodo(env, clan, week, status, how === 'undo', by);
+  if (!t) return Response.json(reply('That list has gone. Run `/todo` for a fresh one.'));
+  return Response.json({ type: 7, data: todoMessage(t) });
+}
+
+// Post or redraw the to-do list (and the clan chat messages) in each leaders' channel for this clan.
+//   fresh: work the decisions out again first (after a war ends, or /todo).
+export async function postTodo(env, clan, onlyGuild = null, fresh = false) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  const cfgs = (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'leaders') && (!onlyGuild || c.guild === onlyGuild));
+  if (!cfgs.length) return 0;
+  const week = fresh ? (await makeTodo(env, clan))?.week : (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:latest:' + clan).first())?.v;
+  const t = week && await todoState(env, clan, week);
+  if (!t) return 0;
+  let sent = 0;
+  for (const cfg of cfgs) {
+    if (await upsert(env, `discord:todo:${cfg.guild}:${week}`, chan(cfg, 'leaders'), todoMessage(t)).catch(() => null)) sent++;
+    const chat = fresh && chatMessage(t);
+    if (chat) await upsert(env, `discord:todochat:${cfg.guild}:${week}`, chan(cfg, 'leaders'), chat).catch(() => null);
+  }
+  return sent;
+}
+
+// Redraw the list when the game or the site changes something on it.
+export async function refreshTodo(env, clan, changedTags = null) {
+  if (!discordReady(env)) return 0;
+  const week = (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:latest:' + clan).first())?.v;
+  if (!week) return 0;
+  if (changedTags) {
+    const t = await todoState(env, clan, week);
+    if (!t || !t.items.some(x => changedTags.includes(x.tag))) return 0;
+  }
+  return postTodo(env, clan);
 }
 
 // Update roles/nicknames for linked users. `limit` keeps it within the Worker's per-run request budget.
@@ -325,7 +382,7 @@ function cantPost(channel, err) {
 
 async function upsert(env, key, channel, content) {
   const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first();
-  const body = { content: content.slice(0, 1990), allowed_mentions: { parse: [] } };
+  const body = typeof content === 'string' ? { content: content.slice(0, 1990), allowed_mentions: { parse: [] } } : content;
   if (saved && JSON.parse(saved.v).channel === channel) {   // same channel: edit; a new channel gets a new message
     const { channel: ch, id } = JSON.parse(saved.v);
     const ok = await dapi(env, 'PATCH', `/channels/${ch}/messages/${id}`, body).then(() => true).catch(() => false);
