@@ -122,4 +122,4 @@ With brayyisaac set to Day 3 and >FRXNCHY< set to Excused, the app reproduces th
 - The RoyaleAPI page links (`/clan/TAG`, `/war/log`, `/war/race`) are best guesses, because royaleapi.com blocks automated checks.
 - **Join dates** from RoyaleAPI's join/leave log, once it has been running a week.
 - **Track warnings across weeks** (now inferred from "missed the week before").
-- Clan chat limit set to 179 characters (two in-game tests on 17 Nov 2026 gave 179 and 194; the lower is used). Longer messages are split into parts. Changeable in Rules.
+- Clan chat keeps 256 characters (measured 17 Nov 2026 by pasting a 300-character numbered ruler; it stopped at 256). Longer messages are split into parts. Longer messages are split into parts. Changeable in Rules.
