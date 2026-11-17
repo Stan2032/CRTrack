@@ -342,6 +342,18 @@ function render() {
 
   const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r, liveOpts())).map(m => ({ ...m, title: titleFor(m.title) }));
   if (mode === 'end') { const rc = recap(all, r); if (rc) msgs.push({ title: 'Recap', text: rc }); }
+  if (mode === 'end' && model.season) {
+    const [sid, sec] = model.season.split('-').map(Number), ss = sec >= 4 ? seasonSummary(data.log || [], hist?.wars, sid, r.target) : null;
+    if (ss && ss.complete) {
+      const pl = n => n ? ['1st', '2nd', '3rd', '4th', '5th'][n - 1] || n + 'th' : '?';
+      const txt = [`Season ${sid} recap ⚔️`,
+        ss.placings.some(x => x.rank) ? `Placings: ${ss.placings.map(x => pl(x.rank)).join(', ')}` : '',
+        `Top: ${ss.top.slice(0, 3).map(x => `${cleanName(x.name)} ${x.total.toLocaleString()}`).join(', ')}`,
+        ss.perfect.length ? `${r.target}+ every war: ${ss.perfect.slice(0, 5).map(x => cleanName(x.name)).join(', ')}${ss.perfect.length > 5 ? ` +${ss.perfect.length - 5} more` : ''}` : '',
+        'Thanks all for a great season! 🏆'].filter(Boolean).join('\n');
+      split(txt, r.chatLimit).forEach((t, i, a) => msgs.push({ title: a.length > 1 ? `Season ${i + 1}/${a.length}` : 'Season', text: t }));
+    }
+  }
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
@@ -440,6 +452,7 @@ function renderSteps(list, msgs) {
     players(w, 'Warn', `Post the <b>first &amp; only warnings</b> ${names(w)}`, copy('First & only'));
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
     posted('RECAP', 'Post the <b>war recap</b> (optional)', copy('Recap'));
+    posted('SEASON', 'Post the <b>season recap</b> (optional, last war of the season)', copy('Season'));
     players(c, 'Check', `Post the <b>check-in</b> ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
@@ -518,6 +531,13 @@ function renderStats() {
       title: `War ${x.week}: ${x.passed} of ${x.played} (${x.played ? Math.round(100 * x.passed / x.played) : 0}%)` })), { label: 'Percent of members reaching the target, per war' })
       + (() => { const last = ser[ser.length - 1], pct = x => x.played ? Math.round(100 * x.passed / x.played) : 0, avg = Math.round(ser.reduce((t, x) => t + pct(x), 0) / ser.length);
         return `<div class="hint">Last war: <b>${last.passed} of ${last.played}</b> (${pct(last)}%) · average ${avg}%</div>`; })());
+  }
+  // Seasons: total medals and placings per season
+  const sids = [...new Set(weeks.map(k => k.split('-')[0]))];
+  const seas = sids.map(sid => seasonSummary(data.log || [], hist?.wars, sid, r.target)).filter(Boolean);
+  if (seas.length) {
+    const pl = n => n ? ['1st', '2nd', '3rd', '4th', '5th'][n - 1] || n + 'th' : '–';
+    parts.push(`<h3>Seasons</h3><table class="tbl">${seas.reverse().map(x => `<tr><td>Season ${esc(x.season)}${x.complete ? '' : ' (so far)'}</td><td class="num">${x.medals.toLocaleString()}</td><td class="muted">placings ${x.placings.map(p => pl(p.rank)).join(', ')} · top ${esc(cleanName(x.top[0]?.name || '–'))} · ${x.perfect.length} at ${r.target}+ every war</td></tr>`).join('')}</table>`);
   }
   // 2. Reliability ranking (current members)
   const rel = model.players.filter(p => !p.gone).map(p => ({ p, r: reliability(p, r.target, r.lookback) })).filter(x => x.r).sort((a, b) => b.r.score - a.r.score);

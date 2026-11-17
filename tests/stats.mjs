@@ -80,3 +80,13 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.equal(S.calibrate({ wars: [], players: [], days: [] }, 1800), null);
   console.log(`Calibration checks passed (Brier ${c.brier.toFixed(3)} on ${c.n} forecasts)`);
 }
+
+// Season summary on the sample log: season 137 has 4 wars.
+{
+  const log = read('war-log.csv');
+  const ss = S.seasonSummary(log, [], 137, 1800);
+  assert.equal(ss.weeks.join(','), '137-1,137-2,137-3,137-4'); assert.ok(ss.complete);
+  assert.ok(ss.top[0].total >= ss.top[1].total && ss.perfect.every(x => x.passed === 4));
+  assert.equal(S.seasonSummary(log, [], 999, 1800), null);
+  console.log(`Season checks passed (season 137 top: ${ss.top[0].name} ${ss.top[0].total}, ${ss.perfect.length} at 1800+ every war)`);
+}

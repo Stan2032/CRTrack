@@ -191,4 +191,25 @@ function calibrate(h, target, lookback = 10, perDay = 450) {
   return { n: samples.length, wars: wars.length, brier, baseline, base, bands };
 }
 
-if (typeof module !== 'undefined') module.exports = { band, BANDS, weekCmp, calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
+// Season summary (a season is the wars sharing the first number, e.g. 137-1 to 137-4).
+//   total medals per player over the season, who reached the target in every war they played (all 4),
+//   and placings per war where known.
+function seasonSummary(log, wars, season, target) {
+  const rows = log.filter(r => String(r.season_key).split('-')[0] === String(season));
+  const weeks = [...new Set(rows.map(r => r.season_key))].sort(weekCmp);
+  if (!weeks.length) return null;
+  const by = {};
+  for (const r of rows) {
+    const x = (by[r.player_tag] ||= { name: r.player_name, total: 0, wars: 0, passed: 0 });
+    const f = +r.player_fame || 0, d = +r.player_decks_used || 0;
+    if (!d && !f) continue;
+    x.total += f; x.wars++; if (f >= target) x.passed++;
+  }
+  const ps = Object.values(by).filter(x => x.wars);
+  const top = ps.slice().sort((a, b) => b.total - a.total).slice(0, 5);
+  const perfect = ps.filter(x => x.wars === weeks.length && x.passed === x.wars).sort((a, b) => b.total - a.total);
+  const placings = weeks.map(w => ({ week: w, rank: (wars || []).find(x => x.week === w)?.rank || null }));
+  return { season, weeks, top, perfect, placings, complete: weeks.length >= 4, medals: ps.reduce((t, x) => t + x.total, 0) };
+}
+
+if (typeof module !== 'undefined') module.exports = { seasonSummary, band, BANDS, weekCmp, calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
