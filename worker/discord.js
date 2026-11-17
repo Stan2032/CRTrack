@@ -2,7 +2,8 @@
 //   - Slash commands arrive at /api/discord (Discord signs each request; we check the signature).
 //   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
-import { readMember, writeNotes } from './history.js';
+import { readMember, writeNotes, cr } from './history.js';
+import { reliability } from './stats.gen.js';
 import { PUSH_SCHEMA } from './push.js';
 import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
@@ -45,6 +46,11 @@ export const COMMANDS = [
     { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
     { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
   { name: 'todo', description: 'Leaders: post (or refresh) the after-war to-do list in the leaders\' channel' },
+  { name: 'player', description: 'Leaders: a member\'s reliability, recent wars and this war', options: [
+    { type: 3, name: 'tag', description: 'Player tag, e.g. #ABC123' },
+    { type: 6, name: 'user', description: 'Or a linked Discord member' }] },
+  { name: 'check', description: 'Leaders: check someone who wants to join (war record, activity)', options: [
+    { type: 3, name: 'tag', description: 'Their player tag, e.g. #ABC123', required: true }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
 ];
 
@@ -260,6 +266,23 @@ export async function handleDiscord(request, env, ctx) {
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
+    case 'player': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      let tag = cleanTag(opt.tag);
+      if (!tag && opt.user) tag = (await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, opt.user).first())?.tag;
+      if (!tag || !TAG.test(tag)) return Response.json(reply('Give a player tag (e.g. #ABC123) or a linked member.'));
+      return Response.json(reply(await playerCard(env, clan, tag)));
+    }
+    case 'check': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const tag = cleanTag(opt.tag);
+      if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag, e.g. #ABC123.'));
+      later((async () => {
+        const msg = await recruitCard(env, clan, tag).catch(e => /404/.test(String(e.message)) ? `#${tag}: player not found.` : `Couldn't check #${tag} right now.`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
       later(syncGuild(env, guild, cfg, clan, 25));
@@ -267,6 +290,56 @@ export async function handleDiscord(request, env, ctx) {
     }
   }
   return Response.json(reply('Unknown command'));
+}
+
+const wkNum = k => { const [a, b] = String(k).split('-').map(Number); return a * 1000 + (b || 0); };
+const ROLE_NAME = { member: 'Member', elder: 'Elder', coLeader: 'Co-leader', leader: 'Leader' };
+
+// /player: what a leader needs at a glance about one member.
+export async function playerCard(env, clan, tag) {
+  const m = await readMember(env, clan, tag);
+  if (!m) return `#${tag} has never been in the clan while it was tracked.`;
+  const target = Number(m.rules?.target) || RULE_DEFAULTS.target, lookback = Number(m.rules?.lookback) || 10;
+  const weeks = m.weeks.slice().sort((a, b) => wkNum(b.week) - wkNum(a.week));
+  const rel = reliability({ weeks }, target, lookback);
+  const word = s => s >= 85 ? 'very reliable' : s >= 70 ? 'reliable' : s >= 55 ? 'hit and miss' : 'unreliable';
+  const lines = [`**${cleanName(m.name)}** · ${ROLE_NAME[m.role] || 'Member'} · ${m.inClan ? 'in the clan' : 'not in the clan now'}`];
+  if (rel) lines.push(`Reliability **${rel.score}/100** (${word(rel.score)}): ${Math.round(rel.hit * rel.wars)}/${rel.wars} wars at ${n(target)}+, ${Math.round(rel.deck * 100)}% of decks used, average ${n(rel.avg)}`);
+  if (weeks.length) lines.push(`Recent wars (newest first): ${weeks.slice(0, 8).map(w => `${w.fame >= target ? '✅' : '❌'}${n(w.fame)}`).join(' ')}`);
+  if (m.war?.day) { const d = m.war.days[m.war.days.length - 1]; if (d) lines.push(`This war, day ${m.war.day}: ${n(d.fame)} medals, ${Math.max(0, 4 - (d.day === m.war.day ? d.today : 0))} decks left today`); }
+  const notes = (await env.DB.prepare("SELECT week, kind, value FROM notes WHERE clan = ? AND tag = ? AND kind IN ('away', 'result', 'done')").bind(clan, tag).all()).results;
+  const away = notes.find(x => x.kind === 'away');
+  if (away) { try { const a = JSON.parse(away.value); if (Date.parse(a.until) > Date.now() - 7 * 864e5) lines.push(`🏖️ Away ${ukDate(a.from)} to ${ukDate(a.until)}${a.reason ? `: ${a.reason}` : ''}`); } catch (e) {} }
+  const warned = notes.filter(x => x.kind === 'result' && x.value === 'Warn' && notes.some(d => d.kind === 'done' && d.week === x.week && d.value === '1')).map(x => x.week).sort((a, b) => wkNum(b) - wkNum(a))[0];
+  if (warned) lines.push(`⚠️ First & only warning posted in war ${warned}`);
+  if (m.lastSeen) { const days = Math.floor((Date.now() - Date.parse(String(m.lastSeen).replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2}).*/, '$1-$2-$3T$4:$5:$6Z'))) / 864e5); if (days >= 0) lines.push(`Last online: ${days < 1 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`}`); }
+  return lines.join('\n').slice(0, 1990);
+}
+
+// /check: someone who wants to join. Public player data, their recent war battles, and any time they spent here.
+export async function recruitCard(env, clan, tag) {
+  const t = encodeURIComponent('#' + tag);
+  const [pl, log] = await Promise.all([cr(env, `/players/${t}`), cr(env, `/players/${t}/battlelog`).catch(() => [])]);
+  const wars = (Array.isArray(log) ? log : []).filter(b => /^riverRace|^boatBattle/.test(b.type || ''));
+  let won = 0, lost = 0, boats = 0;
+  for (const b of wars) {
+    if (b.type === 'boatBattle') { boats++; continue; }
+    const me = b.team?.[0] || {}, op = b.opponent?.[0] || {};
+    if (me.rounds && op.rounds) me.rounds.forEach((x, k) => x.crowns > (op.rounds[k]?.crowns ?? 0) ? won++ : lost++);
+    else me.crowns > op.crowns ? won++ : lost++;
+  }
+  const lastT = log?.[0]?.battleTime ? Date.parse(String(log[0].battleTime).replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2}).*/, '$1-$2-$3T$4:$5:$6Z')) : null;
+  const ours = await env.DB.prepare('SELECT in_clan, first_seen FROM members WHERE clan = ? AND tag = ?').bind(clan, tag).first();
+  const ourWars = (await env.DB.prepare('SELECT fame FROM war_players WHERE clan = ? AND tag = ?').bind(clan, tag).all()).results;
+  const lines = [`🔎 **${cleanName(pl.name)}** (#${tag}) · level ${pl.expLevel}`,
+    `Clan: ${pl.clan ? `${cleanName(pl.clan.name)} (${ROLE_NAME[pl.role] || 'Member'})` : 'none'}`,
+    `Trophies: ${n(pl.trophies)} (best ${n(pl.bestTrophies)})`,
+    `War day wins, all time: ${pl.warDayWins ?? '–'} · clan cards collected: ${n(pl.clanCardsCollected ?? 0)}`,
+    `Donations, all time: ${n(pl.totalDonations ?? 0)}`,
+    `Recent war battles: ${wars.length ? `${won}W–${lost}L${boats ? `, ${boats} boat attack${boats === 1 ? '' : 's'}` : ''} (last 25 battles)` : 'none in the last 25 battles'}`,
+    `Last battle: ${lastT ? ukDate(lastT) : '–'}`];
+  if (ours) lines.push(`📒 **Been in this clan before**${ours.in_clan ? ' (in it now)' : ''}: ${ourWars.length} tracked war${ourWars.length === 1 ? '' : 's'}${ourWars.length ? `, average ${n(Math.round(ourWars.reduce((s2, w) => s2 + w.fame, 0) / ourWars.length))}` : ''}`);
+  return lines.join('\n');
 }
 
 // A to-do button: tick (or untick) a group for everyone, then redraw the list in place.
@@ -385,6 +458,8 @@ async function postJob(env, guild, cfg, job, content, extra = {}) {
   if (!ch) return null;
   return dapi(env, 'POST', `/channels/${ch}/messages`, { content: content.slice(0, 1990), allowed_mentions: { parse: [] }, ...extra });
 }
+// Text bar, e.g. ███████░░░ for 0.7 (reads well on phones, no images needed).
+export const bar = (f, w = 10) => { const k = Math.max(0, Math.min(w, Math.round(f * w))); return '█'.repeat(k) + '░'.repeat(w - k); };
 const place = i => ['1st', '2nd', '3rd', '4th', '5th'][i] || `${i + 1}th`;
 
 async function clanRules(env, clan) {
@@ -449,11 +524,13 @@ export async function warBoard(env, r, now) {
     if (gy != null && gy !== g) gap += i > 0 ? (g < gy ? ' (closing ▲)' : ' (gap growing ▼)') : (g > gy ? ' (pulling away ▲)' : ' (they\'re closing ▼)');
   }
   const pct = b.decksTotal ? Math.round(100 * b.decksUsed / b.decksTotal) : 0;
+  const top = st[0]?.fame || 1;
   const content = [
     `⚔️ **War ${r.week} · battle day ${r.day} of 4**`,
     me ? `🏁 ${place(i)} of ${st.length} · ${n(me.fame)} medals${gap}` : '',
-    `🎯 ${b.reached} of ${b.members} have reached ${n(r.target)}`,
-    `🃏 Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
+    st.length > 1 ? '```\n' + st.map((c, k) => `${k + 1}. ${bar(c.fame / top, 8)} ${n(c.fame).padStart(6)}  ${cleanName(c.name).slice(0, 16)}${c.tag === r.clan ? ' ◀' : ''}`).join('\n') + '\n```' : '',
+    `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
+    `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
     b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
     `_Updated ${ukClock(now)} UK_`,
   ].filter(Boolean).join('\n');
@@ -486,7 +563,7 @@ export async function daySummary(env, clan, week, day) {
   const content = [
     `📊 **Battle day ${day} summary · war ${week}**`,
     `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}`,
-    `Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
+    `${bar(used / total)} Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
     i >= 0 ? `Place: ${place(i)} of ${sorted.length}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
     `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
   ].filter(Boolean).join('\n');
@@ -496,6 +573,27 @@ export async function daySummary(env, clan, week, day) {
     await dapi(env, 'POST', `/channels/${chan(cfg, 'results')}/messages`, { content, allowed_mentions: { parse: [] } }).then(() => sent++).catch(() => {});
   }
   return sent;
+}
+
+// After a war: the top 3, and streak milestones (every 5 wars in a row at the target) for current members.
+export async function shoutOuts(env, clan, week, target) {
+  if (!discordReady(env)) return 0;
+  const rows = (await env.DB.prepare('SELECT w.week, w.tag, w.name, w.fame FROM war_players w JOIN members m ON m.clan = w.clan AND m.tag = w.tag AND m.in_clan = 1 WHERE w.clan = ?').bind(clan).all()).results;
+  const num = k => { const [a, b] = String(k).split('-').map(Number); return a * 1000 + (b || 0); };
+  const now = rows.filter(x => x.week === week && x.fame > 0).sort((a, b) => b.fame - a.fame);
+  if (!now.length) return 0;
+  const byTag = {};
+  for (const x of rows) (byTag[x.tag] ||= []).push(x);
+  const streaks = [];
+  for (const p of now.filter(x => x.fame >= target)) {
+    const ws = byTag[p.tag].filter(x => num(x.week) <= num(week)).sort((a, b) => num(b.week) - num(a.week));
+    let n2 = 0; for (const x of ws) { if (x.fame >= target) n2++; else break; }
+    if (n2 >= 5 && n2 % 5 === 0) streaks.push(`${cleanName(p.name)}: **${n2} wars in a row** at ${n(target)}+`);
+  }
+  const medal = ['🥇', '🥈', '🥉'];
+  const body = [`${now.slice(0, 3).map((x, i) => `${medal[i]} ${cleanName(x.name)} ${n(x.fame)}`).join(' · ')}`,
+    streaks.length ? `🔥 ${streaks.join('\n🔥 ')}` : ''].filter(Boolean).join('\n');
+  return discordPost(env, clan, `🏆 War ${week} shout-outs`, body, [], 'joins');
 }
 
 // Re-write every posted rules message for this clan (after the rules change on the site).

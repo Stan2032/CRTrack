@@ -31,11 +31,13 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/history.js` | Snapshots into D1, alerts, history and member reads, shared notes |
 | `worker/push.js` | Web Push (VAPID keys made on first use, kept in D1) |
 | `worker/discord.js` | Discord bot |
+| `worker/leaders.js` | After-war to-do list for the leaders' channel (decisions from `logic.gen.js`) |
+| `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
 | `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
 | `samples/` | Real RoyaleAPI exports from 16 Nov 2026 (used by tests) |
 | `docs/gemini/` | The earlier Gemini work this replaced |
 
-Run all tests: `for t in check function history stats discord; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
+Run all tests: `for t in check function history stats discord leaders; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
 (the GitHub workflow runs them too, but GitHub Actions is currently blocked by an account setting).
 
 ## Cloudflare setup
@@ -115,9 +117,29 @@ Phone alerts (installed app, leaders with the code): joins/leaves (with open spo
 reached the target, who didn't), battle day 4 can't-reach (per-player targets), decks still unused in a day's last
 4 hours, data pulls failing. Pushes carry no data; the phone fetches `/api/alerts/latest?clan=` and shows unseen ones.
 
-Discord (`worker/discord.js`): `/link #TAG`, `/unlink`, `/me`, and for leaders (Manage Roles) `/linkuser`, `/links`,
-`/setup` (shows what goes where; finds roles named Member / Elder / Co-Leader / Leader, or pick them), `/sync`, and `/post-here`, run **in** a channel to give it a job: war board + battle-day reminders, battle day summaries + war results, welcomes for new members, rules (kept up to date), how to link (for a channel newcomers can see), or nothing. Config in kv `discord:{guild}` = `{clan, channels: {war, results, joins}, roles}` (older single `channel` still works until `/post-here` is used). Roles and nicknames follow the game for linked members; pings linked members
-with decks left in a battle day's last 4 hours; posts war results and welcomes. It also keeps three messages up to date by editing them: a **live war board** (one per war, refreshed every pull on battle days), a **battle day summary** after each reset (medals gained with +/- % vs the day before, decks used, place, top 3), and the **rules** posted with `/post-here` → Rules (re-written when rules are saved on the site). Signature checking was tested in Cloudflare's runtime (wrangler dev). Setup:
+Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
+- Anyone: `/link #TAG`, `/unlink`, `/me`, `/away days reason` (absence: saved as a shared `away` note; under target while
+  away during a war → **Leaders decide** instead of kick/warn, shown on the page), `/remind hours` (private message when a
+  battle day has that long left and they still have decks; checked on turn-on; once per day; max 8 per run).
+- Leaders (Manage Roles): `/linkuser`, `/links`, `/setup` (shows what goes where; finds roles named Member / Elder /
+  Co-Leader / Leader), `/sync`, `/post-here` (run **in** a channel to give it a job), `/todo` (redo the to-do list),
+  `/player #TAG` (reliability, recent wars, away, warning), `/check #TAG` (someone applying: public stats, recent war
+  battles, any time already spent in this clan).
+
+Channel jobs (`/post-here`): **war** (live war board with text bars, refreshed every pull; "under 4 hours" pings),
+**results** (battle day summary with +/- % after each reset; war result), **joins** (welcomes, promotion congrats,
+after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (after-war to-do list + absences),
+**rules** and **how to link** (messages kept up to date by editing). Config in kv `discord:{guild}` =
+`{clan, channels: {war, results, joins, leaders}, roles}`.
+
+**Leaders' to-do list**: when a war ends, the next 15-minute run (a run of its own) works out the decisions with the
+page's own code (`worker/gen.mjs` copies `site/logic.js` / `site/stats.js` to `worker/*.gen.js` on every deploy; a test
+fails if they're stale) and posts the list plus the clan chat messages in code blocks. Kicks/demotions/promotions tick
+themselves from the game; warnings, check-ins and decisions have buttons. Buttons write the same `done` notes as the
+page, and ticking on the page redraws the Discord list. Reads only `lookback + 2` wars of history (lite) to stay within
+the 10 ms CPU limit (~4 ms measured with 12 wars, 50 players, 2,000 events).
+
+Setup:
 1. discord.com/developers → New Application → Bot: copy the token. General Information: copy the Application ID and Public Key.
 2. Add Cloudflare secrets `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY` (and text `DISCORD_GUILD_ID`).
 3. General Information → Interactions Endpoint URL: `https://crtrack.stane203.workers.dev/api/discord`.

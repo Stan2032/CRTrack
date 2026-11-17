@@ -29,9 +29,11 @@ left today, their forecast, their war history and consistency, how they play, an
 
 ## Discord
 
-A bot run by the same Worker: `/link #TAG`, `/me`, roles and nicknames that follow the game, battle-day pings for
-linked members with decks left, a live war board, battle day summaries, war results, and rules kept up to date.
-Leaders run `/post-here` in each channel to choose what it gets, and `/setup` to see what goes where. Setup steps are in `docs/HANDOFF.md`.
+A bot run by the same Worker. Members: `/link #TAG`, `/me`, `/away` (going away: leaders see it, no automatic kick),
+`/remind` (private message when a battle day is ending with decks left). Leaders: `/post-here` in each channel to choose
+what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only to-do list with tick buttons,
+rules, how to link), `/setup`, `/sync`, `/todo`, `/player #TAG`, `/check #TAG` (someone applying). Roles and nicknames
+follow the game. Setup steps are in `docs/HANDOFF.md`.
 
 ## Stats and forecasts
 
@@ -100,7 +102,7 @@ All numbers and switches can be changed.
 - `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `stats.js` for forecasts and stats, `app.js` for the screen)
 - `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
 - `samples/`: real exports from #WINNING, week 138-2
-- `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs` (also run automatically on GitHub for every push)
+- `tests/`: `check`, `function`, `history`, `stats`, `discord`, `leaders`, `ui` (run with `node tests/<name>.mjs`)
 
 The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
 - `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources

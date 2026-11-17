@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -172,6 +172,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
         notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };
     })() : null,
     prevDay: prevDay?.day || 0, prevWeek: prevDay?.week || null,
+    promoted: events.filter(e => e[3] === 'role' && /^(member>elder|elder>coLeader|member>coLeader)$/.test(e[4])).map(e => ({ tag: e[1], name: e[2], role: e[4].split('>')[1] })),
     changedTags: [...new Set(events.filter(e => ['join', 'leave', 'role'].includes(e[3])).map(e => e[1]))],
     decksLeft: day ? live.filter(p => here.has(clean(p.tag))).reduce((n, p) => n + Math.max(0, 4 - p.decksUsedToday), 0) : 0,
   };
@@ -226,7 +227,9 @@ async function alertsFor(env, r, now) {
     const body = `${w.passed} of ${w.played} reached ${r.target}.` + (w.under.length ? ` Under: ${list(w.under, 5)}.` : ' Everyone made it!') + ' Open the app for who to act on.';
     const sentW = await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
     await discordPost(env, r.clan, `🏁 War ${w.week} finished${place}${trophies}`, `${w.passed} of ${w.played} reached ${r.target}. Thanks all! ⚔️`, [], 'results');
+    await shoutOuts(env, r.clan, w.week, r.target).catch(() => {});
   }
+  for (const p of r.promoted || []) await discordPost(env, r.clan, `🎉 Congrats ${String(p.name).replace(/<\/?c\d*>/gi, '')} on ${p.role === 'coLeader' ? 'Co-leader' : 'Elder'}!`, p.role === 'elder' ? `Earned by hitting ${r.target}+ war after war. ⭐` : 'Thanks for everything you do for the clan. ⭐', [], 'joins');
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day && r.decksLeft) {
     const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();

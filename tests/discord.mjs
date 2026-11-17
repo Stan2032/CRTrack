@@ -21,8 +21,11 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC\/battlelog$/.test(url)) return Response.json([{ type: 'riverRacePvP', battleTime: '20261116T120000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] }, { type: 'boatBattle' }]);
   if (/\/users\/@me\/channels$/.test(url)) return JSON.parse(opt.body).recipient_id === 'BLOCKED' ? new Response('{}', { status: 403 }) : Response.json({ id: 'DM-' + JSON.parse(opt.body).recipient_id });
-  if (/\/channels\/(C|R|LC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
+  if (/\/channels\/(C|R|LC|J)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
 
@@ -162,6 +165,26 @@ assert.ok(calls.some(c => c.method === 'PUT' && /applications\/A\/guilds\/G\/com
 assert.deepEqual(calls.find(c => c.method === 'PUT' && /applications\/A\/commands$/.test(c.url)).body, []);
 
 assert.match(await text(await here('none', 'R')), /won't post[\s\S]*summaries \+ war results → _not set_/);
+
+// Shout-outs after a war: top 3 and streak milestones (every 5 in a row), current members only.
+const { shoutOuts, playerCard, recruitCard, bar } = await import('../worker/discord.js');
+await DB.prepare("UPDATE members SET in_clan = 1").run();
+await DB.exec(`INSERT INTO war_players (clan,week,tag,name,fame,decks,boats) VALUES
+  ('PPCCR8VU','1-1','2VJ9V2PV','Luke',2000,16,0),('PPCCR8VU','1-2','2VJ9V2PV','Luke',2000,16,0),('PPCCR8VU','1-3','2VJ9V2PV','Luke',2000,16,0),
+  ('PPCCR8VU','1-4','2VJ9V2PV','Luke',2000,16,0),('PPCCR8VU','2-1','2VJ9V2PV','Luke',2600,16,0),('PPCCR8VU','2-1','YVJRGLCC','perc',1500,16,8);`);
+await here('joins', 'J');
+calls.length = 0;
+assert.equal(await shoutOuts(env, 'PPCCR8VU', '2-1', 1800), 1);
+assert.match(calls.find(c => /channels\/J\/messages$/.test(c.url)).body.content, /War 2-1 shout-outs[\s\S]*🥇 Luke 2,600 · 🥈 perc 1,500[\s\S]*🔥 Luke: \*\*5 wars in a row\*\*/);
+
+// /player and /check.
+assert.equal(bar(0.7), '███████░░░');
+const card = await playerCard(env, 'PPCCR8VU', '2VJ9V2PV');
+assert.match(card, /\*\*Luke\*\* · Elder[\s\S]*Reliability \*\*\d+\/100\*\*[\s\S]*5\/5 wars at 2,000\+[\s\S]*Recent wars \(newest first\): ✅2,600 ✅2,000/);
+assert.match(await text(await cmd('player', [{ name: 'tag', value: '#2VJ9V2PV' }], member('U4'))), /Leaders only/);
+const rc = await recruitCard(env, 'PPCCR8VU', 'YVJRGLCC');
+assert.match(rc, /perc[\s\S]*Clan: Other \(Elder\)[\s\S]*Recent war battles: 1W–0L, 1 boat attack \([\s\S]*Been in this clan before\*\* \(in it now\): 1 tracked war, average 1,500/);
+await assert.rejects(recruitCard(env, 'PPCCR8VU', 'QQQQQQ'));
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };
