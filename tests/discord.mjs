@@ -20,6 +20,7 @@ let currentRoles = ['OTHER'];
 globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
+  if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
   if (/\/channels\/C\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
@@ -91,6 +92,9 @@ await DB.exec(`INSERT OR REPLACE INTO notes (clan,week,tag,kind,value,at) VALUES
 calls.length = 0;
 assert.equal(await updateRulesMessages(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /2,000\+ medals every war/);
+
+// /setup without picking roles finds them by name.
+assert.match(await text(await interaction({ type: 2, guild_id: 'G2', member: leader, data: { name: 'setup', options: [{ name: 'channel', value: 'C' }] } })), /Member → <@&R1>, Elder → <@&R2>, Co-leader → <@&R3>, Leader → <@&R4>/);
 
 // Welcome / how-to-link message.
 assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'welcome', options: [] } })), /Posted/);

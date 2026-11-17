@@ -148,11 +148,17 @@ export async function handleDiscord(request, env, ctx) {
     }
     case 'setup': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
-      const roles = { member: opt.member_role || cfg?.roles?.member, elder: opt.elder_role || cfg?.roles?.elder, coLeader: opt.coleader_role || cfg?.roles?.coLeader, leader: opt.leader_role || cfg?.roles?.leader };
+      // Roles not picked: use server roles named Member / Elder / Co-Leader / Leader.
+      const byName = {};
+      if (!opt.member_role || !opt.elder_role || !opt.coleader_role || !opt.leader_role) {
+        const list = await dapi(env, 'GET', `/guilds/${guild}/roles`).catch(() => []);
+        for (const r of Array.isArray(list) ? list : []) { const n = String(r.name).toLowerCase().replace(/[^a-z]/g, ''); if (['member', 'elder', 'coleader', 'leader'].includes(n) && !byName[n]) byName[n] = r.id; }
+      }
+      const roles = { member: opt.member_role || cfg?.roles?.member || byName.member, elder: opt.elder_role || cfg?.roles?.elder || byName.elder, coLeader: opt.coleader_role || cfg?.roles?.coLeader || byName.coleader, leader: opt.leader_role || cfg?.roles?.leader || byName.leader };
       const test = await dapi(env, 'POST', `/channels/${opt.channel}/messages`, { content: 'War Audit will post war reminders and results here.', allowed_mentions: { parse: [] } }).then(() => '', e => e.message);
       if (test) return Response.json(reply(cantPost(opt.channel, test) + ' Nothing was changed; run /setup again after fixing it.'));
       await setConfig(env, guild, { clan, channel: opt.channel, roles });
-      return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ' Roles follow the game for linked members (run `/sync` once now).' : ' Add roles any time by running /setup again.')));
+      return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ` Roles: ${[['Member', roles.member], ['Elder', roles.elder], ['Co-leader', roles.coLeader], ['Leader', roles.leader]].map(([n, id]) => `${n} → ${id ? `<@&${id}>` : 'none'}`).join(', ')}. These follow the game for linked members (run \`/sync\` once now).` : ' Add roles any time by running /setup again.')));
     }
     case 'rules': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
