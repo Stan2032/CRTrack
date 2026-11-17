@@ -6,104 +6,135 @@
 <title>Clan War Audit</title>
 <style>
 :root {
-  --bg: #f6f7f9; --card: #ffffff; --line: #d9dde3; --text: #1b1f24; --muted: #667080;
+  --bg: #f4f5f7; --card: #ffffff; --line: #dfe3e8; --text: #1b1f24; --muted: #6a7380; --soft: #eef1f4;
   --green: #1a7f37; --red: #cf222e; --orange: #bc4c00; --yellow: #9a6700; --blue: #0969da; --cyan: #1b7c83;
-  --btn: #eef1f4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e; --soft: #21262d;
     --green: #3fb950; --red: #f85149; --orange: #db6d28; --yellow: #d29922; --blue: #58a6ff; --cyan: #39c5cf;
-    --btn: #21262d;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0 auto; max-width: 1100px; padding: 12px 16px 40px; background: var(--bg); color: var(--text);
+body { margin: 0 auto; max-width: 860px; padding: 16px 16px 48px; background: var(--bg); color: var(--text);
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-h1 { font-size: 17px; margin: 0; }
-h1 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+h1 { font-size: 18px; margin: 0 0 2px; }
+#sub { color: var(--muted); font-size: 13px; min-height: 18px; margin-bottom: 14px; }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+.step > h2, .step > summary { font-size: 15px; margin: 0 0 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.step > summary { cursor: pointer; margin: 0; list-style: none; }
+.step[open] > summary { margin-bottom: 12px; }
+.n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--card); font-size: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.btn, select, input { background: var(--btn); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
-  padding: 6px 10px; font: inherit; font-size: 13px; }
-.btn { cursor: pointer; font-weight: 600; }
-.btn.on { background: var(--green); border-color: var(--green); color: #fff; }
-input[type=number] { width: 80px; }
-.drop { display: block; cursor: pointer; border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); margin-bottom: 12px; }
+.grow { flex: 1; }
+.btn, select, input { background: var(--soft); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; font: inherit; font-size: 14px; }
+select { padding: 6px 8px; font-size: 13px; }
+.btn { cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block; }
+.btn.main { background: var(--green); border-color: var(--green); color: #fff; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--soft); color: var(--muted); padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.seg button.on { background: var(--text); color: var(--card); }
+.tagin { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); padding-left: 10px; }
+.tagin span { color: var(--muted); }
+.tagin input { border: 0; background: transparent; width: 130px; text-transform: uppercase; }
+.links { font-size: 13px; color: var(--muted); }
+.links a { color: var(--blue); }
+.drop { display: block; cursor: pointer; border: 2px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center;
+  color: var(--muted); margin-top: 12px; font-size: 13px; }
 .drop.over { border-color: var(--blue); color: var(--text); }
-.files { font-size: 12px; color: var(--muted); margin-top: 6px; }
-.tabs { display: flex; gap: 6px; margin: 10px 0; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--muted); }
-.chip.on { color: var(--text); border-color: var(--text); }
-.wrap { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
-th { font-size: 11px; color: var(--muted); text-transform: uppercase; }
-tr:last-child td { border-bottom: 0; }
-td.num { font-variant-numeric: tabular-nums; }
-.why { color: var(--muted); white-space: normal; min-width: 160px; }
-.tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid currentColor; }
+.status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.status.err { color: var(--red); }
+.setup { margin-top: 10px; font-size: 13px; }
+.setup summary { cursor: pointer; color: var(--muted); }
+.setup ol { margin: 8px 0; padding-left: 20px; }
+.setup code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.chip { border: 1px solid currentColor; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; text-decoration: none; }
+.group { margin-top: 14px; }
+.group > summary, .group > h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .03em; cursor: default; }
+.group > summary { cursor: pointer; }
+.p { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 14px; align-items: center; padding: 9px 2px; border-top: 1px solid var(--line); }
+.who b { font-size: 14px; }
+.why { color: var(--muted); font-size: 12px; }
+.nums { display: flex; gap: 14px; font-variant-numeric: tabular-nums; }
+.nums span { display: flex; flex-direction: column; align-items: flex-end; min-width: 58px; }
+.nums small { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.ctl { display: flex; gap: 6px; justify-content: flex-end; min-width: 230px; }
+@media (max-width: 600px) {
+  .p { grid-template-columns: 1fr auto; }
+  .ctl { grid-column: 1 / -1; justify-content: flex-start; min-width: 0; }
+  .nums span { min-width: 44px; }
+}
+.role { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
+.new { font-size: 10px; color: var(--blue); font-weight: 700; margin-left: 4px; }
 .s-Kick, .s-Out { color: var(--red); } .s-Demote { color: var(--orange); } .s-Warn, .s-Need { color: var(--yellow); }
 .s-Check { color: var(--blue); } .s-Promote, .s-Safe { color: var(--green); } .s-Review { color: var(--cyan); }
 .s-OK, .s-Excused { color: var(--muted); }
-.role { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
-.new { font-size: 10px; color: var(--blue); font-weight: 700; margin-left: 4px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.card b { font-size: 13px; }
-.cnt { float: right; font-size: 12px; color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.card b { font-size: 13px; display: flex; justify-content: space-between; }
+.cnt { font-size: 12px; color: var(--muted); font-weight: 400; }
 .cnt.over { color: var(--red); }
-textarea { width: 100%; min-height: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
-  padding: 8px; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
-.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
-.rule { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.empty { color: var(--muted); padding: 20px; text-align: center; }
+textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; resize: vertical; overflow: hidden; }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px; }
+.rule { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.rule input[type=number] { width: 80px; padding: 5px 8px; }
+.empty { color: var(--muted); padding: 10px 0; }
 .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
-<header>
-  <h1 id="title">Clan War Audit<small id="sub"></small></h1>
+<h1>Clan War Audit</h1>
+<div id="sub"></div>
+
+<section class="step">
+  <h2><span class="n">1</span>Get data</h2>
   <div class="row">
-    <button class="btn on" id="m-end">Week end</button>
-    <button class="btn" id="m-live">Live</button>
-    <select id="day" class="hidden" title="Battle day">
-      <option value="1">Day 1</option><option value="2">Day 2</option><option value="3">Day 3</option><option value="4">Day 4</option>
-    </select>
+    <label class="tagin"><span>#</span><input id="tag" placeholder="CLANTAG" autocomplete="off" spellcheck="false"></label>
+    <button class="btn main" id="pull">Pull</button>
+    <span class="links" id="links"></span>
   </div>
-</header>
-
-<label class="drop" id="drop">
-  Drop RoyaleAPI CSVs here, or tap to pick
-  <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
-  <div class="files" id="files">Roster + war log needed. Current race for Live.</div>
-</label>
-
-<div class="tabs">
-  <button class="btn on" data-tab="list">List</button>
-  <button class="btn" data-tab="chat">Chat</button>
-  <button class="btn" data-tab="rules">Rules</button>
-</div>
-
-<section id="t-list">
-  <div class="row" style="justify-content:space-between">
-    <div class="chips" id="chips"></div>
-    <input id="q" placeholder="Search" style="margin-bottom:10px">
-  </div>
-  <div class="wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+  <details class="setup" id="setup">
+    <summary>Pull setup (one time)</summary>
+    <ol>
+      <li>Make a free key at <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a></li>
+      <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
+      <li>Paste the key here. It stays on this device.</li>
+    </ol>
+    <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off"><button class="btn" id="savekey">Save</button></div>
+  </details>
+  <label class="drop" id="drop">Or drop RoyaleAPI CSVs here
+    <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
+  </label>
+  <div class="status" id="status"></div>
 </section>
 
-<section id="t-chat" class="hidden"><div class="cards" id="cards"></div></section>
+<section class="step">
+  <h2><span class="n">2</span>Actions
+    <span class="grow"></span>
+    <span class="seg"><button id="m-end" class="on">Week end</button><button id="m-live">Live</button></span>
+    <select id="day" class="hidden"><option value="1">Day 1</option><option value="2">Day 2</option><option value="3">Day 3</option><option value="4">Day 4</option></select>
+  </h2>
+  <div class="chips" id="chips"></div>
+  <div id="groups"><div class="empty">No data yet</div></div>
+</section>
 
-<section id="t-rules" class="hidden">
+<section class="step">
+  <h2><span class="n">3</span>Chat</h2>
+  <div class="cards" id="cards"><div class="empty">Nothing yet</div></div>
+</section>
+
+<details class="step">
+  <summary>Rules</summary>
   <div class="rules" id="rules"></div>
-  <div class="row" style="margin-top:10px">
+  <div class="row" style="margin-top:12px">
     <button class="btn" id="reset">Reset</button>
-    <button class="btn" id="export">Save .md</button>
+    <button class="btn" id="export">Save report</button>
   </div>
-</section>
+</details>
 
 <script id="logic">
 // ---- Pure logic (no DOM). Tested by tests/check.mjs ----
@@ -367,16 +398,44 @@ function chatLive(list, r) {
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
 
-if (typeof module !== 'undefined') module.exports = { DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
-</script>
 
+// ---- Official API (via a CORS-friendly proxy) -> same row shapes as the CSVs ----
+const VALID_TAG = /^[0289PYLQGRJCUV]{3,12}$/;
+
+function apiToRows({ clan, members, race, log }) {
+  const ct = cleanTag(clan?.tag || race?.clan?.tag), cn = clan?.name || race?.clan?.name || '';
+  const roster = (members?.items || []).map(m => ({ tag: m.tag, name: m.name, role: m.role, lastSeen: m.lastSeen }));
+  const raceRows = (race?.clan?.participants || []).map(x => ({
+    clan_tag: ct, clan_name: cn, player_tag: x.tag, player_name: x.name, player_fame: x.fame,
+    player_boat_attacks: x.boatAttacks, player_decks_used: x.decksUsed, player_decks_used_today: x.decksUsedToday }));
+  const logRows = [];
+  for (const wk of log?.items || []) {
+    const st = (wk.standings || []).find(s => cleanTag(s.clan.tag) === ct);
+    if (!st) continue;
+    const key = `${wk.seasonId}-${wk.sectionIndex + 1}`;
+    for (const x of st.clan.participants || []) logRows.push({
+      season_key: key, clan_tag: ct, clan_name: cn, player_tag: x.tag, player_name: x.name,
+      player_fame: x.fame, player_decks_used: x.decksUsed, player_boat_attacks: x.boatAttacks });
+  }
+  return { roster, race: raceRows, log: logRows };
+}
+
+// periodIndex: 0-2 training, 3-6 battle days 1-4 (repeats each week)
+function raceDay(race) {
+  if (!race || !['warDay', 'colosseum'].includes(race.periodType)) return 0;
+  return Math.min(4, Math.max(1, (race.periodIndex % 7) - 2));
+}
+
+if (typeof module !== 'undefined') module.exports = { apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+</script>
 <script>
 // ---- UI ----
 const $ = s => document.querySelector(s);
-const data = { roster: [], log: [], race: [], history: [] };
-const loaded = {};
-let model = null, mode = 'end', tab = 'list', filter = 'All', day = 4;
+const PROXY = 'https://proxy.royaleapi.dev/v1';
+let data = { roster: [], log: [], race: [], history: [] };
+let model = null, mode = 'end', day = 4, source = '';
 let store = { rules: { ...DEFAULT_RULES }, join: {}, over: {} };
+let settings = { key: '', tag: '' };
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late join, per day left', effortNet: 'Late join passes if all decks used',
@@ -384,35 +443,78 @@ const RULE_LABELS = {
   holdWeeks: 'Check in: weeks passed in a row', holdOffline: 'Check in: days offline', promoWeeks: 'Promote: weeks in clan',
   promoMisses: 'Promote: max misses', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length',
 };
-const STATUS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused'];
-const STATUS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
-const JOIN = [['full', 'Before war'], ['1', 'Day 1'], ['2', 'Day 2'], ['3', 'Day 3'], ['4', 'Day 4'], ['excused', 'Excused']];
+const GROUPS_END = [['Kick', 'Kick'], ['Demote', 'Demote'], ['Warn', 'Warn'], ['Check', 'Check in'], ['Review', 'Review'], ['Promote', 'Promote'], ['OK', 'OK'], ['Excused', 'Excused']];
+const GROUPS_LIVE = [['Out', "Can't make it"], ['Need', 'Still need'], ['Safe', 'Safe'], ['Excused', 'Excused']];
+const FOLDED = ['OK', 'Excused', 'Safe'];
+const JOIN = [['full', 'Joined: before'], ['1', 'Joined: day 1'], ['2', 'Joined: day 2'], ['3', 'Joined: day 3'], ['4', 'Joined: day 4'], ['excused', 'Excused']];
+const ROLE = { elder: 'Elder', coLeader: 'Co', leader: 'Leader' };
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
+function put(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 
 const storeKey = () => 'cr-war-audit:' + (model?.clan.tag || 'none');
-function loadStore() {
-  try { const s = JSON.parse(localStorage.getItem(storeKey()) || 'null'); if (s) store = { join: {}, over: {}, ...s, rules: { ...DEFAULT_RULES, ...s.rules } }; }
-  catch (e) {}
-}
-function saveStore() { try { localStorage.setItem(storeKey(), JSON.stringify(store)); } catch (e) {} }
+function loadStore() { const s = get(storeKey(), null); store = { join: {}, over: {}, ...(s || {}), rules: { ...DEFAULT_RULES, ...(s?.rules || {}) } }; }
+const saveStore = () => put(storeKey(), store);
 const pk = p => (mode === 'live' ? 'live' : (model.season || 'x')) + '|' + p.tag;
 
-function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function say(msg, err) { const el = $('#status'); el.textContent = msg; el.classList.toggle('err', !!err); }
+
+function cleanInputTag() { return $('#tag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'); }
+
+function setLinks() {
+  const t = cleanInputTag();
+  const base = 'https://royaleapi.com/clan/' + t;
+  $('#links').innerHTML = VALID_TAG.test(t)
+    ? `CSVs: <a href="${base}" target="_blank" rel="noopener">Members</a> · <a href="${base}/war/log" target="_blank" rel="noopener">War log</a> · <a href="${base}/war/race" target="_blank" rel="noopener">Race</a>`
+    : '';
+}
+
+function load(rows, src) {
+  data = { roster: [], log: [], race: [], history: [], ...rows };
+  model = build(data);
+  if (model.clan.tag) { $('#tag').value = model.clan.tag; settings.tag = model.clan.tag; put('cr-war-audit:settings', settings); setLinks(); }
+  loadStore();
+  source = src;
+  $('#sub').textContent = [model.clan.name, model.clan.tag && '#' + model.clan.tag, model.season && 'last war ' + model.season].filter(Boolean).join(' · ');
+  render();
+}
+
+async function pull() {
+  const t = cleanInputTag();
+  if (!VALID_TAG.test(t)) return say('Check the clan tag', true);
+  if (!settings.key) { $('#setup').open = true; $('#key').focus(); return say('Add an API key first', true); }
+  say('Pulling…');
+  const call = async path => {
+    const r = await fetch(PROXY + '/clans/' + encodeURIComponent('#' + t) + path, { headers: { Authorization: 'Bearer ' + settings.key } });
+    if (!r.ok) throw r.status;
+    return r.json();
+  };
+  try {
+    const [clan, members, race, log] = await Promise.all([call(''), call('/members'), call('/currentriverrace'), call('/riverracelog?limit=10')]);
+    load(apiToRows({ clan, members, race, log }), 'api');
+    const d = raceDay(race);
+    if (d) { day = d; $('#day').value = d; setMode('live'); } else setMode('end');
+    say(`Pulled ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${d ? 'battle day ' + d : 'training days'}`);
+  } catch (e) {
+    say(e === 403 ? 'Key refused. Check the allowed IP in pull setup.' : e === 404 ? 'Clan not found' : typeof e === 'number' ? 'Error ' + e : "Couldn't connect", true);
+    if (e === 403) $('#setup').open = true;
+  }
+}
 
 async function addFiles(files) {
+  const rows = { ...data };
+  if (source === 'api') Object.assign(rows, { roster: [], log: [], race: [], history: [] });
+  const bad = [];
   for (const f of files) {
-    const rows = parseCSV(await f.text());
-    const kind = detect(rows);
-    if (!kind) { loaded[f.name] = '?'; continue; }
-    data[kind] = rows; loaded[kind] = f.name;
+    const r = parseCSV(await f.text()), kind = detect(r);
+    if (kind) rows[kind] = r; else bad.push(f.name);
   }
-  const names = { roster: 'Roster', log: 'War log', history: 'History', race: 'Current race' };
-  $('#files').textContent = Object.entries(names).map(([k, n]) => (data[k].length ? '✓ ' : '· ') + n).join('   ');
-  model = build(data);
-  loadStore();
-  if (data.race.length) day = guessDay(model.players), $('#day').value = day;
-  $('#sub').textContent = [model.clan.name, model.clan.tag && '#' + model.clan.tag, model.season && 'week ' + model.season].filter(Boolean).join(' · ');
-  if (!data.log.length && !data.history.length && data.race.length) setMode('live');
-  render();
+  load(rows, 'csv');
+  if (rows.race.length && !rows.log.length && !rows.history.length) setMode('live');
+  if (rows.race.length) { day = guessDay(model.players); $('#day').value = day; }
+  const have = [['roster', 'Members'], ['log', 'War log'], ['race', 'Race']].map(([k, n]) => (rows[k].length ? '✓ ' : '✗ ') + n);
+  say(have.join('   ') + (bad.length ? '   · not recognised: ' + bad.join(', ') : ''));
 }
 
 function evaluate() {
@@ -424,81 +526,62 @@ function evaluate() {
   });
 }
 
-function render() {
-  renderRules();
-  if (!model || !model.players.length) {
-    $('#head').innerHTML = ''; $('#chips').innerHTML = '';
-    $('#body').innerHTML = `<tr><td class="empty">No data yet</td></tr>`; $('#cards').innerHTML = '';
-    return;
-  }
-  const list = evaluate();
-  const order = mode === 'end' ? STATUS_END : STATUS_LIVE;
-  const counts = Object.fromEntries(order.map(s => [s, list.filter(x => x.res.status === s).length]));
-  $('#chips').innerHTML = ['All', ...order].filter(s => s === 'All' || counts[s])
-    .map(s => `<span class="chip ${filter === s ? 'on' : ''}" data-f="${s}">${s} ${s === 'All' ? list.length : counts[s]}</span>`).join('');
-
-  const q = $('#q').value.toLowerCase();
-  const shown = list.filter(x => (filter === 'All' || x.res.status === filter) && x.name.toLowerCase().includes(q))
-    .sort((a, b) => order.indexOf(a.res.status) - order.indexOf(b.res.status)
-      || (mode === 'live' ? a.res.today - b.res.today : 0)
-      || ((a.cur?.fame ?? a.res.fame ?? 0) - (b.cur?.fame ?? b.res.fame ?? 0)));
-
-  const roleTag = p => ({ elder: 'Elder', coLeader: 'Co', leader: 'Leader' }[p.role] ? `<span class="role">${({ elder: 'Elder', coLeader: 'Co', leader: 'Leader' })[p.role]}</span>` : '');
-  const joinSel = p => `<select data-join="${esc(p.tag)}">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  const name = p => `<b>${esc(p.name)}</b>${roleTag(p)}${p.isNew ? '<span class="new">NEW</span>' : ''}`;
-
+function row(p) {
+  const name = `<b>${esc(p.name)}</b>${ROLE[p.role] ? `<span class="role">${ROLE[p.role]}</span>` : ''}${p.isNew ? '<span class="new">NEW</span>' : ''}`;
+  const join = (p.isNew || p.join !== 'full')
+    ? `<select data-join="${esc(p.tag)}">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : '';
+  const num = (v, l) => `<span>${v}<small>${l}</small></span>`;
+  let nums, ctl = join;
   if (mode === 'end') {
-    $('#head').innerHTML = '<tr><th>Player</th><th>Medals</th><th>Decks</th><th>Boats</th><th>History</th><th>Joined</th><th>Result</th><th>Why</th><th>Change</th></tr>';
-    $('#body').innerHTML = shown.map(p => {
-      const w = p.cur, n = p.weeks.length, miss = missCount(p, store.rules);
-      return `<tr>
-        <td>${name(p)}</td>
-        <td class="num">${w ? w.fame : '-'}</td>
-        <td class="num">${w ? w.decks + '/16' : '-'}</td>
-        <td class="num">${w && w.boats ? w.boats : ''}</td>
-        <td class="num">${n ? `${n - miss}/${n} · ${avgMedals(p)}` : '-'}</td>
-        <td>${joinSel(p)}</td>
-        <td><span class="tag s-${p.res.status}">${p.res.status}</span></td>
-        <td class="why">${esc(p.res.why || '')}</td>
-        <td><select data-over="${esc(p.tag)}">${['Auto', ...STATUS_END].map(s => `<option ${((store.over[pk(p)] || 'Auto') === s) ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
-      </tr>`;
-    }).join('');
-    renderCards(chatEnd(list, store.rules));
+    const w = p.cur, n = p.weeks.length, miss = missCount(p, store.rules);
+    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks')
+      + num(n ? `${n - miss}/${n}` : '–', 'weeks ok');
+    const o = store.over[pk(p)] || 'Auto';
+    ctl += `<select data-over="${esc(p.tag)}" title="Change result">${['Auto', ...GROUPS_END.map(g => g[0])].map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>${s === 'Auto' ? 'Auto' : '→ ' + s}</option>`).join('')}</select>`;
   } else {
-    $('#head').innerHTML = '<tr><th>Player</th><th>Medals</th><th>Today</th><th>Need</th><th>Max left</th><th>Joined</th><th>Result</th><th>Note</th></tr>';
-    $('#body').innerHTML = shown.map(p => `<tr>
-        <td>${name(p)}</td>
-        <td class="num">${p.res.fame}</td>
-        <td class="num">${p.res.today}/4</td>
-        <td class="num">${p.res.need ? '+' + p.res.need : ''}</td>
-        <td class="num">${p.res.max}</td>
-        <td>${joinSel(p)}</td>
-        <td><span class="tag s-${p.res.status}">${p.res.status}</span></td>
-        <td class="why">${esc(p.res.why)}</td>
-      </tr>`).join('');
-    renderCards(chatLive(list, store.rules));
+    nums = num(p.res.fame, 'medals') + num(`${p.res.today}/4`, 'today') + num(p.res.need ? '+' + p.res.need : '–', 'need') + num(p.res.max, 'max left');
   }
+  return `<div class="p"><div class="who">${name}<div class="why">${esc(p.res.why || '')}</div></div><div class="nums">${nums}</div><div class="ctl">${ctl}</div></div>`;
 }
 
-function renderCards(msgs) {
+function render() {
+  renderRules();
+  if (!model || !model.players.length) return;
+  const list = evaluate();
+  const groups = mode === 'end' ? GROUPS_END : GROUPS_LIVE;
+  const sortKey = p => mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame;
+  const parts = groups.map(([s, label]) => [s, label, list.filter(p => p.res.status === s).sort((a, b) => sortKey(a) - sortKey(b))]).filter(g => g[2].length);
+
+  $('#chips').innerHTML = parts.map(([s, l, ps]) => `<a class="chip s-${s}" href="#g-${s}">${l} ${ps.length}</a>`).join('');
+  $('#groups').innerHTML = parts.map(([s, l, ps]) => {
+    const body = ps.map(row).join('');
+    return FOLDED.includes(s)
+      ? `<details class="group" id="g-${s}"><summary class="s-${s}">${l} · ${ps.length}</summary>${body}</details>`
+      : `<div class="group" id="g-${s}"><h3 class="s-${s}">${l} · ${ps.length}</h3>${body}</div>`;
+  }).join('');
+
+  const msgs = mode === 'end' ? chatEnd(list, store.rules) : chatLive(list, store.rules);
   const lim = store.rules.chatLimit;
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > lim ? 'over' : ''}" id="c${i}">${m.text.length}/${lim}</span></b>
       <textarea data-i="${i}" rows="${m.text.split('\n').length + 1}">${esc(m.text)}</textarea>
-      <button class="btn" data-copy="${i}">Copy</button>
-    </div>`).join('') : '<div class="empty">Nothing to post</div>';
+      <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
+  fit();
+}
+
+function fit(el) {
+  (el ? [el] : document.querySelectorAll('textarea')).forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; });
 }
 
 function renderRules() {
   const r = store.rules;
-  $('#rules').innerHTML = Object.keys(DEFAULT_RULES).map(k => `<div class="rule"><span>${RULE_LABELS[k]}</span>${
-    typeof DEFAULT_RULES[k] === 'boolean'
-      ? `<input type="checkbox" data-rule="${k}" ${r[k] ? 'checked' : ''}>`
-      : `<input type="number" data-rule="${k}" value="${r[k]}">`}</div>`).join('');
+  $('#rules').innerHTML = Object.keys(DEFAULT_RULES).map(k => `<label class="rule"><span>${RULE_LABELS[k]}</span>${
+    typeof DEFAULT_RULES[k] === 'boolean' ? `<input type="checkbox" data-rule="${k}" ${r[k] ? 'checked' : ''}>`
+      : `<input type="number" data-rule="${k}" value="${r[k]}">`}</label>`).join('');
 }
 
 function setMode(m) {
-  mode = m; filter = 'All';
+  mode = m;
   $('#m-end').classList.toggle('on', m === 'end'); $('#m-live').classList.toggle('on', m === 'live');
   $('#day').classList.toggle('hidden', m !== 'live');
   render();
@@ -507,14 +590,14 @@ function setMode(m) {
 function exportMd() {
   if (!model) return;
   const list = evaluate();
-  const md = [`# War audit ${model.clan.name} #${model.clan.tag} ${model.season || ''}`.trim(), '',
-    '| Player | Role | Medals | Decks | Boats | Result | Why |', '|---|---|---|---|---|---|---|',
-    ...list.map(p => `| ${p.name} | ${p.role} | ${p.cur?.fame ?? p.res.fame ?? ''} | ${p.cur?.decks ?? p.res.today ?? ''} | ${p.cur?.boats ?? ''} | ${p.res.status} | ${p.res.why || ''} |`),
+  const md = [`# War audit: ${model.clan.name} #${model.clan.tag} ${mode === 'end' ? model.season || '' : 'live, day ' + day}`.trim(), '',
+    '| Player | Role | Result | Why |', '|---|---|---|---|',
+    ...list.map(p => `| ${p.name} | ${p.role} | ${p.res.status} | ${p.res.why || ''} |`),
     '', '## Chat', '', ...(mode === 'end' ? chatEnd(list, store.rules) : chatLive(list, store.rules)).map(m => '```\n' + m.text + '\n```'),
   ].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
-  a.download = `war-audit-${model.clan.tag || 'clan'}-${model.season || 'live'}.md`; a.click();
+  a.download = `war-audit-${model.clan.tag || 'clan'}-${mode === 'end' ? model.season || 'week' : 'live'}.md`; a.click();
 }
 
 // events
@@ -523,23 +606,19 @@ const drop = $('#drop');
 ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, () => drop.classList.remove('over')));
 drop.addEventListener('drop', ev => { ev.preventDefault(); addFiles(ev.dataTransfer.files); });
 $('#pick').addEventListener('change', e => addFiles(e.target.files));
+$('#pull').onclick = pull;
+$('#tag').addEventListener('input', setLinks);
+$('#tag').addEventListener('keydown', e => { if (e.key === 'Enter') pull(); });
+$('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-war-audit:settings', settings); $('#setup').open = false; say(settings.key ? 'Key saved' : 'Key removed'); };
 $('#m-end').onclick = () => setMode('end');
 $('#m-live').onclick = () => setMode('live');
 $('#day').onchange = e => { day = +e.target.value; render(); };
-$('#q').oninput = render;
-document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
-  tab = b.dataset.tab;
-  document.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b));
-  ['list', 'chat', 'rules'].forEach(t => $('#t-' + t).classList.toggle('hidden', t !== tab));
-});
 document.addEventListener('click', e => {
-  const f = e.target.closest('[data-f]'); if (f) { filter = f.dataset.f; render(); }
   const c = e.target.closest('[data-copy]');
-  if (c) {
-    const t = document.querySelector(`textarea[data-i="${c.dataset.copy}"]`);
-    (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(() => { t.select(); document.execCommand('copy'); });
-    c.textContent = 'Copied'; setTimeout(() => c.textContent = 'Copy', 1200);
-  }
+  if (!c) return;
+  const t = document.querySelector(`textarea[data-i="${c.dataset.copy}"]`);
+  (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(() => { t.select(); document.execCommand('copy'); });
+  c.textContent = 'Copied'; setTimeout(() => c.textContent = 'Copy', 1200);
 });
 document.addEventListener('change', e => {
   const el = e.target, p = model && model.players.find(x => x.tag === (el.dataset.join || el.dataset.over));
@@ -550,11 +629,19 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   if (e.target.dataset.i == null) return;
   const n = e.target.value.length, c = $('#c' + e.target.dataset.i), lim = store.rules.chatLimit;
-  c.textContent = `${n}/${lim}`; c.classList.toggle('over', n > lim);
+  c.textContent = `${n}/${lim}`; c.classList.toggle('over', n > lim); fit(e.target);
 });
+window.addEventListener('resize', () => fit());
 $('#reset').onclick = () => { store.rules = { ...DEFAULT_RULES }; saveStore(); render(); };
 $('#export').onclick = exportMd;
-render();
+
+settings = { ...settings, ...get('cr-war-audit:settings', {}) };
+$('#key').value = settings.key || '';
+const hashTag = location.hash.replace(/^#/, '');
+$('#tag').value = hashTag || settings.tag || '';
+setLinks();
+renderRules();
+if (settings.key && VALID_TAG.test(cleanInputTag())) pull();
 </script>
 </body>
 </html>

@@ -28,6 +28,13 @@ History: the first round was done with Gemini (transcript in `docs/gemini/conver
 - Kicking someone with **0 decks used today** frees a battle slot (50 players a day max). Kicking someone who already played does not.
 - Boat-only players: wins = (medals − 75 × boats) / 50. The same record in 1v1 = 200 × wins + 100 × losses.
 
+## Pull (official API)
+
+The app calls `https://proxy.royaleapi.dev/v1/clans/%23TAG` plus `/members`, `/currentriverrace` and `/riverracelog?limit=10`.
+These need the user's own key from developer.clashroyale.com, allowed for IP 45.79.218.79 (RoyaleAPI's proxy; the proxy allows browser requests).
+`apiToRows()` turns the replies into the same rows as the CSVs. Week key = `seasonId-(sectionIndex+1)`.
+Battle day = `periodIndex % 7 - 2` when `periodType` is `warDay` or `colosseum`.
+
 ## Data (RoyaleAPI CSV exports)
 
 Detected by column names, so file names don't matter.
@@ -77,7 +84,8 @@ With brayyisaac set to Day 3 and >FRXNCHY< set to Excused, the app reproduces th
 
 ## Not done yet / ideas
 
-- **Live data from the official API** (`/clans/{tag}/currentriverrace`, `/riverracelog`, `/members`). This needs an API key tied to an IP address, so it needs a small proxy. RoyaleAPI's proxy is one option.
+- Pull is tested against fake API replies only; it still needs a real-key test.
+- The RoyaleAPI page links (`/clan/TAG`, `/war/log`, `/war/race`) are best guesses, because royaleapi.com blocks automated checks.
 - **Join dates** from RoyaleAPI's join/leave log, once it has been running a week.
 - **Track warnings across weeks** (now inferred from "missed the week before").
 - The Clash Royale chat length limit is set to 250 as a guess. It can be changed in Rules.

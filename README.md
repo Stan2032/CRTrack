@@ -4,17 +4,22 @@ One HTML file. Works for any Clash Royale clan. Runs on your device, with no acc
 
 ## Use
 
-1. On [RoyaleAPI](https://royaleapi.com), open your clan and download the CSVs:
-   - **Roster** (members, roles, last seen)
-   - **War log** (each week: medals, decks, boat attacks)
-   - **Current race**, for Live mode only
-2. Open `index.html` in a browser and drop the files in.
-3. **Week end**: who to kick, demote, warn, check on, and promote.
-   **Live**: during battle days, who can no longer reach the target.
-4. Set **Joined** for anyone marked NEW who joined mid-war.
-5. **Chat** tab: copy the messages into clan chat.
+Open `index.html` in a browser, type the clan tag, then either:
 
-Your choices (join days, changes, rules) are saved in your browser for each clan.
+- **Pull**: gets everything automatically. One-time setup: make a free key at
+  [developer.clashroyale.com](https://developer.clashroyale.com) with allowed IP `45.79.218.79`
+  ([RoyaleAPI proxy](https://docs.royaleapi.com/proxy.html)), then paste it under *Pull setup*.
+  The key stays in your browser.
+- **CSVs**: use the Members / War log / Race links to open RoyaleAPI, download the CSVs, and drop them in.
+
+Then work down the page:
+
+1. **Get data**
+2. **Actions**: grouped Kick → Demote → Warn → Check in → Review → Promote. Set *Joined* for NEW players who joined mid-war. Use the right-hand menu to override any result.
+   **Week end** checks the last finished war. **Live** shows, during battle days, who can't reach the target any more.
+3. **Chat**: copy the messages into clan chat.
+
+Opening `index.html#CLANTAG` with a saved key pulls straight away. Choices are saved in your browser for each clan.
 
 ## Rules (defaults, change them in Rules)
 

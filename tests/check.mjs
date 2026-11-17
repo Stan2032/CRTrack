@@ -63,5 +63,31 @@ assert.equal(L.judgeLive({ race: { fame: 900, decks: 12, today: 0 } }, r, 'full'
 assert.equal(L.judgeLive({ race: { fame: 1300, decks: 14, today: 2 } }, r, 'full', 4).status, 'Out'); // 1300+400
 assert.equal(L.split('a\n'.repeat(300), 250).every(s => s.length <= 250), true);
 
+
+// API path: fake API replies built from the samples give the same results
+export function fakeApi() {
+  const members = { items: files.roster.map(r => ({ tag: r.tag, name: r.name, role: r.role, lastSeen: r.lastSeen })) };
+  const seasons = [...new Set(files.log.map(r => r.season_key))];
+  const log = { items: seasons.map(k => {
+    const [sid, sec] = k.split('-').map(Number);
+    return { seasonId: sid, sectionIndex: sec - 1, standings: [{ clan: { tag: '#PPCCR8VU', name: '#WINNING',
+      participants: files.log.filter(r => r.season_key === k).map(r => ({ tag: '#' + r.player_tag, name: r.player_name,
+        fame: +r.player_fame, decksUsed: +r.player_decks_used, boatAttacks: +r.player_boat_attacks })) } }] };
+  }) };
+  const race = { periodType: 'warDay', periodIndex: 6, clan: { tag: '#PPCCR8VU', name: '#WINNING',
+    participants: files.race.map(r => ({ tag: '#' + r.player_tag, name: r.player_name, fame: 0, decksUsed: 0, decksUsedToday: +r.player_decks_used_today, boatAttacks: 0 })) } };
+  return { clan: { tag: '#PPCCR8VU', name: '#WINNING' }, members, race, log };
+}
+const api = fakeApi();
+const am = L.build(L.apiToRows(api));
+assert.equal(am.season, '138-2');
+for (const p of am.players) {
+  const got = L.judgeEnd(p, r, join[p.name] || 'full').status;
+  assert.equal(got, res[p.name].status, 'api path ' + p.name);
+}
+assert.equal(L.raceDay(api.race), 4);
+assert.equal(L.raceDay({ periodType: 'training', periodIndex: 1 }), 0);
+assert.equal(L.raceDay({ periodType: 'warDay', periodIndex: 10 }), 1);
+
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
 console.log('All checks passed');
