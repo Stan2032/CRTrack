@@ -1,0 +1,2470 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>#WINNING (#PPCCR8VU) — War Ops Audit & Chat Formatter</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Fonts: Inter for UI readability + JetBrains Mono for terminal/ops stats & tags -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind Theme Configuration -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            obsidian: '#0b0f14',
+            panel: '#111821',
+            panelLight: '#16202c',
+            borderOps: '#1f2d3d',
+            termGreen: '#4afa82',
+            termAmber: '#fbbf24',
+            termCyan: '#38bdf8',
+            termRose: '#fb7185',
+          }
+        }
+      }
+    };
+  </script>
+</head>
+
+<body class="bg-obsidian text-slate-200 font-sans antialiased min-h-screen selection:bg-termCyan/30 selection:text-white overflow-x-hidden">
+
+  <!-- =========================================================================
+       TOAST NOTIFICATION CONTAINER (Replaces alert()/confirm() cleanly)
+       ========================================================================= -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-xs sm:max-w-sm pointer-events-none"></div>
+
+  <!-- =========================================================================
+       TOP OPS HEADER & MODE SWITCHER
+       ========================================================================= -->
+  <header class="sticky top-0 z-40 bg-obsidian/95 backdrop-blur border-b border-borderOps">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+
+        <!-- Clan Identity & Local Privacy Badge -->
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-panelLight border border-borderOps flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-termCyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="text-base sm:text-lg font-bold tracking-tight text-white font-mono">#WINNING</h1>
+                <span class="text-xs font-mono px-2 py-0.5 rounded bg-panelLight border border-borderOps text-slate-400">#PPCCR8VU</span>
+                <span class="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-termGreen/10 border border-termGreen/30 text-termGreen">
+                  <span class="w-1.5 h-1.5 rounded-full bg-termGreen"></span>
+                  100% LOCAL • ZERO NETWORK
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 font-mono">CLAN WARS 2 AUDIT ENGINE &amp; READABLE CHAT FORMATTER</p>
+            </div>
+          </div>
+
+          <!-- Compact Mobile Local Pill -->
+          <span class="sm:hidden inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded bg-termGreen/10 border border-termGreen/30 text-termGreen shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full bg-termGreen"></span>LOCAL
+          </span>
+        </div>
+
+        <!-- Primary Mode Switcher -->
+        <nav class="flex flex-wrap items-center gap-1.5 bg-panel p-1 rounded-xl border border-borderOps" aria-label="Audit Modes">
+          <button id="mode-btn-monday" type="button" onclick="switchMode('monday')"
+            class="flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-colors cursor-pointer">
+            [ MONDAY POST-WAR ]
+          </button>
+          <button id="mode-btn-sunday" type="button" onclick="switchMode('sunday')"
+            class="flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-colors cursor-pointer">
+            [ SUNDAY BD4 PRE-KICK ]
+          </button>
+          <button id="mode-btn-docs" type="button" onclick="switchMode('docs')"
+            class="flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold transition-colors cursor-pointer">
+            [ SOP &amp; HANDOFF ]
+          </button>
+        </nav>
+
+        <!-- Global Export & Handoff Actions -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" onclick="downloadMarkdownReport()"
+            class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-termCyan/15 hover:bg-termCyan/25 text-termCyan border border-termCyan/40 transition-colors cursor-pointer">
+            <span>↓</span> .MD HANDOFF (DRIVE/CLAUDE)
+          </button>
+          <button type="button" onclick="exportSafeCSV()"
+            class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-panelLight hover:bg-slate-800 text-slate-300 border border-borderOps transition-colors cursor-pointer">
+            <span>↓</span> SAFE CSV
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       MAIN WORKSPACE CONTAINER
+       ========================================================================= -->
+  <main class="max-w-7xl mx-auto px-3 sm:px-6 py-5 space-y-5">
+
+    <!-- =======================================================================
+         VIEW 1 & 2: AUDIT WORKSPACE (MONDAY POST-WAR & SUNDAY BD4)
+         ======================================================================= -->
+    <div id="audit-workspace" class="space-y-5">
+
+      <!-- ---------------------------------------------------------------------
+           SECTION A: DATA INPUTS & SAMPLE LOADER
+           --------------------------------------------------------------------- -->
+      <section class="bg-panel border border-borderOps rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-borderOps flex flex-wrap items-center justify-between gap-3 bg-panelLight/40">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-xs text-termCyan">01 //</span>
+            <h2 id="ingestion-title" class="text-sm font-bold text-white font-mono tracking-wide uppercase">
+              Data Sources — Monday Post-War Audit
+            </h2>
+            <span id="dataset-badge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-borderOps">
+              No Data Loaded
+            </span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Week Selector (Monday Mode Only) -->
+            <div id="week-selector-wrap" class="hidden items-center gap-2">
+              <label for="season-key-select" class="text-xs font-mono text-slate-400">WAR WEEK:</label>
+              <select id="season-key-select" onchange="onSeasonChange(this.value)"
+                class="bg-obsidian border border-borderOps rounded-lg px-2.5 py-1.5 text-xs font-mono text-termGreen focus:outline-none focus:border-termCyan">
+              </select>
+            </div>
+
+            <!-- Sample Data Quick Loaders -->
+            <button id="btn-load-sample-monday" type="button" onclick="loadSampleMondayData()"
+              class="px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-termGreen/15 hover:bg-termGreen/25 text-termGreen border border-termGreen/40 transition-colors cursor-pointer">
+              ⚡ Load Week 138-2 (#WINNING) Sample Data
+            </button>
+            <button id="btn-load-sample-sunday" type="button" onclick="loadSampleSundayData()"
+              class="hidden px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-termAmber/15 hover:bg-termAmber/25 text-termAmber border border-termAmber/40 transition-colors cursor-pointer">
+              ⚡ Load Sample BD4 Scenario
+            </button>
+            <button type="button" onclick="toggleSection('dropzone-body', 'toggle-dropzone-label')"
+              class="px-2.5 py-2 rounded-lg text-xs font-mono bg-obsidian hover:bg-panelLight text-slate-400 border border-borderOps cursor-pointer">
+              <span id="toggle-dropzone-label">Hide Inputs</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="dropzone-body" class="p-4 space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Dropzone 1: Roster CSV -->
+            <label id="dz-roster" for="input-roster-csv"
+              class="group relative flex flex-col items-center justify-center p-5 rounded-xl border-2 border-dashed border-borderOps hover:border-termCyan/60 bg-obsidian/70 transition-colors cursor-pointer text-center">
+              <input id="input-roster-csv" type="file" accept=".csv,text/csv" class="hidden" onchange="handleFileUpload(event, 'roster')" />
+              <div class="text-xs font-mono font-bold text-slate-200 group-hover:text-termCyan mb-1">
+                [1] ROSTER CSV (RoyaleAPI Members Export)
+              </div>
+              <p class="text-[11px] text-slate-400 font-mono">
+                Cols: tag, name, role, lastSeen, donations
+              </p>
+              <div id="status-roster" class="mt-2 text-[11px] font-mono text-slate-500">
+                Drop CSV here or tap to browse
+              </div>
+            </label>
+
+            <!-- Dropzone 2: War Log CSV (Monday) OR Current River Race CSV (Sunday) -->
+            <label id="dz-war" for="input-war-csv"
+              class="group relative flex flex-col items-center justify-center p-5 rounded-xl border-2 border-dashed border-borderOps hover:border-termCyan/60 bg-obsidian/70 transition-colors cursor-pointer text-center">
+              <input id="input-war-csv" type="file" accept=".csv,text/csv" class="hidden" onchange="handleFileUpload(event, 'war')" />
+              <div id="dz-war-title" class="text-xs font-mono font-bold text-slate-200 group-hover:text-termCyan mb-1">
+                [2] WAR RACE LOG CSV (RoyaleAPI 10-Week Log)
+              </div>
+              <p id="dz-war-cols" class="text-[11px] text-slate-400 font-mono">
+                Cols: season_key, created_date, player_tag, player_name, player_fame, player_boat_attacks, player_decks_used
+              </p>
+              <div id="status-war" class="mt-2 text-[11px] font-mono text-slate-500">
+                Drop CSV here or tap to browse
+              </div>
+            </label>
+          </div>
+          <p class="text-[11px] text-slate-400 font-mono flex items-center justify-between flex-wrap gap-2">
+            <span>Tip: Tags are auto-normalized (strips leading <code class="text-termCyan">#</code>). Special names like <code class="text-termAmber">&lt;c4&gt;Baki</code> and <code class="text-termAmber">&gt;FRXNCHY&lt;</code> are strictly HTML-escaped.</span>
+            <span id="ref-date-readout" class="text-slate-500"></span>
+          </p>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SECTION B: INTERACTIVE RULES MATRIX (SOP ENGINE)
+           --------------------------------------------------------------------- -->
+      <section class="bg-panel border border-borderOps rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-borderOps flex flex-wrap items-center justify-between gap-2 bg-panelLight/40 cursor-pointer"
+          onclick="toggleSection('rules-body', 'toggle-rules-label')">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-xs text-termCyan">02 //</span>
+            <h2 class="text-sm font-bold text-white font-mono tracking-wide uppercase">
+              Interactive Rules Matrix (SOP Engine)
+            </h2>
+            <span id="rules-summary-pill" class="text-[11px] font-mono px-2 py-0.5 rounded bg-obsidian border border-borderOps text-slate-300">
+              Min 1800 • Prorate 450/d • Elder Cushion ON
+            </span>
+          </div>
+          <button type="button" class="px-2.5 py-1 rounded-lg text-xs font-mono bg-obsidian text-slate-300 border border-borderOps">
+            <span id="toggle-rules-label">Hide Rules</span>
+          </button>
+        </div>
+
+        <div id="rules-body" class="p-4 space-y-4">
+          <!-- Row 1: Numeric Thresholds -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+            <!-- Weekly Medal Minimum -->
+            <div class="bg-obsidian border border-borderOps rounded-xl p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <label for="rule-min-medals" class="text-xs font-mono text-slate-300 font-semibold">Weekly Minimum</label>
+                <span id="val-min-medals" class="text-sm font-mono font-bold text-termGreen">1800</span>
+              </div>
+              <input id="rule-min-medals" type="range" min="1000" max="2600" step="50" value="1800"
+                oninput="updateRule('minMedals', Number(this.value))"
+                class="w-full accent-emerald-400 cursor-pointer" />
+              <div class="flex justify-between text-[10px] font-mono text-slate-500">
+                <span>1000</span><span>Default: 1800</span><span>2600</span>
+              </div>
+            </div>
+
+            <!-- Prorated Target per Full Day -->
+            <div class="bg-obsidian border border-borderOps rounded-xl p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <label for="rule-prorate-day" class="text-xs font-mono text-slate-300 font-semibold">Prorate / Full Day</label>
+                <input id="rule-prorate-day" type="number" min="200" max="800" step="25" value="450"
+                  oninput="updateRule('proratePerDay', Number(this.value) || 450)"
+                  class="w-20 text-right bg-panelLight border border-borderOps rounded px-2 py-0.5 text-xs font-mono text-termCyan focus:outline-none focus:border-termCyan" />
+              </div>
+              <p id="prorate-preview" class="text-[11px] font-mono text-slate-400 leading-relaxed">
+                Thu: 1350 • Fri: 900 • Sat: 450 • Sun: Exempt
+              </p>
+            </div>
+
+            <!-- Boat Attack Threshold -->
+            <div class="bg-obsidian border border-borderOps rounded-xl p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <label for="rule-boat-pct" class="text-xs font-mono text-slate-300 font-semibold">Boat Flag Threshold</label>
+                <span id="val-boat-pct" class="text-sm font-mono font-bold text-termAmber">25%</span>
+              </div>
+              <input id="rule-boat-pct" type="range" min="10" max="100" step="5" value="25"
+                oninput="updateRule('boatThresholdPct', Number(this.value))"
+                class="w-full accent-amber-400 cursor-pointer" />
+              <p class="text-[10px] font-mono text-slate-500">Flags players with ≥ X% boat attacks</p>
+            </div>
+
+            <!-- Pirate Steve Rule Params -->
+            <div class="bg-obsidian border border-borderOps rounded-xl p-3 space-y-2">
+              <div class="text-xs font-mono text-termCyan font-semibold">Pirate Steve Hold Params</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label for="rule-steve-weeks" class="block text-[10px] font-mono text-slate-400">Min 1800+ Wks</label>
+                  <input id="rule-steve-weeks" type="number" min="2" max="10" value="5"
+                    oninput="updateRule('steveMinWeeks', Number(this.value) || 5)"
+                    class="w-full mt-0.5 bg-panelLight border border-borderOps rounded px-2 py-1 text-xs font-mono text-white" />
+                </div>
+                <div>
+                  <label for="rule-steve-days" class="block text-[10px] font-mono text-slate-400">Offline ≥ Days</label>
+                  <input id="rule-steve-days" type="number" min="1" max="14" value="3"
+                    oninput="updateRule('steveOfflineDays', Number(this.value) || 3)"
+                    class="w-full mt-0.5 bg-panelLight border border-borderOps rounded px-2 py-1 text-xs font-mono text-white" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Policy Toggles & Promotion Radar -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <!-- Toggle 1: Effort Safety Net -->
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-obsidian border border-borderOps hover:border-slate-600 cursor-pointer">
+              <input id="rule-effort-net" type="checkbox" checked onchange="updateRule('effortSafetyNet', this.checked)"
+                class="mt-0.5 w-4 h-4 rounded accent-cyan-400 cursor-pointer" />
+              <div>
+                <div class="text-xs font-mono font-semibold text-white">Mid-Week Effort Safety Net</div>
+                <p class="text-[11px] text-slate-400">Pass mid-week joiners if 100% of available full-day decks used.</p>
+              </div>
+            </label>
+
+            <!-- Toggle 2: Elder Cushion -->
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-obsidian border border-borderOps hover:border-slate-600 cursor-pointer">
+              <input id="rule-elder-cushion" type="checkbox" checked onchange="updateRule('elderCushion', this.checked)"
+                class="mt-0.5 w-4 h-4 rounded accent-rose-400 cursor-pointer" />
+              <div>
+                <div class="text-xs font-mono font-semibold text-white">Elder Rank Cushion</div>
+                <p class="text-[11px] text-slate-400">Demote Elders to Member on a miss instead of kicking.</p>
+              </div>
+            </label>
+
+            <!-- Toggle 3: Spare Active Boat Attackers -->
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-obsidian border border-borderOps hover:border-slate-600 cursor-pointer">
+              <input id="rule-boat-coach" type="checkbox" checked onchange="updateRule('spareBoatAttackers', this.checked)"
+                class="mt-0.5 w-4 h-4 rounded accent-amber-400 cursor-pointer" />
+              <div>
+                <div class="text-xs font-mono font-semibold text-white">Boat-Attack Coaching Grace</div>
+                <p class="text-[11px] text-slate-400">Spare active boat attackers (≥8 decks) &amp; flag for PvP/Duel coaching.</p>
+              </div>
+            </label>
+
+            <!-- Toggle 4: Pirate Steve Check-In Rule -->
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-obsidian border border-borderOps hover:border-slate-600 cursor-pointer">
+              <input id="rule-steve-on" type="checkbox" checked onchange="updateRule('steveRule', this.checked)"
+                class="mt-0.5 w-4 h-4 rounded accent-cyan-400 cursor-pointer" />
+              <div>
+                <div class="text-xs font-mono font-semibold text-white">Pirate Steve Veteran Check-In</div>
+                <p class="text-[11px] text-slate-400">Hold reliable regulars who suddenly drop to 0 or go offline.</p>
+              </div>
+            </label>
+
+            <!-- Toggle 5: First-Miss Veteran Grace -->
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-obsidian border border-borderOps hover:border-slate-600 cursor-pointer">
+              <input id="rule-first-miss-grace" type="checkbox" checked onchange="updateRule('firstMissGrace', this.checked)"
+                class="mt-0.5 w-4 h-4 rounded accent-amber-400 cursor-pointer" />
+              <div>
+                <div class="text-xs font-mono font-semibold text-white">1st-Miss Veteran Grace</div>
+                <p class="text-[11px] text-slate-400">Put Members with prior 1800+ history (not back-to-back misses) on Final Warning.</p>
+              </div>
+            </label>
+
+            <!-- Promotion Radar Controls -->
+            <div class="p-3 rounded-xl bg-obsidian border border-borderOps space-y-2">
+              <div class="text-xs font-mono font-semibold text-termGreen">Promotion Radar (Member → Elder)</div>
+              <div class="flex items-center gap-2 text-[11px] font-mono text-slate-300 flex-wrap">
+                <span>≥</span>
+                <input id="rule-promo-streak" type="number" min="2" max="10" value="6"
+                  oninput="updateRule('promoStraightWeeks', Number(this.value) || 6)"
+                  class="w-12 bg-panelLight border border-borderOps rounded px-1.5 py-0.5 text-center text-termGreen" />
+                <span>wks 1800+</span>
+                <span class="text-slate-500">OR</span>
+                <span>≥</span>
+                <input id="rule-promo-elite-wks" type="number" min="2" max="10" value="4"
+                  oninput="updateRule('promoEliteWeeks', Number(this.value) || 4)"
+                  class="w-12 bg-panelLight border border-borderOps rounded px-1.5 py-0.5 text-center text-termGreen" />
+                <span>wks @2400+</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SECTION C: KPI SUMMARY STRIP
+           --------------------------------------------------------------------- -->
+      <section id="kpi-strip" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5">
+        <!-- Populated dynamically by renderKPIs() -->
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SECTION D: SUB-NAVIGATION FOR RESULTS WORKSPACE
+           --------------------------------------------------------------------- -->
+      <div class="flex flex-wrap items-center gap-2 border-b border-borderOps pb-3">
+        <button id="tab-btn-actions" type="button" onclick="switchSubTab('actions')"
+          class="px-3.5 py-2 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer">
+          1. ACTION DASHBOARD
+        </button>
+        <button id="tab-btn-chat" type="button" onclick="switchSubTab('chat')"
+          class="px-3.5 py-2 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer">
+          2. CLAN CHAT GENERATOR
+        </button>
+        <button id="tab-btn-boats" type="button" onclick="switchSubTab('boats')"
+          class="px-3.5 py-2 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer">
+          3. BOAT-ATTACK LAB
+        </button>
+        <button id="tab-btn-roster" type="button" onclick="switchSubTab('roster')"
+          class="px-3.5 py-2 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer">
+          4. FULL ROSTER &amp; OVERRIDES
+        </button>
+      </div>
+
+      <!-- ---------------------------------------------------------------------
+           SUB-TAB 1: CATEGORIZED ACTION DASHBOARD
+           --------------------------------------------------------------------- -->
+      <section id="subtab-actions" class="space-y-4">
+        <div id="action-cards-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SUB-TAB 2: ENHANCED CLASH ROYALE CHAT GENERATOR
+           --------------------------------------------------------------------- -->
+      <section id="subtab-chat" class="hidden space-y-4">
+        <div class="bg-panel border border-borderOps rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs text-termGreen">CHAT OPS //</span>
+              <h3 class="text-sm font-bold text-white font-mono">READY-TO-PASTE CLASH ROYALE MESSAGES</h3>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">
+              Auto-splits any message over <span class="font-mono text-termAmber">245 chars</span> cleanly at line breaks so nothing gets truncated in-game. Every box is live-editable.
+            </p>
+          </div>
+
+          <!-- Format Style Toggle -->
+          <div class="flex items-center gap-1.5 bg-obsidian p-1 rounded-xl border border-borderOps shrink-0">
+            <button id="fmt-btn-spaced" type="button" onclick="setChatFormat('spaced')"
+              class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer">
+              Spaced &amp; Readable
+            </button>
+            <button id="fmt-btn-compact" type="button" onclick="setChatFormat('compact')"
+              class="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer">
+              Mobile-Safe Compact
+            </button>
+          </div>
+        </div>
+
+        <div id="chat-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SUB-TAB 3: BOAT-ATTACK EQUIVALENCE CALCULATOR
+           --------------------------------------------------------------------- -->
+      <section id="subtab-boats" class="hidden space-y-4">
+        <div class="bg-panel border border-borderOps rounded-xl p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="font-mono text-xs text-termAmber">MATH PROOF //</span>
+              <h3 class="text-sm font-bold text-white font-mono">BOAT-ATTACK EQUIVALENCE CALCULATOR</h3>
+              <p class="text-xs text-slate-400 mt-1">
+                Inferred W–L from 100% boat attacks: <code class="font-mono text-termCyan">W = round((fame − 75 × decks) / 50)</code>. Compares actual boat medals against exact 1v1 PvP (<code class="font-mono">200W / 100L</code>) and Duels (<code class="font-mono">250W / 100L</code>).
+              </p>
+            </div>
+            <span id="boat-summary-badge" class="text-xs font-mono px-3 py-1 rounded-lg bg-termAmber/15 text-termAmber border border-termAmber/30">
+              0 Flagged
+            </span>
+          </div>
+        </div>
+
+        <div id="boat-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------------
+           SUB-TAB 4: FULL SEARCHABLE/SORTABLE ROSTER TABLE & OVERRIDES
+           --------------------------------------------------------------------- -->
+      <section id="subtab-roster" class="hidden space-y-3">
+        <div class="bg-panel border border-borderOps rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2 flex-1">
+            <input id="roster-search" type="text" placeholder="Search player name or #tag..."
+              oninput="renderRosterTable()"
+              class="w-full sm:w-64 bg-obsidian border border-borderOps rounded-lg px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-termCyan" />
+            <select id="roster-filter" onchange="renderRosterTable()"
+              class="bg-obsidian border border-borderOps rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-termCyan">
+              <option value="ALL">Filter: All Verdicts</option>
+              <option value="KICK">Kick / Eliminated</option>
+              <option value="DEMOTE">Demote</option>
+              <option value="HOLD">Check-In Hold (Steve Rule)</option>
+              <option value="BOAT_COACH">Boat-Attack Coaching</option>
+              <option value="FINAL_WARNING">Final Warning / At Risk</option>
+              <option value="PROMOTE">Promote to Elder</option>
+              <option value="EXEMPT">Mid-Week Exempt / Passed</option>
+              <option value="PASS">Passed</option>
+            </select>
+            <select id="roster-sort" onchange="renderRosterTable()"
+              class="bg-obsidian border border-borderOps rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-termCyan">
+              <option value="verdict">Sort: Action Priority</option>
+              <option value="fame_asc">Sort: Medals (Low → High)</option>
+              <option value="fame_desc">Sort: Medals (High → Low)</option>
+              <option value="avg_desc">Sort: Hist Avg (High → Low)</option>
+              <option value="name_asc">Sort: Name (A → Z)</option>
+            </select>
+          </div>
+          <button type="button" onclick="resetAllOverrides()"
+            class="px-3 py-2 rounded-lg text-xs font-mono bg-obsidian hover:bg-panelLight text-slate-400 hover:text-white border border-borderOps cursor-pointer shrink-0">
+            Reset Overrides
+          </button>
+        </div>
+
+        <div class="bg-panel border border-borderOps rounded-xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-borderOps bg-panelLight/60 text-[11px] font-mono text-slate-400 uppercase">
+                  <th class="py-3 px-3">Player</th>
+                  <th class="py-3 px-2">Role</th>
+                  <th class="py-3 px-2 text-right">Medals</th>
+                  <th id="th-decks" class="py-3 px-2 text-right">Decks (Boats)</th>
+                  <th class="py-3 px-2 text-right">Pass Rate</th>
+                  <th class="py-3 px-2 text-right">Avg / Wk</th>
+                  <th class="py-3 px-2">Join Timing / Override</th>
+                  <th class="py-3 px-3">Verdict</th>
+                </tr>
+              </thead>
+              <tbody id="roster-tbody" class="divide-y divide-borderOps/70 text-xs">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- =======================================================================
+         VIEW 3: SOP, EMPIRICAL RESEARCH & GOOGLE DRIVE / CLAUDE HANDOFF HUB
+         ======================================================================= -->
+    <div id="docs-workspace" class="hidden space-y-5">
+
+      <!-- Google Drive + Claude Handoff Banner -->
+      <section class="bg-panel border border-termCyan/40 rounded-xl p-5 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <span class="font-mono text-xs text-termCyan">CENTRAL REPOSITORY &amp; AI HANDOFF //</span>
+            <h2 class="text-lg font-bold text-white font-mono mt-0.5">Google Drive Archive &amp; Claude Continuity Kit</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1 max-w-3xl">
+              Because this tool runs 100% locally in your browser (zero cloud credentials or external API calls), export the complete <strong>Markdown Handoff Package</strong> below and drop it straight into your Google Drive folder (e.g., <code class="font-mono text-termCyan">Google Drive / #WINNING War Ops /</code>). Anyone — or Claude — can read one single file and have 100% of your rules, math, CSV schemas, and audit history.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2 shrink-0">
+            <button type="button" onclick="copyMarkdownReport()"
+              class="px-4 py-2.5 rounded-lg text-xs font-mono font-semibold bg-termGreen/15 hover:bg-termGreen/25 text-termGreen border border-termGreen/40 cursor-pointer">
+              📋 Copy Full .MD Handoff
+            </button>
+            <button type="button" onclick="downloadMarkdownReport()"
+              class="px-4 py-2.5 rounded-lg text-xs font-mono font-semibold bg-termCyan/15 hover:bg-termCyan/25 text-termCyan border border-termCyan/40 cursor-pointer">
+              ↓ Download .MD File
+            </button>
+          </div>
+        </div>
+
+        <!-- Recommended Google Drive Folder Structure -->
+        <div class="bg-obsidian border border-borderOps rounded-xl p-4 font-mono text-xs text-slate-300 overflow-x-auto">
+<pre class="leading-relaxed">Google Drive / #WINNING-War-Ops/
+├── 00-SOP-and-Claude-Handoff.md        &lt;-- Exported via "Download .MD File" (contains all rules + math + API roadmap)
+├── winning-war-audit.html              &lt;-- Save this HTML file here (opens offline in any browser)
+├── 01-Weekly-Audits/
+│   ├── 138-2-Audit-Report.md           &lt;-- Weekly snapshot (.md) + archived chat posts
+│   └── 138-2-Safe-Export.csv           &lt;-- Formula-safe CSV for Google Sheets trend charts
+└── 02-Raw-RoyaleAPI-CSVs/
+    └── 138-2/ (roster.csv, war-log.csv, river-race.csv)</pre>
+        </div>
+      </section>
+
+      <!-- Empirical Clan Wars 2 Math Reference -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section class="bg-panel border border-borderOps rounded-xl p-4 space-y-3">
+          <div class="font-mono text-xs text-termAmber">EMPIRICAL MATH // SCORING &amp; BD4 ELIMINATION</div>
+          <h3 class="text-sm font-bold text-white font-mono">Clan Wars 2 Medal Mechanics</h3>
+          <ul class="text-xs text-slate-300 space-y-1.5 font-mono">
+            <li>• <span class="text-termGreen">Duel (Bo3, needs ≥3 unused decks)</span>: 250 / win | 100 / loss</li>
+            <li>• <span class="text-termCyan">1v1 / Special PvP</span>: 200 / win | 100 / loss</li>
+            <li>• <span class="text-termRose">Boat Attacks</span>: 125 / win | 75 / loss (avoid!)</li>
+            <li>• <span class="text-white">Daily Ceiling</span>: 900/day (2-0 Duel = 500 + 2×1v1 = 400)</li>
+            <li>• <span class="text-white">Full-Week Loss Floor</span>: 16 PvP losses = 1,600 (needs only 2 wins for 1,800)</li>
+            <li>• <span class="text-termAmber">50-Player Daily Cap</span>: Kicking a 0-deck player mid-BD4 frees a live slot for a new recruit; kicking a 1+ deck player does not.</li>
+          </ul>
+          <div class="overflow-x-auto pt-2">
+            <table class="w-full text-xs font-mono border border-borderOps">
+              <thead class="bg-panelLight text-slate-400">
+                <tr>
+                  <th class="p-2 text-left">Unused BD4 Decks</th>
+                  <th class="p-2 text-right">Max Possible</th>
+                  <th class="p-2 text-right">Eliminated Below (1800)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-borderOps text-slate-200">
+                <tr><td class="p-2">4 decks</td><td class="p-2 text-right text-termGreen">+900 (2-0 Duel + 2×1v1)</td><td class="p-2 text-right text-termRose">&lt; 900</td></tr>
+                <tr><td class="p-2">3 decks</td><td class="p-2 text-right text-termGreen">+700 (2-0 Duel + 1×1v1)</td><td class="p-2 text-right text-termRose">&lt; 1,100</td></tr>
+                <tr><td class="p-2">2 decks</td><td class="p-2 text-right text-termAmber">+400 (Duel locked)</td><td class="p-2 text-right text-termRose">&lt; 1,400</td></tr>
+                <tr><td class="p-2">1 deck</td><td class="p-2 text-right text-termAmber">+200 (1×1v1)</td><td class="p-2 text-right text-termRose">&lt; 1,600</td></tr>
+                <tr><td class="p-2">0 decks</td><td class="p-2 text-right text-slate-500">+0</td><td class="p-2 text-right text-termRose">&lt; 1,800</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="bg-panel border border-borderOps rounded-xl p-4 space-y-3">
+          <div class="font-mono text-xs text-termGreen">STAGE 2 ROADMAP // LIVE API AUTOMATION</div>
+          <h3 class="text-sm font-bold text-white font-mono">Next-Step Architecture (For Claude / Dev Handoff)</h3>
+          <div class="text-xs text-slate-300 space-y-2 leading-relaxed">
+            <p>
+              <strong>1. RoyaleAPI History Tracking:</strong> Clan description now includes <code class="font-mono text-termCyan">code: RoyaleAPI</code>, which automatically records exact Join/Leave UTC timestamps going forward.
+            </p>
+            <p>
+              <strong>2. Official Clash Royale API Endpoints (Stage 2):</strong>
+            </p>
+            <ul class="font-mono text-[11px] bg-obsidian border border-borderOps rounded-lg p-3 space-y-1 text-slate-300">
+              <li>GET /v1/clans/%23PPCCR8VU/members</li>
+              <li>GET /v1/clans/%23PPCCR8VU/currentriverrace</li>
+              <li>GET /v1/clans/%23PPCCR8VU/riverracelog</li>
+            </ul>
+            <p>
+              <strong>3. Implementation Note:</strong> Because Supercell's API enforces static IP allowlisting and blocks browser CORS, Stage 2 simply uses a tiny proxy (e.g., Cloudflare Worker or RoyaleAPI proxy IP) that returns the exact JSON fields this audit engine already consumes, eliminating manual CSV downloads entirely.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Live Markdown Preview -->
+      <section class="bg-panel border border-borderOps rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-borderOps bg-panelLight/40 flex items-center justify-between">
+          <span class="font-mono text-xs font-bold text-white">LIVE MARKDOWN HANDOFF PREVIEW (AUTO-UPDATED WITH ACTIVE AUDIT)</span>
+          <button type="button" onclick="copyMarkdownReport()"
+            class="px-3 py-1 rounded text-xs font-mono bg-termGreen/15 text-termGreen border border-termGreen/40 hover:bg-termGreen/25 cursor-pointer">
+            Copy Markdown
+          </button>
+        </div>
+        <pre id="md-preview-box" class="p-4 text-[11px] font-mono text-slate-300 bg-obsidian overflow-x-auto max-h-96 overflow-y-auto leading-relaxed"></pre>
+      </section>
+
+    </div>
+
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 py-6 mt-8 border-t border-borderOps text-center text-[11px] font-mono text-slate-500">
+    #WINNING (#PPCCR8VU) War Ops Audit Tool • 100% Client-Side • Zero Tracking • Built for Stan &amp; 4)Baki
+  </footer>
+
+  <!-- =========================================================================
+       APPLICATION ENGINE (100% CLIENT-SIDE JAVASCRIPT)
+       ========================================================================= -->
+  <script>
+    'use strict';
+
+    /* =========================================================================
+       1. APPLICATION STATE & DEFAULT RULES MATRIX
+       ========================================================================= */
+    const state = {
+      mode: 'monday',         // 'monday' | 'sunday' | 'docs'
+      subTab: 'actions',      // 'actions' | 'chat' | 'boats' | 'roster'
+      chatFormat: 'spaced',   // 'spaced' | 'compact'
+
+      // Raw parsed datasets
+      roster: [],             // [{ tag, name, role, lastSeen, donations }]
+      warLog: [],             // [{ season_key, created_date, player_tag, player_name, player_fame, player_boat_attacks, player_decks_used }]
+      currentRace: [],        // [{ player_tag, player_name, player_fame, player_boat_attacks, player_decks_used, player_decks_used_today }]
+
+      // Selected season in Monday mode & reference audit date
+      selectedSeason: null,
+      seasons: [],
+      referenceDateISO: '2026-11-16T09:43:00Z',
+      datasetLabel: 'No Data Loaded',
+
+      // Per-member manual overrides keyed by normalized tag (no '#')
+      // Values: 'full' | 'bd1' | 'bd2' | 'bd3' | 'bd4' | 'exempt' | 'force_promote' | 'force_hold'
+      overrides: {},
+
+      // Active Rules Matrix (SOP)
+      rules: {
+        minMedals: 1800,
+        proratePerDay: 450,
+        effortSafetyNet: true,
+        elderCushion: true,
+        spareBoatAttackers: true,
+        boatThresholdPct: 25,
+        steveRule: true,
+        steveMinWeeks: 5,
+        steveOfflineDays: 3,
+        firstMissGrace: true,
+        promoStraightWeeks: 6,
+        promoEliteWeeks: 4,
+        promoEliteAvg: 2400
+      },
+
+      // Computed audit output rows
+      auditedMembers: []
+    };
+
+    /* =========================================================================
+       2. SECURITY, SANITIZATION & CLIPBOARD UTILITIES
+       ========================================================================= */
+
+    /**
+     * Strictly escapes HTML special characters (<, >, &, ", ') so Clash Royale
+     * names like "<c4>Baki", "<c4>AJCGUNNER", or ">FRXNCHY<" never break DOM
+     * markup or allow XSS injection.
+     */
+    function sanitizeText(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    /**
+     * Formats player names cleanly for in-game Clash Royale chat messages
+     * (e.g., strips color tag syntax like "<c4>Baki" -> "Baki" for @mentions
+     * while keeping normal symbols intact).
+     */
+    function cleanChatName(name) {
+      if (!name) return 'Unknown';
+      return String(name).replace(/<c\d+>/gi, '').replace(/<\/c>/gi, '').trim();
+    }
+
+    /**
+     * Neutralizes CSV formula injection (Excel / Google Sheets) on export by
+     * prefixing cells starting with =, +, -, @, tab, or CR with a single quote.
+     */
+    function sanitizeCSVCell(value) {
+      let str = value === null || value === undefined ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str;
+      }
+      if (/[",\n\r]/.test(str)) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+
+    /**
+     * Normalizes Clash Royale player/clan tags by stripping leading '#' and uppercasing.
+     */
+    function normalizeTag(tag) {
+      if (!tag) return '';
+      return String(tag).trim().replace(/^#/, '').toUpperCase();
+    }
+
+    /**
+     * Parses both standard ISO timestamps ("2026-11-16T06:43:00Z") and Clash Royale
+     * compact API timestamps ("20261116T064300.000Z").
+     */
+    function parseFlexibleDate(val) {
+      if (!val) return null;
+      const s = String(val).trim();
+      // Compact CR format: YYYYMMDDTHHMMSS.000Z
+      const compact = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(s);
+      if (compact) {
+        return new Date(`${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}:${compact[6]}Z`);
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    /**
+     * Copies text to clipboard using document.execCommand('copy') for maximum
+     * compatibility inside iframes and mobile browsers.
+     */
+    function copyToClipboard(text, label = 'Copied to clipboard') {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          showToast(label, 'green');
+          return true;
+        }
+        showToast('Copy failed — please select text manually', 'rose');
+        return false;
+      } catch (err) {
+        console.error('Clipboard error:', err);
+        showToast('Copy failed — please select text manually', 'rose');
+        return false;
+      }
+    }
+
+    /**
+     * Non-blocking toast notification (never uses alert() or confirm()).
+     */
+    function showToast(message, tone = 'cyan') {
+      const container = document.getElementById('toast-container');
+      const colors = {
+        green: 'border-termGreen/60 text-termGreen bg-panel',
+        amber: 'border-termAmber/60 text-termAmber bg-panel',
+        cyan: 'border-termCyan/60 text-termCyan bg-panel',
+        rose: 'border-termRose/60 text-termRose bg-panel'
+      };
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-3.5 py-2.5 rounded-xl border shadow-xl text-xs font-mono ${colors[tone] || colors.cyan} transition-opacity duration-300`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, 2800);
+    }
+
+    /* =========================================================================
+       3. RFC-4180 CSV PARSER (HANDLES QUOTES, BOM, CRLF, FLEXIBLE HEADERS)
+       ========================================================================= */
+    function parseCSV(text) {
+      const clean = text.replace(/^\uFEFF/, ''); // Strip UTF-8 BOM
+      const rows = [];
+      let row = [];
+      let cell = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < clean.length; i++) {
+        const ch = clean[i];
+        const next = clean[i + 1];
+
+        if (inQuotes) {
+          if (ch === '"' && next === '"') {
+            cell += '"';
+            i++;
+          } else if (ch === '"') {
+            inQuotes = false;
+          } else {
+            cell += ch;
+          }
+        } else {
+          if (ch === '"') {
+            inQuotes = true;
+          } else if (ch === ',') {
+            row.push(cell.trim());
+            cell = '';
+          } else if (ch === '\r' && next === '\n') {
+            row.push(cell.trim());
+            if (row.some(c => c !== '')) rows.push(row);
+            row = [];
+            cell = '';
+            i++;
+          } else if (ch === '\n' || ch === '\r') {
+            row.push(cell.trim());
+            if (row.some(c => c !== '')) rows.push(row);
+            row = [];
+            cell = '';
+          } else {
+            cell += ch;
+          }
+        }
+      }
+      row.push(cell.trim());
+      if (row.some(c => c !== '')) rows.push(row);
+
+      if (rows.length < 2) return [];
+      const headers = rows[0].map(h => h.trim().toLowerCase());
+      return rows.slice(1).map(cols => {
+        const obj = {};
+        headers.forEach((h, idx) => {
+          obj[h] = cols[idx] !== undefined ? cols[idx] : '';
+        });
+        return obj;
+      });
+    }
+
+    /**
+     * Reads uploaded CSV files and normalizes field names across RoyaleAPI exports.
+     */
+    function handleFileUpload(event, slot) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = parseCSV(reader.result);
+          if (!parsed.length) {
+            showToast('CSV appears empty or malformed.', 'rose');
+            return;
+          }
+
+          if (slot === 'roster') {
+            state.roster = parsed.map(r => ({
+              tag: normalizeTag(r.tag || r.player_tag || r['player tag']),
+              name: r.name || r.player_name || r['player name'] || 'Unknown',
+              role: normalizeRole(r.role || 'member'),
+              lastSeen: r.lastseen || r.last_seen || r['last seen'] || '',
+              donations: Number(r.donations || 0)
+            })).filter(r => r.tag);
+
+            document.getElementById('status-roster').innerHTML =
+              `<span class="text-termGreen">✓ Loaded ${state.roster.length} members (${sanitizeText(file.name)})</span>`;
+            showToast(`Loaded ${state.roster.length} roster members`, 'green');
+          } else if (state.mode === 'monday') {
+            state.warLog = parsed.map(r => {
+              const sk = r.season_key || (r.season_id && r.section_index ? `${r.season_id}-${r.section_index}` : 'Latest');
+              return {
+                season_key: String(sk).trim(),
+                created_date: r.created_date || r.date || '',
+                player_tag: normalizeTag(r.player_tag || r.tag),
+                player_name: r.player_name || r.name || 'Unknown',
+                player_fame: Number(r.player_fame ?? r.fame ?? 0),
+                player_boat_attacks: Number(r.player_boat_attacks ?? r.boat_attacks ?? r.boatattacks ?? 0),
+                player_decks_used: Number(r.player_decks_used ?? r.decks_used ?? r.decksused ?? 0)
+              };
+            }).filter(r => r.player_tag);
+
+            extractSeasonsFromWarLog();
+            document.getElementById('status-war').innerHTML =
+              `<span class="text-termGreen">✓ Loaded ${state.warLog.length} war rows across ${state.seasons.length} weeks</span>`;
+            state.datasetLabel = `Custom CSV (${state.selectedSeason || 'Latest'})`;
+            showToast(`Loaded War Log (${state.seasons.length} weeks found)`, 'green');
+          } else {
+            state.currentRace = parsed.map(r => ({
+              player_tag: normalizeTag(r.player_tag || r.tag),
+              player_name: r.player_name || r.name || 'Unknown',
+              player_fame: Number(r.player_fame ?? r.fame ?? 0),
+              player_boat_attacks: Number(r.player_boat_attacks ?? r.boat_attacks ?? r.boatattacks ?? 0),
+              player_decks_used: Number(r.player_decks_used ?? r.decks_used ?? r.decksused ?? 0),
+              player_decks_used_today: Number(r.player_decks_used_today ?? r.decks_used_today ?? r.decksusedtoday ?? 0)
+            })).filter(r => r.player_tag);
+
+            document.getElementById('status-war').innerHTML =
+              `<span class="text-termGreen">✓ Loaded ${state.currentRace.length} live BD4 participants</span>`;
+            state.datasetLabel = `Custom BD4 Live Snapshot`;
+            showToast(`Loaded ${state.currentRace.length} live River Race entries`, 'green');
+          }
+
+          // If only war CSV was uploaded without roster, synthesize roster so tool still works
+          if (!state.roster.length && (state.warLog.length || state.currentRace.length)) {
+            const seen = new Map();
+            const src = state.mode === 'monday' ? state.warLog : state.currentRace;
+            src.forEach(row => {
+              if (!seen.has(row.player_tag)) {
+                seen.set(row.player_tag, {
+                  tag: row.player_tag,
+                  name: row.player_name,
+                  role: 'Member',
+                  lastSeen: '',
+                  donations: 0
+                });
+              }
+            });
+            state.roster = Array.from(seen.values());
+          }
+
+          runAuditAndRender();
+        } catch (err) {
+          console.error('CSV parse error:', err);
+          showToast('Error reading CSV — check file format.', 'rose');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function normalizeRole(role) {
+      const r = String(role || 'member').toLowerCase().trim();
+      if (r === 'leader') return 'Leader';
+      if (r === 'coleader' || r === 'co-leader' || r === 'co leader') return 'Co-leader';
+      if (r === 'elder') return 'Elder';
+      return 'Member';
+    }
+
+    function extractSeasonsFromWarLog() {
+      const map = new Map();
+      state.warLog.forEach(r => {
+        if (!map.has(r.season_key)) {
+          map.set(r.season_key, r.created_date || '');
+        }
+      });
+      // Sort seasons newest first (by created_date desc, fallback season_key desc)
+      const list = Array.from(map.entries()).sort((a, b) => {
+        const da = parseFlexibleDate(a[1]);
+        const db = parseFlexibleDate(b[1]);
+        if (da && db && da.getTime() !== db.getTime()) return db.getTime() - da.getTime();
+        return b[0].localeCompare(a[0], undefined, { numeric: true });
+      });
+      state.seasons = list.map(item => item[0]);
+      state.selectedSeason = state.seasons[0] || null;
+      const latestDate = list[0] && list[0][1] ? list[0][1] : new Date().toISOString();
+      state.referenceDateISO = latestDate;
+
+      const select = document.getElementById('season-key-select');
+      select.innerHTML = state.seasons
+        .map(sk => `<option value="${sanitizeText(sk)}">${sanitizeText(sk)}</option>`)
+        .join('');
+      const wrap = document.getElementById('week-selector-wrap');
+      if (state.seasons.length > 0 && state.mode === 'monday') {
+        wrap.classList.remove('hidden');
+        wrap.classList.add('flex');
+      }
+    }
+
+    /* =========================================================================
+       4. AUTHENTIC WEEK 138-2 (#WINNING) & BD4 SAMPLE DATASETS
+       ========================================================================= */
+
+    /**
+     * Loads authentic Week 138-2 data for 22 key #WINNING members with their
+     * true multi-week histories, boat attacks, roles, and lastSeen timestamps.
+     */
+    function loadSampleMondayData() {
+      state.mode = 'monday';
+      syncModeButtons();
+
+      const seasonsDesc = [
+        ['138-2', '2026-11-16T09:43:00Z'],
+        ['138-1', '2026-11-09T09:43:00Z'],
+        ['137-4', '2026-11-02T09:43:00Z'], // Colosseum Week (0 boats)
+        ['137-3', '2026-10-26T09:43:00Z'],
+        ['137-2', '2026-10-19T09:43:00Z'],
+        ['137-1', '2026-10-12T09:43:00Z'],
+        ['136-4', '2026-10-05T09:43:00Z'],
+        ['136-3', '2026-09-28T09:43:00Z'],
+        ['136-2', '2026-09-21T09:43:00Z'],
+        ['136-1', '2026-09-14T09:43:00Z']
+      ];
+
+      // Compact blueprint: [tag, name, role, lastSeen, donations, historyArray of [fame, decks, boats] newest first]
+      const sampleMembers = [
+        ['MNY1001', 'Manny1', 'Member', '2026-11-16T06:43:00Z', 40, [
+          [0, 0, 0]
+        ]],
+        ['TY0002', 'ty', 'Member', '2026-11-16T04:15:00Z', 120, [
+          [650, 6, 4]
+        ]],
+        ['BGC0003', 'bestgirlclasher', 'Member', '2026-11-16T08:10:00Z', 240, [
+          [1350, 8, 0], [1100, 7, 0], [2100, 12, 0], [1900, 12, 0], [1400, 9, 0],
+          [2200, 14, 0], [2400, 14, 0], [900, 6, 0], [2400, 14, 0], [2400, 14, 0]
+        ]],
+        ['NMIK004', 'notorious mike', 'Elder', '2026-11-16T07:50:00Z', 410, [
+          [1450, 9, 0], [2800, 16, 0], [2900, 16, 0], [2700, 16, 0], [2850, 16, 0],
+          [2650, 16, 0], [2800, 16, 0], [2950, 16, 0], [2700, 16, 0], [2800, 16, 0]
+        ]],
+        ['PSTV005', 'Pirate Steve', 'Co-leader', '2026-11-11T19:50:00Z', 0, [
+          [0, 0, 0], [2900, 16, 0], [2850, 16, 0], [2950, 16, 0], [2750, 16, 0],
+          [2800, 16, 0], [2900, 16, 0], [2850, 16, 0], [2900, 16, 0], [2850, 16, 0]
+        ]],
+        ['PERC006', 'perc', 'Member', '2026-11-16T09:10:00Z', 190, [
+          [1500, 16, 16], [1500, 16, 16], [2000, 16, 0], [1600, 16, 14], [1775, 16, 13]
+        ]],
+        ['BOIJ007', 'boi in a jar', 'Member', '2026-11-16T08:40:00Z', 310, [
+          [1750, 16, 16], [1750, 16, 16], [1900, 10, 0], [1800, 16, 16]
+        ]],
+        ['STRT008', 'stuart', 'Member', '2026-11-16T09:20:00Z', 280, [
+          [1800, 16, 16], [1800, 16, 16], [2400, 16, 0], [1825, 16, 16], [1800, 16, 15], [950, 8, 8]
+        ]],
+        ['MOHM009', 'Mohammad nazari', 'Member', '2026-11-16T09:05:00Z', 80, [
+          [1025, 9, 9]
+        ]],
+        ['NINJ010', 'Ninja', 'Member', '2026-11-16T07:05:00Z', 390, [
+          [1650, 12, 0], [2800, 16, 0], [2750, 16, 0], [2900, 16, 0], [2700, 16, 0], [2800, 16, 0], [2750, 16, 0]
+        ]],
+        ['MTMK011', 'mattmk', 'Member', '2026-11-16T06:20:00Z', 210, [
+          [1700, 13, 0], [2100, 14, 0], [2200, 14, 0], [1400, 10, 0], [2200, 15, 0], [2100, 14, 0]
+        ]],
+        ['BOB0012', 'Bob', 'Member', '2026-11-16T08:00:00Z', 160, [
+          [1100, 8, 0], [2600, 16, 0]
+        ]],
+        ['THMK013', 'Thomas king', 'Member', '2026-11-16T11:03:00Z', 145, [
+          [600, 4, 0], [2050, 15, 0], [2100, 16, 0], [1950, 14, 0], [2000, 15, 2], [2025, 15, 1]
+        ]],
+        ['BRYI014', 'brayyisaac', 'Member', '2026-11-16T08:30:00Z', 60, [
+          [500, 4, 0]
+        ]],
+        ['FRNC015', '>FRXNCHY<', 'Member', '2026-11-16T08:52:00Z', 50, [
+          [0, 0, 0]
+        ]],
+        ['LUKE016', 'Luke', 'Member', '2026-11-16T09:15:00Z', 520, [
+          [2650, 16, 0], [2400, 16, 0], [2500, 16, 0], [2300, 16, 0], [2450, 16, 0],
+          [2350, 16, 0], [2400, 16, 0], [2250, 15, 0], [2300, 16, 0], [2300, 16, 0]
+        ]],
+        ['AZZA017', 'AzzA', 'Member', '2026-11-16T09:30:00Z', 610, [
+          [2500, 16, 0], [2300, 16, 0], [2200, 16, 0], [2350, 16, 0], [2250, 16, 0],
+          [2150, 16, 0], [2300, 16, 0], [2200, 16, 0], [2250, 16, 0], [2200, 16, 0]
+        ]],
+        ['VEIZ018', 'Veiz', 'Member', '2026-11-16T08:45:00Z', 440, [
+          [2200, 12, 0], [2600, 16, 0], [2550, 16, 0], [2450, 14, 0], [2500, 15, 0],
+          [2600, 15, 0], [2450, 14, 0], [2550, 15, 0], [2550, 15, 0]
+        ]],
+        ['MARC019', 'Marcus.B:)', 'Member', '2026-11-16T09:25:00Z', 475, [
+          [2950, 16, 0], [2550, 16, 0], [2600, 15, 0], [2450, 14, 0], [2500, 15, 0], [2500, 14, 0]
+        ]],
+        ['SPUD020', 'Spud', 'Member', '2026-11-16T09:00:00Z', 490, [
+          [2700, 16, 0], [2500, 15, 0], [2400, 14, 0], [2550, 15, 0], [2450, 14, 0],
+          [2350, 14, 0], [2400, 14, 0], [2500, 15, 0], [2400, 14, 0], [1700, 10, 0]
+        ]],
+        ['STAN021', 'Stan', 'Co-leader', '2026-11-16T09:40:00Z', 740, [
+          [2800, 16, 0], [2750, 16, 0], [2600, 16, 0], [2700, 16, 0], [2650, 16, 0],
+          [2600, 16, 0], [2700, 16, 0], [2650, 16, 0], [2700, 16, 0], [2650, 16, 0]
+        ]],
+        ['BAKI022', '<c4>Baki', 'Leader', '2026-11-16T09:35:00Z', 680, [
+          [2600, 16, 0], [2550, 16, 0], [2650, 16, 0], [2500, 16, 0], [2550, 16, 0],
+          [2450, 16, 0], [2550, 16, 0], [2500, 16, 0], [2600, 16, 0], [2550, 16, 0]
+        ]]
+      ];
+
+      state.roster = sampleMembers.map(m => ({
+        tag: m[0], name: m[1], role: m[2], lastSeen: m[3], donations: m[4]
+      }));
+
+      state.warLog = [];
+      sampleMembers.forEach(m => {
+        m[5].forEach((wk, idx) => {
+          const [sk, dt] = seasonsDesc[idx];
+          state.warLog.push({
+            season_key: sk,
+            created_date: dt,
+            player_tag: m[0],
+            player_name: m[1],
+            player_fame: wk[0],
+            player_decks_used: wk[1],
+            player_boat_attacks: wk[2]
+          });
+        });
+      });
+
+      // Pre-set authentic Week 138-2 mid-week joiner & Ninja promotion overrides
+      state.overrides = {
+        'BRYI014': 'bd3',
+        'FRNC015': 'exempt',
+        'NINJ010': 'force_promote'
+      };
+
+      extractSeasonsFromWarLog();
+      state.datasetLabel = 'Week 138-2 (#WINNING Sample • 22 Key Members)';
+
+      document.getElementById('status-roster').innerHTML =
+        `<span class="text-termGreen">✓ Sample Roster Loaded (22 key members)</span>`;
+      document.getElementById('status-war').innerHTML =
+        `<span class="text-termGreen">✓ Sample 10-Week War Log Loaded (Season 138-2 active)</span>`;
+
+      runAuditAndRender();
+      showToast('Loaded authentic Week 138-2 (#WINNING) sample dataset!', 'green');
+    }
+
+    /**
+     * Loads a realistic Sunday Battle Day 4 "Pre-Kick" scenario so Stan can
+     * preview non-linear BD4 elimination math and 0-deck slot prioritization.
+     */
+    function loadSampleSundayData() {
+      state.mode = 'sunday';
+      syncModeButtons();
+
+      // If no war log loaded yet, seed history from Monday sample so veteran checks work!
+      if (!state.warLog.length) {
+        loadSampleMondayData();
+        state.mode = 'sunday';
+        syncModeButtons();
+      }
+
+      state.referenceDateISO = '2026-11-15T20:00:00Z'; // Sunday evening mid-BD4
+
+      // Add YOUREawful & great ben into BD4 roster snapshot for authentic demonstration
+      const baseRoster = state.roster.filter(r => r.tag !== 'YAWF099' && r.tag !== 'GBEN098');
+      baseRoster.push(
+        { tag: 'YAWF099', name: 'YOUREawful', role: 'Member', lastSeen: '2026-11-13T12:00:00Z', donations: 0 },
+        { tag: 'GBEN098', name: 'great ben', role: 'Member', lastSeen: '2026-11-14T10:00:00Z', donations: 20 }
+      );
+      state.roster = baseRoster;
+
+      // Live BD4 River Race snapshot: [tag, name, fameSoFar, decksUsedTotal, boatsUsedTotal, decksUsedToday]
+      const bd4Rows = [
+        ['YAWF099', 'YOUREawful', 0, 0, 0, 0],          // Eliminated + 0/4 today -> FREES DAILY SLOT!
+        ['GBEN098', 'great ben', 400, 4, 0, 0],         // Eliminated (400+900=1300 < 1800) + 0/4 today -> FREES DAILY SLOT!
+        ['MNY1001', 'Manny1', 0, 0, 0, 0],              // Eliminated + 0/4 today -> FREES DAILY SLOT!
+        ['TY0002', 'ty', 650, 6, 4, 2],                 // Eliminated (650+400=1050 < 1800), slot already used today
+        ['BGC0003', 'bestgirlclasher', 1150, 7, 0, 2],  // Eliminated (1150+400=1550 < 1800), slot already used today
+        ['PSTV005', 'Pirate Steve', 0, 0, 0, 0],        // Veteran Check-In Hold (Steve Rule)
+        ['NMIK004', 'notorious mike', 1200, 8, 0, 1],   // At risk: 3 unused -> max +700 -> 1900 possible! (Needs +600 in 3d)
+        ['MTMK011', 'mattmk', 1200, 10, 0, 0],          // At risk: 4 unused -> max +900 -> needs +600 (2W in 4d)
+        ['BOB0012', 'Bob', 950, 8, 0, 0],               // At risk: 4 unused -> max +900 -> needs +850 (Must win 2-0 Duel + 2x1v1!)
+        ['THMK013', 'Thomas king', 600, 4, 0, 0],       // Eliminated (600+900=1500 < 1800) + 0/4 today -> FREES SLOT
+        ['PERC006', 'perc', 1150, 12, 12, 0],           // At risk + Boat warning (4 unused -> needs +650, tell them switch to PvP!)
+        ['BOIJ007', 'boi in a jar', 1300, 12, 12, 0],   // At risk + Boat warning (4 unused -> needs +500)
+        ['STRT008', 'stuart', 1400, 12, 12, 0],         // At risk + Boat warning (4 unused -> needs +400 = 0 wins in PvP!)
+        ['MOHM009', 'Mohammad nazari', 825, 7, 7, 2],   // Eliminated (825+400=1225 < 1800)
+        ['BRYI014', 'brayyisaac', 300, 2, 0, 2],        // BD3 joiner (target 450): 2 unused -> needs +150 (just finish 2/2 decks!)
+        ['FRNC015', '>FRXNCHY<', 0, 0, 0, 0],           // Chat exempt
+        ['NINJ010', 'Ninja', 1650, 12, 0, 0],           // At risk (needs +150 in 4d — 0 wins needed!)
+        ['LUKE016', 'Luke', 2150, 12, 0, 0],            // Already Passed
+        ['AZZA017', 'AzzA', 2050, 12, 0, 0],            // Already Passed
+        ['VEIZ018', 'Veiz', 2200, 12, 0, 0],            // Already Passed
+        ['MARC019', 'Marcus.B:)', 2450, 14, 0, 2],      // Already Passed
+        ['SPUD020', 'Spud', 2200, 13, 0, 1],            // Already Passed
+        ['STAN021', 'Stan', 2350, 14, 0, 2],            // Already Passed
+        ['BAKI022', '<c4>Baki', 2100, 12, 0, 0]         // Already Passed
+      ];
+
+      state.currentRace = bd4Rows.map(r => ({
+        player_tag: r[0],
+        player_name: r[1],
+        player_fame: r[2],
+        player_decks_used: r[3],
+        player_boat_attacks: r[4],
+        player_decks_used_today: r[5]
+      }));
+
+      state.overrides = {
+        'BRYI014': 'bd3',
+        'FRNC015': 'exempt'
+      };
+
+      state.datasetLabel = 'Sample Sunday BD4 Pre-Kick Scenario (24 Members)';
+      document.getElementById('status-roster').innerHTML =
+        `<span class="text-termGreen">✓ Sample BD4 Roster Loaded (24 members)</span>`;
+      document.getElementById('status-war').innerHTML =
+        `<span class="text-termAmber">✓ Sample Live BD4 River Race Loaded</span>`;
+
+      runAuditAndRender();
+      showToast('Loaded Sunday Battle Day 4 Pre-Kick scenario!', 'amber');
+    }
+
+    /* =========================================================================
+       5. CORE CLAN WARS 2 MATH & RULES MATRIX AUDIT ENGINE
+       ========================================================================= */
+
+    /**
+     * Exact non-linear maximum remaining medals on Battle Day 4 by unused decks.
+     * Duel requires >= 3 unused decks to start (2-0 Duel = 500 for 2 decks).
+     */
+    function getBD4MaxPossible(unusedDecks) {
+      const table = { 4: 900, 3: 700, 2: 400, 1: 200, 0: 0 };
+      const u = Math.max(0, Math.min(4, Number(unusedDecks) || 0));
+      return table[u];
+    }
+
+    /**
+     * Computes the exact minimum win path needed on BD4 to clear target.
+     */
+    function describeBD4WinPath(needed, unusedDecks) {
+      if (needed <= 0) return 'Target secured';
+      const u = Math.max(0, Math.min(4, unusedDecks));
+      if (u === 0) return '0 decks left';
+      const maxPts = getBD4MaxPossible(u);
+      if (needed > maxPts) return `Impossible (max +${maxPts})`;
+      if (needed <= 100 * u) {
+        const decksNeeded = Math.ceil(needed / 100);
+        return `Play ${decksNeeded}/${u} PvP decks (0 wins needed)`;
+      }
+      if (needed <= 200 * u) {
+        const winsNeeded = Math.ceil((needed - 100 * u) / 100);
+        return `Need ${winsNeeded}W in ${u} 1v1s (or Duel win)`;
+      }
+      // Only reachable via 2-0 Duel + winning all remaining 1v1s
+      return `Must win 2-0 Duel + ${u - 2}/${u - 2} 1v1s!`;
+    }
+
+    /**
+     * Computes exact Boat-Attack Equivalence (inferred W-L, 1v1 PvP, With Duels).
+     */
+    function computeBoatEquivalence(fame, decks, boats) {
+      if (!decks || !boats) return null;
+      const boatPct = Math.round((boats / decks) * 100);
+      const isPureBoat = boats === decks;
+
+      let inferredW = null;
+      let inferredL = null;
+      let winRatePct = null;
+      let equiv1v1 = null;
+      let equivDuels = null;
+      let missed1v1 = null;
+      let missedDuels = null;
+
+      if (isPureBoat && decks > 0) {
+        // Every boat loss = 75, every boat win = 125 (+50 delta)
+        inferredW = Math.max(0, Math.min(decks, Math.round((fame - 75 * decks) / 50)));
+        inferredL = decks - inferredW;
+        winRatePct = Math.round((inferredW / decks) * 100);
+        equiv1v1 = 200 * inferredW + 100 * inferredL;
+        // Upper bound with Duels: up to 8 Duel wins across 4 days (2 per day) or proportional for fewer decks
+        const maxDuelWins = decks >= 13 ? 8 : Math.min(6, Math.floor(decks / 2) * 2);
+        equivDuels = equiv1v1 + 50 * Math.min(inferredW, maxDuelWins);
+        missed1v1 = equiv1v1 - fame;
+        missedDuels = equivDuels - fame;
+      } else if (boats > 0) {
+        // Mixed boats + PvP estimate: conservative +50 pts per boat deck if played in PvP
+        equiv1v1 = fame + Math.round(boats * 50);
+        equivDuels = equiv1v1 + Math.round(boats * 25);
+        missed1v1 = equiv1v1 - fame;
+        missedDuels = equivDuels - fame;
+      }
+
+      return {
+        boatPct,
+        isPureBoat,
+        inferredW,
+        inferredL,
+        winRatePct,
+        equiv1v1,
+        equivDuels,
+        missed1v1,
+        missedDuels
+      };
+    }
+
+    /**
+     * Computes effective medal target & full days available for a member's join override.
+     */
+    function getJoinTargetInfo(overrideKey) {
+      const r = state.rules;
+      switch (overrideKey) {
+        case 'bd1': return { label: 'BD1 Thu (3d)', fullDays: 3, target: r.proratePerDay * 3, decksFloor: 12, isMidweek: true, isExempt: false };
+        case 'bd2': return { label: 'BD2 Fri (2d)', fullDays: 2, target: r.proratePerDay * 2, decksFloor: 8, isMidweek: true, isExempt: false };
+        case 'bd3': return { label: 'BD3 Sat (1d)', fullDays: 1, target: r.proratePerDay * 1, decksFloor: 4, isMidweek: true, isExempt: false };
+        case 'bd4': return { label: 'BD4 Sun (Exempt)', fullDays: 0, target: 0, decksFloor: 0, isMidweek: true, isExempt: true };
+        case 'exempt': return { label: 'Chat Exempt', fullDays: 0, target: 0, decksFloor: 0, isMidweek: true, isExempt: true };
+        default: return { label: 'Full Week (4d)', fullDays: 4, target: r.minMedals, decksFloor: 16, isMidweek: false, isExempt: false };
+      }
+    }
+
+    /**
+     * Runs the complete audit across all members for the active mode & rules.
+     */
+    function runAuditEngine() {
+      const r = state.rules;
+      const refDate = parseFlexibleDate(state.referenceDateISO) || new Date();
+
+      // Index war history by player_tag (sorted newest first based on state.seasons)
+      const historyByTag = new Map();
+      const seasonOrder = new Map();
+      state.seasons.forEach((sk, idx) => seasonOrder.set(sk, idx));
+
+      state.warLog.forEach(entry => {
+        if (!historyByTag.has(entry.player_tag)) historyByTag.set(entry.player_tag, []);
+        historyByTag.get(entry.player_tag).push(entry);
+      });
+      historyByTag.forEach(arr => {
+        arr.sort((a, b) => (seasonOrder.get(a.season_key) ?? 99) - (seasonOrder.get(b.season_key) ?? 99));
+      });
+
+      // Index current race if in Sunday BD4 mode
+      const currentRaceByTag = new Map();
+      state.currentRace.forEach(row => currentRaceByTag.set(row.player_tag, row));
+
+      const results = state.roster.map(member => {
+        const tag = member.tag;
+        const override = state.overrides[tag] || 'full';
+        const joinInfo = getJoinTargetInfo(override);
+
+        // Historical weeks (in Monday mode, exclude weeks newer than selectedSeason; separate active vs prior)
+        const allHist = historyByTag.get(tag) || [];
+        let activeEntry = null;
+        let priorWeeks = [];
+
+        if (state.mode === 'monday') {
+          const selIdx = seasonOrder.get(state.selectedSeason) ?? 0;
+          const upToSelected = allHist.filter(h => (seasonOrder.get(h.season_key) ?? 99) >= selIdx);
+          activeEntry = upToSelected.find(h => h.season_key === state.selectedSeason) || null;
+          priorWeeks = upToSelected.filter(h => h.season_key !== state.selectedSeason);
+        } else {
+          // Sunday BD4 mode: active entry is live currentRace, all warLog weeks are prior
+          activeEntry = currentRaceByTag.get(tag) || null;
+          priorWeeks = allHist;
+        }
+
+        const fame = activeEntry ? activeEntry.player_fame : 0;
+        const decks = activeEntry ? activeEntry.player_decks_used : 0;
+        const boats = activeEntry ? activeEntry.player_boat_attacks : 0;
+        const decksUsedToday = activeEntry && activeEntry.player_decks_used_today !== undefined
+          ? activeEntry.player_decks_used_today : 0;
+
+        // Multi-week statistics (including active week in Monday mode)
+        const weeksIncludingActive = state.mode === 'monday'
+          ? (activeEntry ? [activeEntry, ...priorWeeks] : [{ player_fame: 0, player_decks_used: 0, player_boat_attacks: 0 }, ...priorWeeks])
+          : priorWeeks;
+
+        const totalWeeks = weeksIncludingActive.length;
+        const passedWeeks = weeksIncludingActive.filter(w => w.player_fame >= r.minMedals).length;
+        const missedWeeks = totalWeeks - passedWeeks;
+        const avgMedals = totalWeeks > 0
+          ? Math.round(weeksIncludingActive.reduce((s, w) => s + w.player_fame, 0) / totalWeeks)
+          : 0;
+        const avgDecks = totalWeeks > 0
+          ? Number((weeksIncludingActive.reduce((s, w) => s + w.player_decks_used, 0) / totalWeeks).toFixed(1))
+          : 0;
+
+        // Prior-only metrics (crucial for Pirate Steve Rule & 1st-Miss Grace)
+        const priorTotal = priorWeeks.length;
+        const priorPassed = priorWeeks.filter(w => w.player_fame >= r.minMedals).length;
+        const priorAvg = priorTotal > 0
+          ? Math.round(priorWeeks.reduce((s, w) => s + w.player_fame, 0) / priorTotal)
+          : 0;
+
+        // Consecutive misses (counting from most recent week in Monday mode)
+        let consecutiveMisses = 0;
+        for (const w of weeksIncludingActive) {
+          if (w.player_fame < r.minMedals) consecutiveMisses++;
+          else break;
+        }
+
+        // Consecutive passes (for Promotion Radar)
+        let consecutivePasses = 0;
+        for (const w of weeksIncludingActive) {
+          if (w.player_fame >= r.minMedals) consecutivePasses++;
+          else break;
+        }
+
+        // Offline duration calculation
+        const lastSeenDate = parseFlexibleDate(member.lastSeen);
+        const offlineDays = lastSeenDate
+          ? Math.max(0, Number(((refDate.getTime() - lastSeenDate.getTime()) / (1000 * 60 * 60 * 24)).toFixed(1)))
+          : null;
+
+        // Boat-attack analysis
+        const boatStats = computeBoatEquivalence(fame, decks, boats);
+        const isBoatFlagged = boatStats !== null && boatStats.boatPct >= r.boatThresholdPct && boats >= 3;
+
+        // Pirate Steve Check-In check
+        const triggersSteveRule = r.steveRule &&
+          priorPassed >= r.steveMinWeeks &&
+          (fame === 0 || (offlineDays !== null && offlineDays >= r.steveOfflineDays)) &&
+          fame < joinInfo.target;
+
+        // Promotion Radar check (Members only)
+        const meetsPromoRadar = member.role === 'Member' && (
+          consecutivePasses >= r.promoStraightWeeks ||
+          (totalWeeks >= r.promoEliteWeeks && passedWeeks === totalWeeks && avgMedals >= r.promoEliteAvg) ||
+          (totalWeeks >= 9 && passedWeeks >= 9 && avgMedals >= 2200)
+        );
+
+        // =====================================================================
+        // VERDICT EVALUATION (MONDAY POST-WAR vs SUNDAY BD4 PRE-KICK)
+        // =====================================================================
+        let verdict = 'PASS';
+        let verdictLabel = 'PASSED';
+        let reason = `Cleared ${joinInfo.target} target (${fame})`;
+        let priority = 70; // Lower = higher urgency in dashboard/sorting
+        let bd4 = null;
+
+        if (state.mode === 'monday') {
+          const effortPass = joinInfo.isMidweek && r.effortSafetyNet && joinInfo.decksFloor > 0 && decks >= joinInfo.decksFloor;
+
+          if (override === 'force_hold') {
+            verdict = 'HOLD';
+            verdictLabel = 'MANUAL HOLD';
+            reason = 'Manually held by Co-leader';
+            priority = 25;
+          } else if (override === 'force_promote') {
+            verdict = 'PROMOTE';
+            verdictLabel = 'PROMOTE → ELDER';
+            reason = `Veteran override (${priorPassed}/${priorTotal} prior 1800+, ${priorAvg} avg)`;
+            priority = 55;
+          } else if (joinInfo.isExempt) {
+            verdict = 'EXEMPT';
+            verdictLabel = 'MID-WEEK EXEMPT';
+            reason = `${joinInfo.label} — grace until next war`;
+            priority = 60;
+          } else if (fame >= joinInfo.target || effortPass) {
+            if (meetsPromoRadar) {
+              verdict = 'PROMOTE';
+              verdictLabel = 'PROMOTE → ELDER';
+              reason = `${passedWeeks}/${totalWeeks} wks ≥${r.minMedals} (${avgMedals} avg, ${avgDecks}d/wk)`;
+              priority = 55;
+            } else if (joinInfo.isMidweek) {
+              verdict = 'EXEMPT';
+              verdictLabel = 'MID-WEEK PASSED';
+              reason = `${joinInfo.label}: ${fame}/${joinInfo.target} (${decks}d used)`;
+              priority = 62;
+            } else {
+              verdict = 'PASS';
+              verdictLabel = isBoatFlagged ? 'PASSED (BOAT TIP)' : 'PASSED';
+              reason = isBoatFlagged
+                ? `Barely passed w/ ${boatStats.boatPct}% boats — PvP = ${boatStats.equiv1v1}+`
+                : `Cleared ${r.minMedals} (${fame} pts, ${decks}/16d)`;
+              priority = isBoatFlagged ? 48 : 80;
+            }
+          } else {
+            // UNDER EFFECTIVE TARGET
+            if (triggersSteveRule) {
+              verdict = 'HOLD';
+              verdictLabel = 'CHECK-IN HOLD';
+              reason = `${priorPassed}/${priorTotal} prior wks (${priorAvg} avg), offline ${offlineDays ?? '?'}d — check in!`;
+              priority = 20;
+            } else if (member.role === 'Leader' || member.role === 'Co-leader') {
+              verdict = 'HOLD';
+              verdictLabel = 'LEADERSHIP REVIEW';
+              reason = `${member.role} under ${joinInfo.target} (${fame} pts)`;
+              priority = 22;
+            } else if (member.role === 'Elder' && r.elderCushion) {
+              verdict = 'DEMOTE';
+              verdictLabel = 'DEMOTE → MEMBER';
+              reason = `Elder cushion absorbs miss (${fame}/${joinInfo.target}, ${decks}/16d)`;
+              priority = 15;
+            } else if (r.spareBoatAttackers && isBoatFlagged && decks >= 8) {
+              verdict = 'BOAT_COACH';
+              verdictLabel = 'BOAT WARNING (SPARED)';
+              reason = `${boats}/${decks} boat attacks (${boatStats.boatPct}%) — PvP equiv ${boatStats.equiv1v1}+`;
+              priority = 30;
+            } else if (r.firstMissGrace && priorPassed >= 1 && consecutiveMisses === 1) {
+              verdict = 'FINAL_WARNING';
+              verdictLabel = 'FINAL WARNING';
+              reason = `Prior 1800+ history (${passedWeeks}/${totalWeeks} passed, ${avgMedals} avg) — 1st recent miss`;
+              priority = 40;
+            } else {
+              verdict = 'KICK';
+              verdictLabel = 'KICK';
+              if (consecutiveMisses >= 2) {
+                reason = `${consecutiveMisses} straight misses (${missedWeeks}/${totalWeeks} under, ${fame} pts)`;
+              } else if (fame === 0) {
+                reason = `0 medals / 0 decks played across full week`;
+              } else {
+                reason = `Under ${joinInfo.target} (${fame} pts, ${decks}/16 decks)`;
+              }
+              priority = 10;
+            }
+          }
+        } else {
+          // ===================================================================
+          // SUNDAY BATTLE DAY 4 "PRE-KICK" ENGINE
+          // ===================================================================
+          const unusedDecksToday = Math.max(0, 4 - decksUsedToday);
+          const maxPossibleToday = getBD4MaxPossible(unusedDecksToday);
+          const maxFinalFame = fame + maxPossibleToday;
+          const needed = Math.max(0, joinInfo.target - fame);
+          const freesDailySlot = decksUsedToday === 0;
+          const winPath = describeBD4WinPath(needed, unusedDecksToday);
+
+          bd4 = {
+            decksUsedToday,
+            unusedDecksToday,
+            maxPossibleToday,
+            maxFinalFame,
+            needed,
+            freesDailySlot,
+            winPath
+          };
+
+          if (override === 'force_hold' || triggersSteveRule) {
+            verdict = 'HOLD';
+            verdictLabel = 'CHECK-IN HOLD';
+            reason = triggersSteveRule
+              ? `Steve Rule: ${priorPassed}/${priorTotal} prior wks (${priorAvg} avg) — do not pre-kick`
+              : 'Manually held';
+            priority = 22;
+          } else if (joinInfo.isExempt) {
+            verdict = 'EXEMPT';
+            verdictLabel = 'MID-WEEK EXEMPT';
+            reason = `${joinInfo.label} — exempt on BD4`;
+            priority = 60;
+          } else if (fame >= joinInfo.target) {
+            verdict = 'PASS';
+            verdictLabel = 'SAFE (TARGET MET)';
+            reason = `Already ≥${joinInfo.target} (${fame} pts)`;
+            priority = 80;
+          } else if (maxFinalFame < joinInfo.target) {
+            // MATHEMATICALLY ELIMINATED
+            if (member.role === 'Elder' && r.elderCushion) {
+              verdict = 'DEMOTE';
+              verdictLabel = 'ELIMINATED (DEMOTE)';
+              reason = `Max ${maxFinalFame} < ${joinInfo.target} (${unusedDecksToday}d left) — Elder cushion`;
+              priority = 18;
+            } else {
+              verdict = 'KICK';
+              verdictLabel = freesDailySlot ? 'ELIMINATED • FREES SLOT' : 'ELIMINATED (SLOT USED)';
+              reason = `Max ${maxFinalFame} < ${joinInfo.target} (${unusedDecksToday}d left). ${freesDailySlot ? '0/4 used today — kicking opens daily slot!' : `${decksUsedToday}/4 used today — slot already consumed.`}`;
+              // Prioritize 0-deck players FIRST!
+              priority = freesDailySlot ? 5 : 12;
+            }
+          } else {
+            // STILL MATHEMATICALLY ALIVE (AT RISK)
+            verdict = isBoatFlagged ? 'BOAT_COACH' : 'FINAL_WARNING';
+            verdictLabel = isBoatFlagged ? 'AT RISK (STOP BOATS!)' : 'AT RISK (ALIVE)';
+            reason = `Needs +${needed} from ${unusedDecksToday}d → ${winPath}`;
+            priority = isBoatFlagged ? 32 : 38;
+          }
+        }
+
+        return {
+          ...member,
+          override,
+          joinInfo,
+          fame,
+          decks,
+          boats,
+          totalWeeks,
+          passedWeeks,
+          missedWeeks,
+          consecutiveMisses,
+          consecutivePasses,
+          avgMedals,
+          avgDecks,
+          priorTotal,
+          priorPassed,
+          priorAvg,
+          offlineDays,
+          boatStats,
+          isBoatFlagged,
+          verdict,
+          verdictLabel,
+          reason,
+          priority,
+          bd4
+        };
+      });
+
+      // Default sort by action priority, then fame ascending
+      results.sort((a, b) => a.priority - b.priority || a.fame - b.fame);
+      state.auditedMembers = results;
+    }
+
+    /* =========================================================================
+       6. UI RENDERERS (KPIs, ACTION DASHBOARD, BOAT LAB, ROSTER TABLE)
+       ========================================================================= */
+
+    function runAuditAndRender() {
+      runAuditEngine();
+      renderHeaderMeta();
+      renderKPIs();
+      renderActionDashboard();
+      renderBoatLab();
+      renderChatGenerator();
+      renderRosterTable();
+      renderMarkdownPreview();
+    }
+
+    function renderHeaderMeta() {
+      const r = state.rules;
+      document.getElementById('dataset-badge').textContent = state.datasetLabel;
+      document.getElementById('ref-date-readout').textContent = state.referenceDateISO
+        ? `Ref UTC: ${state.referenceDateISO.replace('T', ' ').replace('Z', ' UTC')}`
+        : '';
+      document.getElementById('val-min-medals').textContent = r.minMedals;
+      document.getElementById('val-boat-pct').textContent = `${r.boatThresholdPct}%`;
+      document.getElementById('prorate-preview').textContent =
+        `Thu: ${r.proratePerDay * 3} • Fri: ${r.proratePerDay * 2} • Sat: ${r.proratePerDay} • Sun: Exempt`;
+      document.getElementById('rules-summary-pill').textContent =
+        `Min ${r.minMedals} • Prorate ${r.proratePerDay}/d • Elder ${r.elderCushion ? 'ON' : 'OFF'} • Boats ${r.spareBoatAttackers ? 'COACH' : 'STRICT'} • Steve ${r.steveRule ? 'ON' : 'OFF'}`;
+      document.getElementById('th-decks').textContent =
+        state.mode === 'sunday' ? 'Decks (Today)' : 'Decks (Boats)';
+    }
+
+    function renderKPIs() {
+      const m = state.auditedMembers;
+      const total = m.length;
+      const avg = total ? Math.round(m.reduce((s, x) => s + x.fame, 0) / total) : 0;
+      const counts = {
+        pass: m.filter(x => x.verdict === 'PASS' || x.verdict === 'PROMOTE' || (x.verdict === 'EXEMPT' && x.fame >= x.joinInfo.target)).length,
+        kick: m.filter(x => x.verdict === 'KICK').length,
+        demote: m.filter(x => x.verdict === 'DEMOTE').length,
+        hold: m.filter(x => x.verdict === 'HOLD').length,
+        boat: m.filter(x => x.isBoatFlagged).length,
+        warn: m.filter(x => x.verdict === 'FINAL_WARNING').length,
+        promo: m.filter(x => x.verdict === 'PROMOTE').length
+      };
+
+      const cards = [
+        { label: 'MEMBERS', val: total, accent: 'border-l-slate-400 text-white' },
+        { label: state.mode === 'sunday' ? 'SAFE NOW' : 'PASSED', val: counts.pass, accent: 'border-l-termGreen text-termGreen' },
+        { label: state.mode === 'sunday' ? 'ELIMINATED' : 'KICKS', val: counts.kick, accent: 'border-l-termRose text-termRose' },
+        { label: 'DEMOTES', val: counts.demote, accent: 'border-l-orange-400 text-orange-400' },
+        { label: 'HOLDS', val: counts.hold, accent: 'border-l-termCyan text-termCyan' },
+        { label: 'BOAT FLAGS', val: counts.boat, accent: 'border-l-termAmber text-termAmber' },
+        { label: state.mode === 'sunday' ? 'AT RISK' : 'WARNINGS', val: counts.warn, accent: 'border-l-amber-300 text-amber-300' },
+        { label: 'PROMOTE', val: counts.promo, accent: 'border-l-emerald-400 text-emerald-400' },
+        { label: 'AVG MEDALS', val: avg, accent: 'border-l-termCyan text-white' }
+      ];
+
+      document.getElementById('kpi-strip').innerHTML = cards.map(c => `
+        <div class="bg-panel border border-borderOps border-l-4 ${c.accent.split(' ')[0]} rounded-xl px-3 py-2.5">
+          <div class="text-[10px] font-mono text-slate-400 tracking-wider">${c.label}</div>
+          <div class="text-xl font-mono font-bold mt-0.5 ${c.accent.split(' ')[1]}">${c.val}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderActionDashboard() {
+      const m = state.auditedMembers;
+      const container = document.getElementById('action-cards-grid');
+
+      if (!m.length) {
+        container.innerHTML = `
+          <div class="lg:col-span-2 bg-panel border border-borderOps rounded-xl p-8 text-center space-y-3">
+            <div class="font-mono text-sm text-slate-300">No clan data loaded yet.</div>
+            <p class="text-xs text-slate-400">Upload your RoyaleAPI CSVs above or click <strong>Load Week 138-2 (#WINNING) Sample Data</strong> to run a live audit.</p>
+          </div>`;
+        return;
+      }
+
+      const groups = state.mode === 'monday' ? [
+        { key: 'KICK', title: 'KICK LIST', badge: 'bg-termRose/15 text-termRose border-termRose/40', items: m.filter(x => x.verdict === 'KICK') },
+        { key: 'DEMOTE', title: 'DEMOTE → MEMBER (ELDER CUSHION)', badge: 'bg-orange-500/15 text-orange-300 border-orange-400/40', items: m.filter(x => x.verdict === 'DEMOTE') },
+        { key: 'HOLD', title: 'CHECK-IN HOLD (PIRATE STEVE RULE)', badge: 'bg-termCyan/15 text-termCyan border-termCyan/40', items: m.filter(x => x.verdict === 'HOLD') },
+        { key: 'BOAT_COACH', title: 'BOAT-ATTACK COACHING (SPARED)', badge: 'bg-termAmber/15 text-termAmber border-termAmber/40', items: m.filter(x => x.verdict === 'BOAT_COACH' || (x.verdict === 'PASS' && x.isBoatFlagged)) },
+        { key: 'FINAL_WARNING', title: 'FINAL WARNINGS (NEAR-MISS / 1ST MISS)', badge: 'bg-amber-400/15 text-amber-200 border-amber-400/40', items: m.filter(x => x.verdict === 'FINAL_WARNING') },
+        { key: 'PROMOTE', title: 'PROMOTE → ELDER', badge: 'bg-termGreen/15 text-termGreen border-termGreen/40', items: m.filter(x => x.verdict === 'PROMOTE') },
+        { key: 'EXEMPT', title: 'MID-WEEK JOINERS (EXEMPT / PASSED)', badge: 'bg-sky-400/15 text-sky-300 border-sky-400/40', items: m.filter(x => x.verdict === 'EXEMPT') }
+      ] : [
+        { key: 'KICK', title: 'MATHEMATICALLY ELIMINATED (0-DECK SLOTS FIRST)', badge: 'bg-termRose/15 text-termRose border-termRose/40', items: m.filter(x => x.verdict === 'KICK') },
+        { key: 'FINAL_WARNING', title: 'AT RISK — STILL ALIVE (EXACT WIN PATHS)', badge: 'bg-termAmber/15 text-termAmber border-termAmber/40', items: m.filter(x => x.verdict === 'FINAL_WARNING' || x.verdict === 'BOAT_COACH') },
+        { key: 'DEMOTE', title: 'ELIMINATED ELDERS (DEMOTE CUSHION)', badge: 'bg-orange-500/15 text-orange-300 border-orange-400/40', items: m.filter(x => x.verdict === 'DEMOTE') },
+        { key: 'HOLD', title: 'CHECK-IN HOLD (DO NOT PRE-KICK)', badge: 'bg-termCyan/15 text-termCyan border-termCyan/40', items: m.filter(x => x.verdict === 'HOLD') },
+        { key: 'EXEMPT', title: 'MID-WEEK EXEMPT', badge: 'bg-sky-400/15 text-sky-300 border-sky-400/40', items: m.filter(x => x.verdict === 'EXEMPT') }
+      ];
+
+      container.innerHTML = groups.map(g => `
+        <div class="bg-panel border border-borderOps rounded-xl overflow-hidden flex flex-col">
+          <div class="px-4 py-3 border-b border-borderOps bg-panelLight/40 flex items-center justify-between gap-2">
+            <h3 class="text-xs font-mono font-bold text-white tracking-wide">${g.title}</h3>
+            <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded border ${g.badge}">${g.items.length}</span>
+          </div>
+          <div class="divide-y divide-borderOps/60 flex-1">
+            ${g.items.length === 0
+              ? `<div class="p-4 text-xs font-mono text-slate-500">None under current rules.</div>`
+              : g.items.map(p => renderActionItemRow(p)).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderActionItemRow(p) {
+      const slotBadge = state.mode === 'sunday' && p.verdict === 'KICK' && p.bd4 && p.bd4.freesDailySlot
+        ? `<span class="inline-block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-termGreen/20 text-termGreen border border-termGreen/50">FREES DAILY SLOT (0/4 USED TODAY)</span>`
+        : '';
+
+      const boatBadge = p.isBoatFlagged && p.boatStats
+        ? `<span class="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded bg-termAmber/15 text-termAmber border border-termAmber/30">${p.boats}/${p.decks} BOATS → PvP ${p.boatStats.equiv1v1}+</span>`
+        : '';
+
+      const statLine = state.mode === 'sunday' && p.bd4
+        ? `${p.fame} pts • ${p.bd4.unusedDecksToday}/4 decks left today (max ${p.bd4.maxFinalFame})`
+        : `${p.fame} pts • ${p.decks}/16d • Hist: ${p.passedWeeks}/${p.totalWeeks} (${p.avgMedals} avg)`;
+
+      return `
+        <div class="p-3.5 hover:bg-panelLight/30 transition-colors space-y-1.5">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-mono font-bold text-sm text-white">${sanitizeText(p.name)}</span>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-obsidian border border-borderOps text-slate-400">${sanitizeText(p.role)}</span>
+              ${slotBadge}
+              ${boatBadge}
+            </div>
+            <span class="font-mono text-xs font-bold ${p.fame >= p.joinInfo.target ? 'text-termGreen' : 'text-termRose'} shrink-0">${p.fame}</span>
+          </div>
+          <div class="text-[11px] font-mono text-slate-400">${sanitizeText(statLine)}</div>
+          <div class="text-xs text-slate-300">${sanitizeText(p.reason)}</div>
+        </div>
+      `;
+    }
+
+    function renderBoatLab() {
+      const flagged = state.auditedMembers.filter(m => m.isBoatFlagged && m.boatStats);
+      document.getElementById('boat-summary-badge').textContent = `${flagged.length} Flagged (≥${state.rules.boatThresholdPct}% Boats)`;
+      const container = document.getElementById('boat-cards-container');
+
+      if (!flagged.length) {
+        container.innerHTML = `
+          <div class="md:col-span-2 bg-panel border border-borderOps rounded-xl p-6 text-center text-xs font-mono text-slate-400">
+            No boat attackers flagged at ≥${state.rules.boatThresholdPct}% threshold.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = flagged.map(p => {
+        const b = p.boatStats;
+        const maxBar = Math.max(3200, b.equivDuels || 2400);
+        const wActual = Math.min(100, Math.round((p.fame / maxBar) * 100));
+        const w1v1 = Math.min(100, Math.round(((b.equiv1v1 || p.fame) / maxBar) * 100));
+        const wDuel = Math.min(100, Math.round(((b.equivDuels || p.fame) / maxBar) * 100));
+
+        const recordLabel = b.isPureBoat
+          ? `Inferred Record: ${b.inferredW}W–${b.inferredL}L (${b.winRatePct}% WR)`
+          : `Mixed Attack Type (${b.boatPct}% boats)`;
+
+        return `
+          <div class="bg-panel border border-borderOps rounded-xl p-4 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono font-bold text-white text-sm">${sanitizeText(p.name)}</span>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-termAmber/15 text-termAmber border border-termAmber/30">
+                    ${p.boats}/${p.decks} Boats (${b.boatPct}%)
+                  </span>
+                </div>
+                <div class="text-[11px] font-mono text-slate-400 mt-0.5">${sanitizeText(recordLabel)}</div>
+              </div>
+              <div class="text-right font-mono">
+                <div class="text-[10px] text-slate-400">MISSED PTS</div>
+                <div class="text-sm font-bold text-termGreen">+${b.missed1v1} to +${b.missedDuels}</div>
+              </div>
+            </div>
+
+            <!-- Comparison Bars -->
+            <div class="space-y-2 font-mono text-[11px]">
+              <div>
+                <div class="flex justify-between text-slate-300 mb-0.5">
+                  <span>Actual (Boats)</span><span class="text-termRose font-bold">${p.fame}</span>
+                </div>
+                <div class="w-full h-2 bg-obsidian rounded-full overflow-hidden border border-borderOps">
+                  <div class="h-full bg-termRose rounded-full" style="width:${wActual}%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between text-slate-300 mb-0.5">
+                  <span>Same W–L in 1v1 PvP</span><span class="text-termCyan font-bold">${b.equiv1v1}</span>
+                </div>
+                <div class="w-full h-2 bg-obsidian rounded-full overflow-hidden border border-borderOps">
+                  <div class="h-full bg-termCyan rounded-full" style="width:${w1v1}%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between text-slate-300 mb-0.5">
+                  <span>Same W–L w/ Duels</span><span class="text-termGreen font-bold">up to ${b.equivDuels}</span>
+                </div>
+                <div class="w-full h-2 bg-obsidian rounded-full overflow-hidden border border-borderOps">
+                  <div class="h-full bg-termGreen rounded-full" style="width:${wDuel}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderRosterTable() {
+      const q = (document.getElementById('roster-search').value || '').toLowerCase().trim();
+      const filter = document.getElementById('roster-filter').value;
+      const sort = document.getElementById('roster-sort').value;
+
+      let rows = state.auditedMembers.filter(p => {
+        if (q && !p.name.toLowerCase().includes(q) && !p.tag.toLowerCase().includes(q)) return false;
+        if (filter !== 'ALL' && p.verdict !== filter) return false;
+        return true;
+      });
+
+      rows = [...rows].sort((a, b) => {
+        if (sort === 'fame_asc') return a.fame - b.fame;
+        if (sort === 'fame_desc') return b.fame - a.fame;
+        if (sort === 'avg_desc') return b.avgMedals - a.avgMedals;
+        if (sort === 'name_asc') return a.name.localeCompare(b.name);
+        return a.priority - b.priority || a.fame - b.fame;
+      });
+
+      const verdictPill = (v, label) => {
+        const map = {
+          KICK: 'bg-termRose/15 text-termRose border-termRose/40',
+          DEMOTE: 'bg-orange-500/15 text-orange-300 border-orange-400/40',
+          HOLD: 'bg-termCyan/15 text-termCyan border-termCyan/40',
+          BOAT_COACH: 'bg-termAmber/15 text-termAmber border-termAmber/40',
+          FINAL_WARNING: 'bg-amber-400/15 text-amber-200 border-amber-400/40',
+          PROMOTE: 'bg-termGreen/15 text-termGreen border-termGreen/40',
+          EXEMPT: 'bg-sky-400/15 text-sky-300 border-sky-400/40',
+          PASS: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+        };
+        return `<span class="inline-block text-[10px] font-mono font-bold px-2 py-0.5 rounded border whitespace-nowrap ${map[v] || map.PASS}">${sanitizeText(label)}</span>`;
+      };
+
+      const r = state.rules;
+      const overrideOptions = [
+        ['full', `Full Week (4d → ${r.minMedals})`],
+        ['bd1', `Joined BD1 Thu (3d → ${r.proratePerDay * 3})`],
+        ['bd2', `Joined BD2 Fri (2d → ${r.proratePerDay * 2})`],
+        ['bd3', `Joined BD3 Sat (1d → ${r.proratePerDay})`],
+        ['bd4', 'Joined BD4 Sun (Exempt)'],
+        ['exempt', 'Chat Exempt (Manual)'],
+        ['force_promote', 'Override: Force Promote'],
+        ['force_hold', 'Override: Force Hold']
+      ];
+
+      document.getElementById('roster-tbody').innerHTML = rows.map(p => {
+        const decksCol = state.mode === 'sunday' && p.bd4
+          ? `${p.decks} (${p.bd4.decksUsedToday}/4 today)`
+          : `${p.decks} (${p.boats}b)`;
+
+        return `
+          <tr class="hover:bg-panelLight/30 transition-colors">
+            <td class="py-2.5 px-3">
+              <div class="font-mono font-bold text-white">${sanitizeText(p.name)}</div>
+              <div class="text-[10px] font-mono text-slate-500">#${sanitizeText(p.tag)}</div>
+            </td>
+            <td class="py-2.5 px-2 font-mono text-slate-300">${sanitizeText(p.role)}</td>
+            <td class="py-2.5 px-2 text-right font-mono font-bold ${p.fame >= p.joinInfo.target ? 'text-termGreen' : 'text-termRose'}">${p.fame}</td>
+            <td class="py-2.5 px-2 text-right font-mono text-slate-300">${sanitizeText(decksCol)}</td>
+            <td class="py-2.5 px-2 text-right font-mono text-slate-300">${p.passedWeeks}/${p.totalWeeks}</td>
+            <td class="py-2.5 px-2 text-right font-mono text-slate-300">${p.avgMedals}</td>
+            <td class="py-2.5 px-2">
+              <select onchange="setMemberOverride('${sanitizeText(p.tag)}', this.value)"
+                class="bg-obsidian border border-borderOps rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-termCyan">
+                ${overrideOptions.map(([val, lbl]) =>
+                  `<option value="${val}" ${p.override === val ? 'selected' : ''}>${sanitizeText(lbl)}</option>`
+                ).join('')}
+              </select>
+            </td>
+            <td class="py-2.5 px-3">
+              ${verdictPill(p.verdict, p.verdictLabel)}
+              <div class="text-[10px] text-slate-400 mt-0.5 max-w-xs">${sanitizeText(p.reason)}</div>
+            </td>
+          </tr>
+        `;
+      }).join('') || `<tr><td colspan="8" class="p-6 text-center font-mono text-slate-500">No members match your filter.</td></tr>`;
+    }
+
+    /* =========================================================================
+       7. ENHANCED CLASH ROYALE CHAT GENERATOR & AUTO-SPLIT ENGINE
+       ========================================================================= */
+
+    /**
+     * Splits any text exceeding maxChars (default 245) cleanly at line boundaries
+     * so every Clash Royale chat message stays safely under the ~256-char limit.
+     */
+    function splitForClashChat(rawText, maxChars = 245) {
+      const text = rawText.trim();
+      if (!text) return [];
+      if (text.length <= maxChars) return [text];
+
+      const lines = text.split('\n');
+      const chunks = [];
+      let current = '';
+
+      for (const line of lines) {
+        const candidate = current ? `${current}\n${line}` : line;
+        if (candidate.length <= maxChars - 8) {
+          current = candidate;
+        } else {
+          if (current) chunks.push(current.trim());
+          // Handle a single overly long line by splitting on words
+          if (line.length > maxChars - 8) {
+            const words = line.split(' ');
+            let part = '';
+            for (const w of words) {
+              const next = part ? `${part} ${w}` : w;
+              if (next.length <= maxChars - 8) {
+                part = next;
+              } else {
+                if (part) chunks.push(part.trim());
+                part = w;
+              }
+            }
+            current = part;
+          } else {
+            current = line;
+          }
+        }
+      }
+      if (current.trim()) chunks.push(current.trim());
+
+      if (chunks.length > 1) {
+        return chunks.map((c, i) => `(${i + 1}/${chunks.length}) ${c}`);
+      }
+      return chunks;
+    }
+
+    /**
+     * Builds the 5 dedicated Clash Royale message cards with upgraded spacing,
+     * human tone matching Stan's style, and Spaced vs. Compact formatting.
+     */
+    function buildChatMessages() {
+      const m = state.auditedMembers;
+      const r = state.rules;
+      const spaced = state.chatFormat === 'spaced';
+
+      const kicks = m.filter(x => x.verdict === 'KICK');
+      const demotes = m.filter(x => x.verdict === 'DEMOTE');
+      const promos = m.filter(x => x.verdict === 'PROMOTE');
+      const holds = m.filter(x => x.verdict === 'HOLD');
+      const warnings = m.filter(x => x.verdict === 'FINAL_WARNING');
+      const boatWarned = m.filter(x => x.verdict === 'BOAT_COACH');
+      const boatAll = m.filter(x => x.isBoatFlagged && x.boatStats && x.boatStats.equiv1v1);
+      const exempts = m.filter(x => x.verdict === 'EXEMPT' && x.joinInfo.isExempt);
+
+      const joinNames = arr => arr.map(x => cleanChatName(x.name)).join(', ');
+      const cards = [];
+
+      // -----------------------------------------------------------------------
+      // CARD 1: War Update (Kicks & Demotions) OR Sunday BD4 Pre-Kick Alert
+      // -----------------------------------------------------------------------
+      if (state.mode === 'monday') {
+        let msg1 = '';
+        if (!kicks.length && !demotes.length) {
+          msg1 = `War update: Zero kicks or demotions this week — huge team effort everyone!`;
+        } else if (spaced) {
+          const lines = ['War update for last week:'];
+          if (kicks.length) lines.push(`\nKicked: ${joinNames(kicks)}`);
+          if (demotes.length) lines.push(`Demoted: ${joinNames(demotes)} (straight back up next strong week)`);
+          msg1 = lines.join('\n');
+        } else {
+          const parts = [];
+          if (kicks.length) parts.push(`Kicked: ${joinNames(kicks)}`);
+          if (demotes.length) parts.push(`Demoted: ${joinNames(demotes)}`);
+          msg1 = `War update | ${parts.join(' • ')}`;
+        }
+        cards.push({ id: 'update', title: '1. WAR UPDATE (KICKS & DEMOTIONS)', tone: 'rose', parts: splitForClashChat(msg1) });
+      } else {
+        const freeSlotKicks = kicks.filter(x => x.bd4 && x.bd4.freesDailySlot);
+        const atRisk = m.filter(x => x.verdict === 'FINAL_WARNING' || x.verdict === 'BOAT_COACH');
+        let msg1 = '';
+        if (spaced) {
+          const lines = [`BD4 War Check (need ${r.minMedals}+ today):`];
+          if (freeSlotKicks.length) lines.push(`\nEarly kicks (0/4 today, can't hit ${r.minMedals}):\n- ${joinNames(freeSlotKicks)}`);
+          if (atRisk.length) {
+            lines.push(`\nStill alive — finish your decks today:`);
+            atRisk.slice(0, 6).forEach(p => lines.push(`- ${cleanChatName(p.name)}: needs +${p.bd4.needed} (${p.bd4.unusedDecksToday}d left)`));
+          }
+          msg1 = lines.join('\n');
+        } else {
+          msg1 = `BD4 Check (${r.minMedals}+) | Early kicks (0d today): ${joinNames(freeSlotKicks) || 'none'} | Alive: ${atRisk.map(p => `${cleanChatName(p.name)} (+${p.bd4.needed})`).join(', ') || 'all safe!'}`;
+        }
+        cards.push({ id: 'update', title: '1. SUNDAY BD4 PRE-KICK & ALIVE CHECK', tone: 'rose', parts: splitForClashChat(msg1) });
+      }
+
+      // -----------------------------------------------------------------------
+      // CARD 2: Promotions to Elder
+      // -----------------------------------------------------------------------
+      let msg2 = '';
+      if (!promos.length) {
+        msg2 = `No Elder promotions this week — keep stacking ${r.minMedals}+ weeks and you're next up!`;
+      } else if (spaced) {
+        msg2 = `Promoted to Elder:\n\n${promos.map(p => `- ${cleanChatName(p.name)}`).join('\n')}\n\nWell earned for the consistency — keep crushing war!`;
+      } else {
+        msg2 = `Promoted to Elder: ${joinNames(promos)}! Well earned for the consistency — keep crushing war!`;
+      }
+      cards.push({ id: 'promos', title: '2. PROMOTIONS TO ELDER', tone: 'green', parts: splitForClashChat(msg2) });
+
+      // -----------------------------------------------------------------------
+      // CARD 3: Final Warnings (Grouped by Repeat Misses vs 1st Misses)
+      // -----------------------------------------------------------------------
+      const allWarned = [...boatWarned, ...warnings];
+      const repeats = allWarned.filter(p => p.missedWeeks >= 2);
+      const firstMisses = allWarned.filter(p => p.missedWeeks < 2);
+
+      let msg3 = '';
+      if (!allWarned.length && !exempts.length) {
+        msg3 = `No final warnings heading into next war — clean sheet across the clan!`;
+      } else if (spaced) {
+        const lines = [`Final warnings for next war (need ${r.minMedals}+):`];
+        if (repeats.length) {
+          lines.push('');
+          repeats.forEach(p => {
+            const streak = p.consecutiveMisses >= 2 ? ` (${p.consecutiveMisses} in a row)` : '';
+            lines.push(`- ${cleanChatName(p.name)}: ${p.missedWeeks}/${p.totalWeeks} wks under${streak}`);
+          });
+        }
+        if (firstMisses.length || exempts.length) {
+          lines.push('');
+          const fmParts = firstMisses.map(p => `${cleanChatName(p.name)} (${p.missedWeeks}/${p.totalWeeks})`);
+          exempts.forEach(p => fmParts.push(`${cleanChatName(p.name)} (exempt)`));
+          lines.push(`1st miss / grace:\n- ${fmParts.join(', ')}`);
+        }
+        lines.push('\nLets get this rolling smoother!');
+        msg3 = lines.join('\n');
+      } else {
+        const repStr = repeats.map(p => `${cleanChatName(p.name)} ${p.missedWeeks}/${p.totalWeeks}`).join(' • ');
+        const fmStr = [...firstMisses.map(p => `${cleanChatName(p.name)} (${p.missedWeeks}/${p.totalWeeks})`), ...exempts.map(p => `${cleanChatName(p.name)} (exempt)`)].join(', ');
+        msg3 = `Final warnings (${r.minMedals}+) | Repeat: ${repStr || 'none'} | 1st miss: ${fmStr || 'none'} — lets bounce back!`;
+      }
+      cards.push({ id: 'warnings', title: '3. FINAL WARNINGS (GROUPED)', tone: 'amber', parts: splitForClashChat(msg3) });
+
+      // -----------------------------------------------------------------------
+      // CARD 4: Boat Attackers Coaching & Potential Points
+      // -----------------------------------------------------------------------
+      let msg4 = '';
+      if (!boatAll.length) {
+        msg4 = `Zero boat-attack issues this week — awesome job sticking to Duels & 1v1!`;
+      } else if (spaced) {
+        const lines = [
+          'Good activity from our boat attackers so no kicks — just switch to duels (best pts) or 1v1 please!',
+          '',
+          'Same wins would have got you:'
+        ];
+        boatAll.forEach(p => {
+          lines.push(`- ${cleanChatName(p.name)}: ${p.fame} -> ${p.boatStats.equiv1v1}+`);
+        });
+        msg4 = lines.join('\n');
+      } else {
+        const list = boatAll.map(p => `${cleanChatName(p.name)} ${p.fame}->${p.boatStats.equiv1v1}+`).join(' | ');
+        msg4 = `Great activity boat attackers (no kicks!) — switch to Duels/1v1! Same wins: ${list}`;
+      }
+      cards.push({ id: 'boats', title: '4. BOAT ATTACKERS COACHING & POTENTIAL', tone: 'amber', parts: splitForClashChat(msg4) });
+
+      // -----------------------------------------------------------------------
+      // CARD 5: No Boat Attacks PSA + Veteran Check-In Note
+      // -----------------------------------------------------------------------
+      const leader = m.find(x => x.role === 'Leader');
+      const leaderName = leader ? cleanChatName(leader.name) : 'Baki';
+
+      let msg5 = '';
+      if (spaced) {
+        const psaLines = [
+          'PSA: Please STOP doing Boat Attacks!',
+          '',
+          'Boats only give 75-125 pts vs 100-250 in Duels & 1v1.',
+          '',
+          `16 PvP games only need 2 wins to clear ${r.minMedals} — you all easily hit 1900-2400+ in PvP!`
+        ];
+        msg5 = psaLines.join('\n');
+      } else {
+        msg5 = `PSA: Please STOP Boat Attacks! Boats pay 75-125 vs 100-250 in Duels/1v1. 16 PvP games only need 2 wins for ${r.minMedals} — stick to Duels & 1v1!`;
+      }
+
+      const psaParts = splitForClashChat(msg5);
+
+      if (holds.length) {
+        const h = holds[0];
+        const offlineNote = h.offlineDays !== null ? `last online ~${Math.round(h.offlineDays)}d ago` : 'been offline';
+        const holdMsg = spaced
+          ? `@${leaderName} re: ${cleanChatName(h.name)} — ${offlineNote} (before battle days started).\n\nHolding their spot since they are always active & ${r.minMedals}+. Hope they're all good!`
+          : `@${leaderName} re: ${cleanChatName(h.name)} — ${offlineNote} (before battle days). Holding their spot since they're always ${r.minMedals}+. Hope they're all good!`;
+        psaParts.push(...splitForClashChat(holdMsg));
+      }
+
+      cards.push({ id: 'psa', title: '5. NO BOAT ATTACKS PSA + CHECK-IN NOTE', tone: 'cyan', parts: psaParts });
+
+      return cards;
+    }
+
+    function renderChatGenerator() {
+      const cards = buildChatMessages();
+      const container = document.getElementById('chat-cards-container');
+
+      const toneBorder = {
+        rose: 'border-termRose/40',
+        green: 'border-termGreen/40',
+        amber: 'border-termAmber/40',
+        cyan: 'border-termCyan/40'
+      };
+
+      container.innerHTML = cards.map((card, cIdx) => `
+        <div class="bg-panel border ${toneBorder[card.tone] || 'border-borderOps'} rounded-xl overflow-hidden flex flex-col">
+          <div class="px-4 py-2.5 border-b border-borderOps bg-panelLight/50 flex items-center justify-between gap-2">
+            <h4 class="text-xs font-mono font-bold text-white">${sanitizeText(card.title)}</h4>
+            <span class="text-[10px] font-mono text-slate-400">${card.parts.length} msg${card.parts.length > 1 ? 's (auto-split)' : ''}</span>
+          </div>
+          <div class="p-3.5 space-y-3 flex-1">
+            ${card.parts.map((part, pIdx) => {
+              const taId = `chat-ta-${cIdx}-${pIdx}`;
+              const meterId = `chat-meter-${cIdx}-${pIdx}`;
+              const len = part.length;
+              const meterColor = len > 250 ? 'text-termRose' : len > 230 ? 'text-termAmber' : 'text-termGreen';
+              return `
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-[10px] font-mono text-slate-400">
+                      ${card.parts.length > 1 ? `PART ${pIdx + 1} OF ${card.parts.length}` : 'SINGLE MESSAGE'}
+                    </span>
+                    <div class="flex items-center gap-2">
+                      <span id="${meterId}" class="text-[11px] font-mono font-bold ${meterColor}">${len} / 250</span>
+                      <button type="button" onclick="copyChatBox('${taId}', this)"
+                        class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-termGreen/15 hover:bg-termGreen/25 text-termGreen border border-termGreen/40 transition-colors cursor-pointer">
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <textarea id="${taId}" rows="${Math.min(8, Math.max(3, part.split('\n').length + 1))}"
+                    oninput="updateCharMeter('${taId}', '${meterId}')"
+                    class="w-full bg-obsidian border border-borderOps rounded-xl p-3 text-xs font-mono text-slate-100 leading-relaxed focus:outline-none focus:border-termCyan resize-y">${sanitizeText(part)}</textarea>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateCharMeter(taId, meterId) {
+      const ta = document.getElementById(taId);
+      const meter = document.getElementById(meterId);
+      if (!ta || !meter) return;
+      const len = ta.value.length;
+      meter.textContent = `${len} / 250`;
+      meter.className = `text-[11px] font-mono font-bold ${len > 250 ? 'text-termRose' : len > 230 ? 'text-termAmber' : 'text-termGreen'}`;
+    }
+
+    function copyChatBox(taId, btn) {
+      const ta = document.getElementById(taId);
+      if (!ta) return;
+      if (copyToClipboard(ta.value, 'Message copied — ready to paste in Clash Royale!')) {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1400);
+      }
+    }
+
+    /* =========================================================================
+       8. MARKDOWN HANDOFF & SAFE CSV EXPORTERS (GOOGLE DRIVE / CLAUDE READY)
+       ========================================================================= */
+
+    function generateMarkdownReport() {
+      const r = state.rules;
+      const m = state.auditedMembers;
+      const weekLabel = state.mode === 'monday' ? (state.selectedSeason || 'Latest') : 'Sunday BD4 Live';
+      const avg = m.length ? Math.round(m.reduce((s, x) => s + x.fame, 0) / m.length) : 0;
+
+      const byVerdict = v => m.filter(x => x.verdict === v);
+      const boatAll = m.filter(x => x.isBoatFlagged && x.boatStats);
+      const chatCards = buildChatMessages();
+
+      const fmtRow = p =>
+        `| ${p.name} | ${p.role} | ${p.fame} | ${p.decks} (${p.boats}b) | ${p.passedWeeks}/${p.totalWeeks} | ${p.avgMedals} | ${p.verdictLabel} | ${p.reason} |`;
+
+      const md = [
+        `# #WINNING (#PPCCR8VU) — Clan Wars 2 Audit & SOP Handoff Report`,
+        ``,
+        `- **Generated:** ${new Date().toISOString()}`,
+        `- **Audit Mode:** ${state.mode === 'monday' ? 'Monday Post-War Audit' : 'Sunday Battle Day 4 Pre-Kick'}`,
+        `- **War Week / Snapshot:** ${weekLabel} (${state.datasetLabel})`,
+        `- **Clan Profile:** #WINNING (\`#PPCCR8VU\`) • Legendary League I (~3,355 War Trophies) • \`code: RoyaleAPI\` active in clan description`,
+        `- **Summary Metrics:** ${m.length} Members | Clan Avg: **${avg}** | Kicks: **${byVerdict('KICK').length}** | Demotes: **${byVerdict('DEMOTE').length}** | Holds: **${byVerdict('HOLD').length}** | Boat Warnings: **${byVerdict('BOAT_COACH').length}** | Final Warnings: **${byVerdict('FINAL_WARNING').length}** | Promotions: **${byVerdict('PROMOTE').length}**`,
+        ``,
+        `---`,
+        ``,
+        `## 1. Active SOP & Rules Matrix`,
+        ``,
+        `| Rule | Active Setting | Rationale |`,
+        `| :--- | :--- | :--- |`,
+        `| Weekly Medal Minimum | **${r.minMedals}** | 16 PvP losses = 1,600; requires only 2 wins in 16 games. |`,
+        `| Mid-Week Prorating | **${r.proratePerDay}/full day** (Thu ${r.proratePerDay * 3} / Fri ${r.proratePerDay * 2} / Sat ${r.proratePerDay} / Sun Exempt) | Mathematically equal daily pace to ${r.minMedals}/4 days. |`,
+        `| Effort Safety Net | **${r.effortSafetyNet ? 'ON' : 'OFF'}** | Passes mid-week joiners who use 100% of full-day decks. |`,
+        `| Elder Rank Cushion | **${r.elderCushion ? 'ON' : 'OFF'}** | Demotes Elders on miss instead of kicking. |`,
+        `| Boat-Attack Coaching | **${r.spareBoatAttackers ? 'ON' : 'OFF'}** (≥${r.boatThresholdPct}% boats) | Spares active boat attackers & coaches them into Duels/1v1. |`,
+        `| Pirate Steve Veteran Hold | **${r.steveRule ? 'ON' : 'OFF'}** (≥${r.steveMinWeeks} prior 1800+ wks & offline ≥${r.steveOfflineDays}d or 0 pts) | Holds reliable regulars who go suddenly quiet so leadership can check in. |`,
+        `| 1st-Miss Veteran Grace | **${r.firstMissGrace ? 'ON' : 'OFF'}** | Puts 1st-miss Members with prior 1800+ history on Final Warning. |`,
+        `| Promotion Radar | ≥${r.promoStraightWeeks} straight 1800+ wks OR ≥${r.promoEliteWeeks} wks @ ${r.promoEliteAvg}+ avg | Rewards top contributors with Elder cushion. |`,
+        ``,
+        `---`,
+        ``,
+        `## 2. Empirical Clash Royale Clan Wars 2 Math Reference`,
+        ``,
+        `- **Duels (Bo3, requires ≥3 unused decks):** 250/win, 100/loss`,
+        `- **1v1 / Special PvP:** 200/win, 100/loss`,
+        `- **Boat Attacks:** 125/win, 75/loss`,
+        `- **Strict Daily Max:** 900 medals/day (2-0 Duel = 500 + 2×1v1 = 400)`,
+        `- **BD4 Elimination Thresholds (for ${r.minMedals} target):** 4d left: <${r.minMedals - 900} | 3d left: <${r.minMedals - 700} | 2d left (Duel locked): <${r.minMedals - 400} | 1d left: <${r.minMedals - 200} | 0d left: <${r.minMedals}`,
+        `- **50-Player Daily Cap:** Pre-kicking a 0-deck-today eliminated player frees a live daily Battle Day slot; kicking someone with 1+ decks today does not.`,
+        `- **Pure Boat-Attack W–L Formula:** \`W = round((fame - 75 * decks) / 50)\`, \`1v1 Equiv = 200*W + 100*L\`.`,
+        ``,
+        `---`,
+        ``,
+        `## 3. Active Audit Results (${weekLabel})`,
+        ``,
+        `| Player | Role | Medals | Decks (Boats) | Pass Rate | Avg/Wk | Verdict | Notes |`,
+        `| :--- | :--- | :---: | :---: | :---: | :---: | :--- | :--- |`,
+        ...m.map(fmtRow),
+        ``,
+        `### Boat-Attack Equivalence Proof`,
+        ...(boatAll.length
+          ? [
+              `| Player | Actual (Boats) | Inferred W–L | Same W–L in 1v1 | Same W–L w/ Duels | Missed Pts |`,
+              `| :--- | :---: | :---: | :---: | :---: | :---: |`,
+              ...boatAll.map(p => `| ${p.name} | ${p.fame} (${p.boats}/${p.decks}) | ${p.boatStats.isPureBoat ? `${p.boatStats.inferredW}W–${p.boatStats.inferredL}L (${p.boatStats.winRatePct}%)` : `${p.boatStats.boatPct}% boats`} | ${p.boatStats.equiv1v1} | up to ${p.boatStats.equivDuels} | +${p.boatStats.missed1v1} to +${p.boatStats.missedDuels} |`)
+            ]
+          : ['No boat attackers flagged under current settings.']),
+        ``,
+        `---`,
+        ``,
+        `## 4. Formatted Clan Chat Messages (${state.chatFormat})`,
+        ``,
+        ...chatCards.flatMap(c => [
+          `### ${c.title}`,
+          ...c.parts.map(pt => '```text\n' + pt + '\n```')
+        ]),
+        ``,
+        `---`,
+        ``,
+        `## 5. Continuity Notes for Claude / Stage 2 Automation`,
+        ``,
+        `- **CSV Input Schemas (RoyaleAPI):**`,
+        `  - Roster: \`tag, name, role, lastSeen, donations\``,
+        `  - War Log: \`season_key, created_date, player_tag, player_name, player_fame, player_boat_attacks, player_decks_used\``,
+        `  - Live BD4: \`player_tag, player_name, player_fame, player_boat_attacks, player_decks_used, player_decks_used_today\``,
+        `- **Stage 2 Upgrade Path:** Connect a lightweight static-IP proxy (Cloudflare Worker / RoyaleAPI proxy) to \`/v1/clans/%23PPCCR8VU/members\`, \`/currentriverrace\`, and \`/riverracelog\`, plus RoyaleAPI Join/Leave History (enabled via \`code: RoyaleAPI\`) to auto-assign mid-week join overrides without manual CSV downloads.`
+      ];
+
+      return md.join('\n');
+    }
+
+    function renderMarkdownPreview() {
+      const box = document.getElementById('md-preview-box');
+      if (box) box.textContent = generateMarkdownReport();
+    }
+
+    function copyMarkdownReport() {
+      copyToClipboard(generateMarkdownReport(), 'Complete .MD Handoff Report copied!');
+    }
+
+    function downloadMarkdownReport() {
+      const md = generateMarkdownReport();
+      const week = (state.selectedSeason || 'BD4').replace(/[^a-zA-Z0-9_-]/g, '');
+      const filename = `WINNING-War-Audit-${week}-Handoff.md`;
+      triggerDownload(md, filename, 'text/markdown;charset=utf-8');
+      showToast(`Downloaded ${filename} — drop into Google Drive!`, 'cyan');
+    }
+
+    function exportSafeCSV() {
+      if (!state.auditedMembers.length) {
+        showToast('Load data before exporting CSV.', 'amber');
+        return;
+      }
+      const headers = ['Tag', 'Name', 'Role', 'Medals', 'Decks', 'Boats', 'PassRate', 'AvgMedals', 'JoinOverride', 'Verdict', 'Reason'];
+      const lines = [headers.join(',')];
+      state.auditedMembers.forEach(p => {
+        lines.push([
+          p.tag, p.name, p.role, p.fame, p.decks, p.boats,
+          `${p.passedWeeks}/${p.totalWeeks}`, p.avgMedals, p.joinInfo.label, p.verdictLabel, p.reason
+        ].map(sanitizeCSVCell).join(','));
+      });
+      const week = (state.selectedSeason || 'BD4').replace(/[^a-zA-Z0-9_-]/g, '');
+      const filename = `WINNING-Audit-${week}-Safe.csv`;
+      triggerDownload(lines.join('\n'), filename, 'text/csv;charset=utf-8');
+      showToast(`Exported formula-safe ${filename}`, 'green');
+    }
+
+    function triggerDownload(content, filename, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    /* =========================================================================
+       9. INTERACTION HANDLERS (MODE, TABS, RULES, OVERRIDES, DRAG & DROP)
+       ========================================================================= */
+
+    function switchMode(newMode) {
+      state.mode = newMode;
+      syncModeButtons();
+
+      const auditWs = document.getElementById('audit-workspace');
+      const docsWs = document.getElementById('docs-workspace');
+
+      if (newMode === 'docs') {
+        auditWs.classList.add('hidden');
+        docsWs.classList.remove('hidden');
+        renderMarkdownPreview();
+        return;
+      }
+
+      docsWs.classList.add('hidden');
+      auditWs.classList.remove('hidden');
+
+      const title = document.getElementById('ingestion-title');
+      const dzTitle = document.getElementById('dz-war-title');
+      const dzCols = document.getElementById('dz-war-cols');
+      const btnMon = document.getElementById('btn-load-sample-monday');
+      const btnSun = document.getElementById('btn-load-sample-sunday');
+      const wkWrap = document.getElementById('week-selector-wrap');
+
+      if (newMode === 'monday') {
+        title.textContent = 'Data Sources — Monday Post-War Audit';
+        dzTitle.textContent = '[2] WAR RACE LOG CSV (RoyaleAPI 10-Week Log)';
+        dzCols.textContent = 'Cols: season_key, created_date, player_tag, player_name, player_fame, player_boat_attacks, player_decks_used';
+        btnMon.classList.remove('hidden');
+        btnSun.classList.add('hidden');
+        if (state.seasons.length) { wkWrap.classList.remove('hidden'); wkWrap.classList.add('flex'); }
+      } else {
+        title.textContent = 'Data Sources — Sunday Battle Day 4 Pre-Kick';
+        dzTitle.textContent = '[2] CURRENT RIVER RACE CSV (Live BD4 Export)';
+        dzCols.textContent = 'Cols: player_tag, player_name, player_fame, player_boat_attacks, player_decks_used, player_decks_used_today';
+        btnMon.classList.add('hidden');
+        btnSun.classList.remove('hidden');
+        wkWrap.classList.add('hidden');
+        wkWrap.classList.remove('flex');
+        if (!state.currentRace.length) {
+          loadSampleSundayData();
+          return;
+        }
+      }
+
+      runAuditAndRender();
+    }
+
+    function syncModeButtons() {
+      const modes = ['monday', 'sunday', 'docs'];
+      modes.forEach(m => {
+        const btn = document.getElementById(`mode-btn-${m}`);
+        if (!btn) return;
+        if (state.mode === m) {
+          btn.className = 'flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold bg-termCyan/20 text-termCyan border border-termCyan/50 transition-colors cursor-pointer';
+        } else {
+          btn.className = 'flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs sm:text-sm font-mono font-semibold text-slate-400 hover:text-white border border-transparent transition-colors cursor-pointer';
+        }
+      });
+    }
+
+    function switchSubTab(tab) {
+      state.subTab = tab;
+      ['actions', 'chat', 'boats', 'roster'].forEach(t => {
+        const sec = document.getElementById(`subtab-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tab) {
+          sec.classList.remove('hidden');
+          btn.className = 'px-3.5 py-2 rounded-lg text-xs font-mono font-semibold bg-termGreen/15 text-termGreen border border-termGreen/40 transition-colors cursor-pointer';
+        } else {
+          sec.classList.add('hidden');
+          btn.className = 'px-3.5 py-2 rounded-lg text-xs font-mono font-semibold bg-panel text-slate-400 hover:text-white border border-borderOps transition-colors cursor-pointer';
+        }
+      });
+    }
+
+    function setChatFormat(fmt) {
+      state.chatFormat = fmt;
+      const btnSpaced = document.getElementById('fmt-btn-spaced');
+      const btnCompact = document.getElementById('fmt-btn-compact');
+      if (fmt === 'spaced') {
+        btnSpaced.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-termGreen/20 text-termGreen border border-termGreen/40 cursor-pointer';
+        btnCompact.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white cursor-pointer';
+      } else {
+        btnCompact.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-termCyan/20 text-termCyan border border-termCyan/40 cursor-pointer';
+        btnSpaced.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white cursor-pointer';
+      }
+      renderChatGenerator();
+      renderMarkdownPreview();
+    }
+
+    function updateRule(key, value) {
+      state.rules[key] = value;
+      runAuditAndRender();
+    }
+
+    function onSeasonChange(seasonKey) {
+      state.selectedSeason = seasonKey;
+      const match = state.warLog.find(w => w.season_key === seasonKey && w.created_date);
+      if (match) state.referenceDateISO = match.created_date;
+      state.datasetLabel = `War Week ${seasonKey}`;
+      runAuditAndRender();
+    }
+
+    function setMemberOverride(tag, value) {
+      if (value === 'full') delete state.overrides[tag];
+      else state.overrides[tag] = value;
+      runAuditAndRender();
+      showToast(`Updated override for #${tag}`, 'cyan');
+    }
+
+    function resetAllOverrides() {
+      state.overrides = {};
+      runAuditAndRender();
+      showToast('All member overrides reset to Full Week.', 'amber');
+    }
+
+    function toggleSection(bodyId, labelId) {
+      const body = document.getElementById(bodyId);
+      const label = document.getElementById(labelId);
+      const hidden = body.classList.toggle('hidden');
+      if (label) label.textContent = hidden ? label.textContent.replace('Hide', 'Show') : label.textContent.replace('Show', 'Hide');
+    }
+
+    function setupDragAndDrop(zoneId, slot) {
+      const zone = document.getElementById(zoneId);
+      if (!zone) return;
+      ['dragenter', 'dragover'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+          e.preventDefault();
+          zone.classList.add('border-termCyan', 'bg-panelLight/60');
+        });
+      });
+      ['dragleave', 'drop'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+          e.preventDefault();
+          zone.classList.remove('border-termCyan', 'bg-panelLight/60');
+        });
+      });
+      zone.addEventListener('drop', e => {
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) handleFileUpload({ target: { files: [file] } }, slot);
+      });
+    }
+
+    /* =========================================================================
+       10. INITIALIZATION
+       ========================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      setupDragAndDrop('dz-roster', 'roster');
+      setupDragAndDrop('dz-war', 'war');
+      syncModeButtons();
+      switchSubTab('actions');
+      setChatFormat('spaced');
+      // Auto-load Week 138-2 (#WINNING) sample dataset so Stan can inspect & test immediately
+      loadSampleMondayData();
+    });
+  </script>
+</body>
+</html>
