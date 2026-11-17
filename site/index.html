@@ -92,6 +92,10 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 .more { font-size: 12px; color: var(--muted); background: var(--soft); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .weeks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; }
 .weeks .bad { color: var(--red); }
+.hist { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.nums .dots { display: flex; flex-direction: row; gap: 3px; height: 14px; align-items: center; min-width: 0; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.dot.miss { background: transparent; border: 1.5px solid var(--red); }
 .log .ev { font-size: 13px; padding: 4px 0; border-top: 1px solid var(--line); }
 .log .when { color: var(--muted); display: inline-block; min-width: 92px; }
 .btn.hidden, .hidden { display: none !important; }
@@ -559,7 +563,7 @@ let codeOk = false;
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
   demoteElders: 'Elders who miss are demoted, not kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
-  holdWeeks: 'Check on them: weeks passed in a row', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
+  holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
   promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'Final warning', Check: 'Check on them', Review: 'Leaders decide',
@@ -688,14 +692,14 @@ function evaluate() {
 
 function more(p) {
   const r = rules();
-  const weeks = p.weeks.slice(0, 20).map(w => `<span class="${w.fame < r.target ? 'bad' : ''}">${esc(w.key)}: ${w.fame}${w.decks < 16 ? ` (${w.decks} decks)` : ''}${w.boats ? ` · ${w.boats} boat` : ''}</span>`).join('');
+  const weeks = p.weeks.slice(0, 20).reverse().map(w => `<span class="${w.fame < r.target ? 'bad' : ''}">${esc(w.key)}: ${w.fame}${w.decks < 16 ? ` (${w.decks} decks)` : ''}${w.boats ? ` · ${w.boats} boat` : ''}</span>`).join('');
   const days = (mode === 'end' ? p.days : p.daysLive);
   const lines = [];
   if (p.joined) lines.push(p.joined.seen ? `In clan since at least ${fmtDate(p.joined.at)}` : `Joined ${fmtDate(p.joined.at)}`);
   if (days) lines.push('Decks by battle day: ' + days.map(d => d == null ? '–' : d).join(' · '));
   if (p.offlineDays != null) lines.push(`Last online ${p.offlineDays < 1 ? 'today' : Math.floor(p.offlineDays) + ' days ago'}`);
   if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
-  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div class="weeks">${weeks}</div>` : ''}</div>`;
+  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}</div>`;
 }
 
 function row(p) {
@@ -709,7 +713,10 @@ function row(p) {
     ctl += `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
   if (mode === 'end') {
     const w = p.cur, n = recent(p, r).length, miss = missCount(p, r);
-    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks') + num(n ? `${n - miss}/${n}` : '–', 'weeks passed');
+    const ws = recent(p, r).slice().reverse();   // oldest → newest
+    const dots = ws.map(x => `<i class="dot ${x.fame < r.target ? 'miss' : ''}" title="${esc(x.key)}: ${x.fame}"></i>`).join('');
+    const hist = n ? `<span class="hist" aria-label="${n - miss} of last ${n} wars at ${r.target} or more"><span class="dots">${dots}</span><small>${n - miss}/${n} wars at ${r.target}+</small></span>` : num('–', `wars at ${r.target}+`);
+    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks') + hist;
     const o = note('over', p) || 'Auto';
     ctl += `<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`;
   } else {
