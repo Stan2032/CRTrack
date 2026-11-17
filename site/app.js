@@ -358,7 +358,7 @@ function renderSteps(list, msgs) {
     return `<button class="copybtn" data-copystep="${i}">Copy${part ? ' ' + part[0] : ''}</button>`;
   }).join('');
   const steps = [];   // { text, copy, done, ctl }
-  const auto = (ps, verb) => ps.length && steps.push({ text: `In game, <b>${verb}</b> ${names(ps)}`, done: ps.every(isDone),
+  const auto = (ps, verb, cp = '') => ps.length && steps.push({ text: `In game, <b>${verb}</b> ${names(ps)}`, copy: cp, done: ps.every(isDone),
     tick: `<span class="tickbox auto ${ps.every(isDone) ? 'on' : ''}" title="${ps.every(isDone) ? 'Done in game' : 'Ticks itself when done in game'}" aria-label="${ps.every(isDone) ? 'Done' : 'Not done yet'}"></span>` });
   const players = (ps, status, text, cp) => {
     if (!ps.length) return;
@@ -372,7 +372,7 @@ function renderSteps(list, msgs) {
   };
   if (mode === 'end' && latest) {
     const k = of('Kick'), d = of('Demote'), pr = of('Promote'), w = of('Warn'), c = of('Check'), rv = of('Review');
-    auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder');
+    auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder', copy('Promotions'));
     players(rv, 'Review', `<b>Decide with the other leaders</b> ${names(rv)}`, '');
     if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
     players(w, 'Warn', `Post the <b>first &amp; only warnings</b> ${names(w)}`, copy('First & only'));
@@ -576,6 +576,20 @@ $('#notifybtn').onclick = toggleNotify;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   navigator.serviceWorker.register('sw.js').then(r => { swReg = r; renderNotify(); }).catch(() => {});
 }
+
+// ---- Install as an app ----
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; renderInstall(); });
+function renderInstall() {
+  const box = $('#install'), btn = $('#installbtn'), text = $('#installtext');
+  if (installed()) { box.classList.add('hidden'); return; }
+  if (installEvt) { text.textContent = '📲 Use this as an app on your phone'; btn.classList.remove('hidden'); box.classList.remove('hidden'); return; }
+  if (isIOS) { text.textContent = '📲 To use as an app: tap Share, then Add to Home Screen'; btn.classList.add('hidden'); box.classList.remove('hidden'); return; }
+  box.classList.add('hidden');
+}
+$('#installbtn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; renderInstall(); };
+renderInstall();
 
 // ---- Check a player (recruits) ----
 async function checkPlayer() {

@@ -271,6 +271,9 @@ function chatEnd(list, r) {
       + boats.map(o => `- ${o.x.name}: ${o.x.cur.fame} to ${o.s.pvp}+`).join('\n') });
   }
 
+  const promo = by('Promote');
+  if (promo.length) msgs.push({ title: 'Promotions', text: lines(`Congrats to our new Elder${promo.length === 1 ? '' : 's'} 🎉`, promo.map(x => x.name)) + `\nThanks for hitting ${r.target}+ week after week! ⭐` });
+
   const check = by('Check');
   if (check.length) {
     msgs.push({ title: 'Check in', text: lines(`Holding ${check.length === 1 ? 'a spot' : 'spots'} for:`,
