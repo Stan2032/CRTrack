@@ -5,17 +5,19 @@
 //   GET  /api/history?clan=TAG             stored history (needs D1 binding DB)
 //   POST /api/notes?clan=TAG               shared choices (needs EDIT_KEY in X-Edit-Key)
 //   POST /api/snapshot[?clan=TAG]          take a snapshot now (anyone: once per 5 min per clan; all clans needs EDIT_KEY)
+//   POST /api/discord                      Discord slash commands; POST /api/discord/register (leader code)
 //   GET  /api/member?tag=TAG               one member's own data (members' page)
 //   GET  /api/push/key, /api/alerts/latest; POST /api/push/subscribe|unsubscribe|test   app notifications
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
 import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
+import { handleDiscord, registerCommands, discordReady } from './discord.js';
 
 const PROXY_PATH = /^v1\/clans\/%23[0289PYLQGRJCUV]{3,12}(\/(members|currentriverrace|riverracelog))?$/;
 const PLAYER_PATH = /^v1\/players\/%23[0289PYLQGRJCUV]{3,12}(\/battlelog)?$/;   // recruit check
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 
-export async function handleApi(request, env) {
+export async function handleApi(request, env, ctx) {
   const url = new URL(request.url);
   const allowed = (env.ALLOWED_CLANS || '').split(',').map(s => s.trim().toUpperCase().replace(/^#/, '')).filter(Boolean);
   const clanOk = tag => TAG.test(tag) && (!allowed.length || allowed.includes(tag));
@@ -32,7 +34,20 @@ export async function handleApi(request, env) {
   const isEditor = () => !!editorName();
 
   if (url.pathname === '/api/status')
-    return json({ key: !!env.CR_API_KEY, clans: allowed, history: !!env.DB, edit: !!(env.EDIT_KEY || env.EDIT_KEYS) }, 200);
+    return json({ key: !!env.CR_API_KEY, clans: allowed, history: !!env.DB, edit: !!(env.EDIT_KEY || env.EDIT_KEYS), discord: discordReady(env) }, 200);
+
+  // Discord bot: slash commands (signed by Discord), and a leader-only command registration
+  if (url.pathname === '/api/discord') {
+    if (!discordReady(env)) return json({ reason: 'discordNotSetUp' }, 501);
+    if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
+    return handleDiscord(request, env, ctx);
+  }
+  if (url.pathname === '/api/discord/register') {
+    if (!discordReady(env)) return json({ reason: 'discordNotSetUp' }, 501);
+    if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
+    if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);
+    return json(await registerCommands(env), 200);
+  }
 
   // Notifications for the installed app
   if (url.pathname.startsWith('/api/push/') || url.pathname === '/api/alerts/latest') {

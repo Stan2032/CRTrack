@@ -602,6 +602,7 @@ function renderRules() {
     + (ruleProblems(r).length ? `<div class="rprob">${ruleProblems(r).map(x => `<div>⚠️ ${esc(x)}</div>`).join('')}</div>` : '');
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
+  $('#discordrow').classList.toggle('hidden', !(codeOk && site.discord));
   $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone.` : 'With the leader code, your changes are saved for everyone.';
 }
 
@@ -663,6 +664,14 @@ $('#savecode').onclick = async () => {
   codeOk = await checkCode(c);
   settings.code = codeOk ? c : ''; put('cr-war-audit:settings', settings);
   say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render(); renderNotify();
+};
+$('#discordreg').onclick = async () => {
+  $('#discordmsg').textContent = 'Registering…';
+  try {
+    const r = await fetch('api/discord/register', { method: 'POST', headers: { 'X-Edit-Key': settings.code } });
+    const j = await r.json();
+    $('#discordmsg').textContent = r.ok ? `Done: ${j.registered} commands in ${j.where}.` : 'Failed: ' + (j.reason || r.status);
+  } catch (e) { $('#discordmsg').textContent = "Couldn't reach the site"; }
 };
 $('#saverules').onclick = async () => {
   // Save only what differs from the defaults, so future default changes still apply.

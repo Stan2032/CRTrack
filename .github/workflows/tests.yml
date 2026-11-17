@@ -14,3 +14,4 @@ jobs:
       - run: node tests/function.mjs
       - run: node --no-warnings tests/history.mjs
       - run: node tests/stats.mjs
+      - run: node --no-warnings tests/discord.mjs

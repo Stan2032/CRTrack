@@ -1,0 +1,193 @@
+// Discord bot, run inside the Worker (no separate server):
+//   - Slash commands arrive at /api/discord (Discord signs each request; we check the signature).
+//   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
+// Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
+import { readMember } from './history.js';
+import { PUSH_SCHEMA } from './push.js';
+
+const API = 'https://discord.com/api/v10';
+export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));`;
+const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
+const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
+const MANAGE_ROLES = 1n << 28n, ADMIN = 1n << 3n;  // who counts as a leader in Discord
+const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
+const cleanTag = t => String(t || '').trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0');
+
+// ---- Commands (registered with /api/discord/register) ----
+export const COMMANDS = [
+  { name: 'link', description: 'Link your Discord to your Clash Royale account', options: [{ type: 3, name: 'tag', description: 'Your player tag, e.g. #ABC123', required: true }] },
+  { name: 'unlink', description: 'Remove the link between your Discord and Clash Royale accounts' },
+  { name: 'me', description: 'Your war progress this war (only you see it)' },
+  { name: 'linkuser', description: 'Leaders: link someone else', options: [
+    { type: 6, name: 'user', description: 'Discord member', required: true },
+    { type: 3, name: 'tag', description: 'Their player tag', required: true }] },
+  { name: 'links', description: 'Leaders: who is linked, and who isn\'t yet' },
+  { name: 'setup', description: 'Leaders: choose the war channel and the clan roles', options: [
+    { type: 7, name: 'channel', description: 'Channel for war reminders and results', required: true },
+    { type: 8, name: 'member_role', description: 'Role for clan Members' },
+    { type: 8, name: 'elder_role', description: 'Role for Elders' },
+    { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
+    { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
+  { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
+];
+
+export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
+
+// ---- Signature check (Ed25519) ----
+const hex = h => new Uint8Array(String(h).match(/../g)?.map(b => parseInt(b, 16)) || []);
+export async function verifyDiscord(request, body, publicKey) {
+  const sig = request.headers.get('X-Signature-Ed25519'), ts = request.headers.get('X-Signature-Timestamp');
+  if (!sig || !ts || !publicKey) return false;
+  try {
+    const key = await crypto.subtle.importKey('raw', hex(publicKey), { name: 'Ed25519' }, false, ['verify']);
+    return await crypto.subtle.verify({ name: 'Ed25519' }, key, hex(sig), new TextEncoder().encode(ts + body));
+  } catch (e) { return false; }
+}
+
+// ---- Discord REST ----
+async function dapi(env, method, path, body) {
+  const r = await fetch(API + path, { method, headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok && r.status !== 204) throw new Error(`Discord ${method} ${path.split('/').slice(0, 3).join('/')}: ${r.status}`);
+  return r.status === 204 ? null : r.json().catch(() => null);
+}
+
+export async function registerCommands(env) {
+  const path = env.DISCORD_GUILD_ID ? `/applications/${env.DISCORD_APP_ID}/guilds/${env.DISCORD_GUILD_ID}/commands` : `/applications/${env.DISCORD_APP_ID}/commands`;
+  const r = await dapi(env, 'PUT', path, COMMANDS);
+  return { registered: (r || []).length, where: env.DISCORD_GUILD_ID ? 'your server (instant)' : 'all servers (can take up to an hour)' };
+}
+
+// ---- Config and links ----
+async function setupDB(env) { await env.DB.exec(DISCORD_SCHEMA + '\n' + PUSH_SCHEMA); }
+async function getConfig(env, guild) {
+  const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:' + guild).first();
+  return r ? JSON.parse(r.v) : null;
+}
+async function setConfig(env, guild, cfg) { await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('discord:' + guild, JSON.stringify(cfg)).run(); }
+async function allConfigs(env) {
+  return (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE 'discord:%'").all()).results.map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
+}
+
+const reply = (content, ephemeral = true) => ({ type: 4, data: { content, flags: ephemeral ? EPHEMERAL : 0, allowed_mentions: { parse: [] } } });
+const isLeader = member => { const p = BigInt(member?.permissions || '0'); return (p & ADMIN) === ADMIN || (p & MANAGE_ROLES) === MANAGE_ROLES; };
+
+// Desired clan role and nickname for a linked user, from their game role.
+async function syncOne(env, guild, cfg, userId, m) {
+  if (!cfg?.roles) return;
+  const clanRoles = Object.values(cfg.roles).filter(Boolean);
+  const want = m && m.in_clan ? cfg.roles[m.role] || cfg.roles.member : null;
+  const cur = await dapi(env, 'GET', `/guilds/${guild}/members/${userId}`).catch(() => null);
+  if (!cur) return;
+  const roles = cur.roles.filter(r => !clanRoles.includes(r)).concat(want ? [want] : []);
+  const patch = {};
+  if (roles.slice().sort().join() !== cur.roles.slice().sort().join()) patch.roles = roles;
+  const nick = m && m.in_clan ? cleanName(m.name).slice(0, 32) : null;
+  if (nick && cur.nick !== nick) patch.nick = nick;
+  if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
+}
+
+// ---- Slash command handling ----
+export async function handleDiscord(request, env, ctx) {
+  const body = await request.text();
+  if (!(await verifyDiscord(request, body, env.DISCORD_PUBLIC_KEY))) return new Response('bad signature', { status: 401 });
+  const i = JSON.parse(body);
+  if (i.type === 1) return Response.json({ type: 1 });                       // Discord's endpoint check
+  if (i.type !== 2) return Response.json(reply('Not supported'));
+  await setupDB(env);
+  const guild = i.guild_id, user = i.member?.user?.id || i.user?.id, opt = Object.fromEntries((i.data.options || []).map(o => [o.name, o.value]));
+  const cfg = guild ? await getConfig(env, guild) : null;
+  const clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
+  if (!guild) return Response.json(reply('Use this in your clan\'s Discord server.'));
+  const member = tag => env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, tag).first();
+  const later = p => ctx?.waitUntil ? ctx.waitUntil(p.catch(() => {})) : p.catch(() => {});
+
+  switch (i.data.name) {
+    case 'link': case 'linkuser': {
+      if (i.data.name === 'linkuser' && !isLeader(i.member)) return Response.json(reply('Only leaders (Manage Roles) can link other people.'));
+      const target = i.data.name === 'linkuser' ? opt.user : user, tag = cleanTag(opt.tag);
+      if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag. It\'s under your name on your profile, e.g. #ABC123.'));
+      const m = await member(tag);
+      if (!m || !m.in_clan) return Response.json(reply(`#${tag} isn't in the clan right now.`));
+      const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, tag, target).first();
+      if (taken && i.data.name === 'link') return Response.json(reply(`#${tag} is already linked to someone else. Ask a leader if that's wrong.`));
+      if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, tag).run();
+      await env.DB.prepare('INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag, at, by) VALUES (?, ?, ?, ?, ?, ?)').bind(guild, target, clan, tag, new Date().toISOString(), user).run();
+      later(syncOne(env, guild, cfg, target, m));
+      return Response.json(reply(`Linked <@${target}> to **${cleanName(m.name)}** (#${tag}).${cfg?.roles ? ' Roles and nickname will update shortly.' : ''}`));
+    }
+    case 'unlink': {
+      await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).run();
+      later(syncOne(env, guild, cfg, user, null));
+      return Response.json(reply('Unlinked.'));
+    }
+    case 'me': {
+      const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
+      if (!link) return Response.json(reply('Link your account first: `/link #YOURTAG`'));
+      const m = await readMember(env, clan, link.tag);
+      if (!m) return Response.json(reply('Couldn\'t find you in the clan.'));
+      const target = Number(m.rules?.target) || 1800, last = m.war?.days?.[m.war.days.length - 1];
+      const lines = [`**${cleanName(m.name)}**`];
+      if (m.war?.day) {
+        const fame = last?.fame ?? 0, used = last && last.day === m.war.day ? last.today : 0;
+        lines.push(`Battle day ${m.war.day} of 4: **${fame.toLocaleString()}** medals, ${4 - used} deck${4 - used === 1 ? '' : 's'} left today.`,
+          fame >= target ? `✅ You've reached ${target}.` : `${(target - fame).toLocaleString()} more to reach ${target}.`);
+      } else lines.push('Training days: battle days start soon.');
+      const lw = m.weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))[0];
+      if (lw) lines.push(`Last war (${lw.week}): ${lw.fame.toLocaleString()} medals ${lw.fame >= target ? '✅' : '❌'}`);
+      return Response.json(reply(lines.join('\n')));
+    }
+    case 'links': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const ms = (await env.DB.prepare('SELECT tag, name FROM members WHERE clan = ? AND in_clan = 1').bind(clan).all()).results;
+      const linked = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(guild).all()).results.map(r => [r.tag, r.user_id]));
+      const yes = ms.filter(m => linked.has(m.tag)), no = ms.filter(m => !linked.has(m.tag));
+      const text = `**Linked: ${yes.length} of ${ms.length}**\n${yes.map(m => `${cleanName(m.name)} → <@${linked.get(m.tag)}>`).join('\n') || '–'}\n\n**Not linked yet:** ${no.map(m => cleanName(m.name)).join(', ') || 'nobody'}`;
+      return Response.json(reply(text.slice(0, 1990)));
+    }
+    case 'setup': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const roles = { member: opt.member_role || cfg?.roles?.member, elder: opt.elder_role || cfg?.roles?.elder, coLeader: opt.coleader_role || cfg?.roles?.coLeader, leader: opt.leader_role || cfg?.roles?.leader };
+      await setConfig(env, guild, { clan, channel: opt.channel, roles });
+      return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ' Roles follow the game for linked members (run `/sync` once now).' : ' Add roles any time by running /setup again.')));
+    }
+    case 'sync': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      later(syncGuild(env, guild, cfg, clan, 25));
+      return Response.json(reply('Updating roles and nicknames for linked members (up to 25 at a time; run again for more).'));
+    }
+  }
+  return Response.json(reply('Unknown command'));
+}
+
+// Update roles/nicknames for linked users. `limit` keeps it within the Worker's per-run request budget.
+export async function syncGuild(env, guild, cfg, clan, limit = 10, onlyTags = null) {
+  if (!cfg?.roles) return 0;
+  const links = (await env.DB.prepare('SELECT user_id, tag FROM discord_links WHERE guild = ?').bind(guild).all()).results.filter(l => !onlyTags || onlyTags.includes(l.tag));
+  let n = 0;
+  for (const l of links.slice(0, limit)) {
+    const m = await env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, l.tag).first();
+    await syncOne(env, guild, cfg, l.user_id, m); n++;
+  }
+  return n;
+}
+
+// Post to every configured server for this clan. `pings`: [{ tag, text }] mention linked users, plain names otherwise.
+export async function discordPost(env, clan, title, body, pings = []) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.channel)) {
+    const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
+    const users = [], parts = pings.map(p => { const u = links.get(p.tag); if (u) users.push(u); return u ? `<@${u}> ${p.text}` : `${cleanName(p.name)} ${p.text}`; });
+    const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
+    await dapi(env, 'POST', `/channels/${cfg.channel}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
+  }
+  return sent;
+}
+
+// After a pull: keep roles/nicknames in step for anyone whose role changed or who joined/left.
+export async function discordAfterSnapshot(env, clan, changedTags) {
+  if (!discordReady(env) || !changedTags.length) return;
+  await setupDB(env);
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) await syncGuild(env, cfg.guild, cfg, clan, 10, changedTags);
+}

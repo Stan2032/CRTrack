@@ -3,6 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
+import { discordPost, discordAfterSnapshot } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -158,6 +159,8 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
         under: ps.filter(p => p[4] < target).sort((a, b) => a[4] - b[4]).map(p => p[3]) };
     }),
     notPlayed: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday === 0).map(p => p.name) : [],
+    leftToday: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday < 4).map(p => ({ tag: clean(p.tag), name: p.name, left: 4 - p.decksUsedToday })).sort((a, b) => b.left - a.left) : [],
+    changedTags: [...new Set(events.filter(e => ['join', 'leave', 'role'].includes(e[3])).map(e => e[1]))],
     decksLeft: day ? live.filter(p => here.has(clean(p.tag))).reduce((n, p) => n + Math.max(0, 4 - p.decksUsedToday), 0) : 0,
   };
 }
@@ -203,19 +206,28 @@ async function alertsFor(env, r, now) {
   if (r.joined.length || r.left.length) {
     const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`, r.members < 50 && `${50 - r.members} spot${r.members === 49 ? '' : 's'} open`].filter(Boolean);
     await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
+    if (r.joined.length) await discordPost(env, r.clan, `👋 Welcome ${list(r.joined)}!`, 'Link your account with `/link #YOURTAG` so you get war reminders. Check the pinned rules.');
   }
   for (const w of r.wars) {
     const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
     const trophies = w.trophies ? `, ${w.trophies > 0 ? '+' : ''}${w.trophies} trophies` : '';
     const body = `${w.passed} of ${w.played} reached ${r.target}.` + (w.under.length ? ` Under: ${list(w.under, 5)}.` : ' Everyone made it!') + ' Open the app for who to act on.';
-    await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
+    const sentW = await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
+    await discordPost(env, r.clan, `🏁 War ${w.week} finished${place}${trophies}`, `${w.passed} of ${w.played} reached ${r.target}. Thanks all! ⚔️`);
   }
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day && r.decksLeft) {
     const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
     const reset0 = st0 ? ms(st0.ended_at) : null, left0 = reset0 == null ? 864e5 : (((reset0 - now) % 864e5) + 864e5) % 864e5;
-    if (left0 < 4 * 3600e3) await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
-      (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + ' · under 4 hours left');
+    if (left0 < 4 * 3600e3) {
+      const sentL = await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
+        (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + ' · under 4 hours left');
+      // Ping linked members on Discord, once per battle day (the alert key above stops repeats).
+      if (sentL !== 0 || !(await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`dping:${r.clan}:${r.week}:${r.day}`).first())) {
+        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`dping:${r.clan}:${r.week}:${r.day}`, String(now)).run();
+        await discordPost(env, r.clan, `⏰ Battle day ${r.day} ends in under 4 hours`, `${r.decksLeft} decks still to play:`, r.leftToday.map(p => ({ tag: p.tag, name: p.name, text: `(${p.left} left)` })));
+      }
+    }
   }
   if (r.day === 4 && r.out.length) {
     const st = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
@@ -243,6 +255,7 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       const res = await snapshot(env, clan, new Date(now).toISOString());
       out.push(res);
       await alertsFor(env, res, now).catch(() => {});
+      await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
     } catch (e) {
       out.push({ clan, error: String(e.message || e) });
       // Tell leaders once every 6 hours while pulls keep failing.

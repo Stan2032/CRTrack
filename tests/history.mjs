@@ -90,7 +90,7 @@ assert.equal((await readHistory(env, 'PPCCR8VU')).notes.length, 1);
 
 // endpoints
 const call = (path, opt) => handleApi(new Request('https://x.dev' + path, opt), env);
-assert.deepEqual(await (await call('/api/status')).json(), { key: true, clans: ['PPCCR8VU'], history: true, edit: true });
+assert.deepEqual(await (await call('/api/status')).json(), { key: true, clans: ['PPCCR8VU'], history: true, edit: true, discord: false });
 assert.equal((await call('/api/history?clan=PPCCR8VU')).status, 200);
 assert.equal((await call('/api/history?clan=2PP')).status, 403);
 assert.equal((await call('/api/notes?clan=PPCCR8VU', { method: 'POST', body: '{"items":[]}' })).status, 401);
