@@ -1,33 +1,40 @@
 :root {
-  --bg: #f4f5f7; --card: #ffffff; --line: #dfe3e8; --text: #1b1f24; --muted: #5c6570; --soft: #eef1f4;
-  --green: #157033; --red: #cf222e; --orange: #a84300; --yellow: #855a00; --blue: #0969da; --cyan: #146a70;
+  /* Colours from the clan badge: charcoal shield, gold rim, red flame. Green/red keep their meaning (good/bad). */
+  --bg: #f5f3ee; --card: #ffffff; --line: #e3ded3; --text: #232222; --muted: #6b665d; --soft: #f1ede5;
+  --green: #157033; --red: #c8343b; --orange: #a84300; --yellow: #855a00; --blue: #0969da; --cyan: #146a70;
+  --brand: #2b2a2a; --gold: #e2af4b; --gold-hi: #fcdf5e; --flame: #e65157; --on-gold: #2b2a2a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e; --soft: #21262d;
-    --green: #3fb950; --red: #f85149; --orange: #db6d28; --yellow: #d29922; --blue: #58a6ff; --cyan: #39c5cf;
+    --bg: #1c1b1b; --card: #262525; --line: #3d3b3b; --text: #efece6; --muted: #a39f98; --soft: #302f2f;
+    --green: #4cc46a; --red: #ff6b70; --orange: #e8833a; --yellow: #e2b341; --blue: #6cb2ff; --cyan: #45c9d3;
+    --brand: #141313; --gold: #e8b94f; --gold-hi: #fcdf5e; --flame: #ff6b70; --on-gold: #1c1b1b;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0 auto; max-width: 860px; padding: 16px 16px 48px; background: var(--bg); color: var(--text);
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-h1 { font-size: 18px; margin: 0 0 2px; }
+h1 { font-size: 19px; margin: -16px -16px 0; padding: 14px 16px 12px; background: var(--brand); color: #fff;
+  border-bottom: 3px solid var(--gold); border-radius: 0 0 14px 14px; display: flex; align-items: center; gap: 8px; }
+h1::before { content: "🔥"; font-size: 18px; }
+#sub { margin-top: 8px; }
 #sub { color: var(--muted); font-size: 13px; min-height: 18px; margin-bottom: 14px; }
-.step { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+.step { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--gold); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
 .step > h2, .step > summary { font-size: 15px; margin: 0 0 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .step > summary { cursor: pointer; margin: 0; list-style: none; }
 .step[open] > summary { margin-bottom: 12px; }
-.n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--card); font-size: 12px; }
+.n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); color: var(--on-gold); font-size: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .grow { flex: 1; }
 .btn, select, input { background: var(--soft); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 12px; font: inherit; font-size: 14px; }
 select { padding: 6px 8px; font-size: 13px; }
 .btn { cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block; }
-.btn.main { background: var(--green); border-color: var(--green); color: #fff; }
+.btn.main { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
+.btn.main:hover { background: var(--gold-hi); }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: 0; background: var(--soft); color: var(--muted); padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; }
-.seg button.on { background: var(--text); color: var(--card); }
+.seg button.on { background: var(--brand); color: var(--gold-hi); }
 .tagin { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); padding-left: 10px; }
 .tagin span { color: var(--muted); }
 .tagin input { border: 0; background: transparent; width: 130px; text-transform: uppercase; }
@@ -189,8 +196,8 @@ svg.spark circle.ok { fill: var(--green); } svg.spark circle.miss { fill: var(--
 .fcb { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
 .fcb.ok { color: var(--green); } .fcb.risk { color: var(--yellow); } .fcb.bad { color: var(--red); }
 svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fill: var(--text); font-weight: 700; }
-.helpbtn { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-weight: 700; cursor: pointer; vertical-align: 2px; margin-left: 6px; }
-.guide { border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 10px; padding: 10px 12px; background: var(--card); margin-bottom: 14px; }
+.helpbtn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--gold); background: transparent; color: var(--gold-hi); font-weight: 700; cursor: pointer; margin-left: auto; }
+.guide { border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 10px; padding: 10px 12px; background: var(--card); margin-bottom: 14px; }
 .guide ol { margin: 6px 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
 .guide li { margin: 4px 0; }
 #explain h3 { font-size: 14px; margin: 14px 0 4px; } #explain h3:first-child { margin-top: 0; }
@@ -216,7 +223,7 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
 .switch:checked::after { left: 21px; }
 .rprob { border: 1px solid var(--yellow); border-radius: 10px; padding: 8px 12px; font-size: 13px; color: var(--yellow); display: grid; gap: 4px; }
 .rule.slide .sl { display: flex; align-items: center; gap: 10px; flex: none; }
-.rule.slide input[type=range] { width: 140px; accent-color: var(--green); padding: 0; background: transparent; border: 0; min-height: 32px; }
+.rule.slide input[type=range] { width: 140px; accent-color: var(--gold); padding: 0; background: transparent; border: 0; min-height: 32px; }
 .rule.slide output { min-width: 40px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .rulenote { font-size: 13px; color: var(--muted); margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
 .rulenote.pending { color: var(--text); border: 1px solid var(--yellow); }
