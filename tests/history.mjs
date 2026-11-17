@@ -2,7 +2,7 @@
 // with fake API replies built from samples/. Usage: node tests/history.mjs
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { snapshot, readHistory, writeNotes, weekOf, battleDay } from '../worker/history.js';
+import { snapshot, readHistory, writeNotes, weekOf, battleDay, warBattle } from '../worker/history.js';
 import { handleApi } from '../worker/api.js';
 import { fakeApi } from './check.mjs';
 
@@ -26,6 +26,12 @@ const api = fakeApi();
 let state = { members: structuredClone(api.members), race: { ...api.race, sectionIndex: 2, periodIndex: 15, periodType: 'training' } };
 globalThis.fetch = async url => {
   const u = decodeURIComponent(url);
+  if (u.includes('/battlelog')) return new Response(JSON.stringify([
+    { type: 'riverRacePvP', battleTime: '20261119T090000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] },
+    { type: 'riverRaceDuel', battleTime: '20261119T091000.000Z', team: [{ crowns: 3, rounds: [{ crowns: 1 }, { crowns: 0 }, { crowns: 2 }] }], opponent: [{ crowns: 1, rounds: [{ crowns: 0 }, { crowns: 1 }, { crowns: 1 }] }] },
+    { type: 'boatBattle', battleTime: '20261119T092000.000Z', boatBattleSide: 'attacker', boatBattleWon: true, team: [{}], opponent: [{}] },
+    { type: 'PvP', battleTime: '20261119T093000.000Z', team: [{ crowns: 3 }], opponent: [{ crowns: 0 }] },
+  ]), { status: 200 });
   const body = u.endsWith('/members') ? state.members : u.includes('/currentriverrace') ? state.race
     : u.includes('/riverracelog') ? { items: api.log.items.slice().sort((a, b) => b.seasonId - a.seasonId || b.sectionIndex - a.sectionIndex) } : {};
   return new Response(JSON.stringify(body), { status: 200 });
@@ -75,4 +81,10 @@ assert.equal((await call('/api/snapshot', { method: 'POST' })).status, 401);
 
 assert.equal(weekOf({ sectionIndex: 0 }, [{ seasonId: 138, sectionIndex: 3 }]), '139-1');
 assert.equal(battleDay({ periodType: 'warDay', periodIndex: 20 }), 4);
+// battle logs: 3 players per run, war battles only
+assert.ok(h.battles.length >= 3 && h.battles.every(b => ['pvp', 'duel', 'boat'].includes(b.type)), JSON.stringify(h.battles.slice(0, 3)));
+assert.deepEqual(warBattle({ type: 'riverRaceDuel', team: [{ rounds: [{ crowns: 1 }, { crowns: 1 }] }], opponent: [{ rounds: [{ crowns: 0 }, { crowns: 0 }] }] }), { type: 'duel', won: 2, lost: 0 });
+assert.equal(warBattle({ type: 'PvP' }), null);
+assert.equal(warBattle({ type: 'boatBattle', boatBattleSide: 'defender' }), null);
+assert.ok(h.stats.length >= 48);
 console.log('History checks passed');

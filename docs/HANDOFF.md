@@ -52,7 +52,17 @@ A cron every 15 minutes (`worker/history.js`, `snapshot()`) saves, for each clan
 | `wars`, `war_players` | every finished war, kept forever |
 | `periods` | when each training / battle day was first seen (used to tell which battle day someone joined on) |
 | `race_days` | each player's decks/medals per battle day (last value before the day reset) |
-| `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `rules` |
+| `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `done` (action ticked), `rules` |
+| `member_stats` | donations given/received, trophies, level, per war week |
+| `race_standings` | every clan in the race and its medals, per battle day |
+| `war_battles` | war battles from players' battle logs (duel / 1v1 / boat, games won and lost). 3 players per run in rotation, so each player's log is read about every 4 hours (the log holds their last 25 battles) |
+
+## How long data lasts
+
+- The official API only returns the last 10 wars, so anything older exists only because this database saved it. Wars are kept forever from 7 Sep 2026 (the first of the 10 imported).
+- Storage: about 50–150 KB per war week, so the free plan's 500 MB database holds decades.
+- Free-plan daily limits: 100,000 rows written (we use about 10–20,000 on battle days), 5 million rows read (each page load reads the clan's whole history, a few thousand rows a year), 100,000 Worker requests.
+- Per run: 50 database queries and 50 outside requests (we use about 25 and 6), and 10 ms of CPU, which is why battle logs are read 3 players at a time.
 
 Free plan limits per run: 50 queries and 10 ms CPU. Writes use one multi-row statement per table, with values inlined via `q()` (escapes quotes).
 Seeded on 17 Nov 2026 with the 16 Nov roster (as `seen`) and Stan's 138-2 calls (join days, changes, results).

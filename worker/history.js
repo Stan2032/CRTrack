@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS war_players (clan TEXT, week TEXT, tag TEXT, name TEX
 CREATE TABLE IF NOT EXISTS periods (clan TEXT, week TEXT, period INTEGER, type TEXT, first_seen TEXT, PRIMARY KEY (clan, week, period));
 CREATE TABLE IF NOT EXISTS race_days (clan TEXT, week TEXT, day INTEGER, tag TEXT, name TEXT, fame INTEGER, decks INTEGER, today INTEGER, boats INTEGER, at TEXT, PRIMARY KEY (clan, week, day, tag));
 CREATE TABLE IF NOT EXISTS notes (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, at TEXT, PRIMARY KEY (clan, week, tag, kind));
+CREATE TABLE IF NOT EXISTS member_stats (clan TEXT, week TEXT, tag TEXT, donations INTEGER, received INTEGER, trophies INTEGER, exp INTEGER, at TEXT, PRIMARY KEY (clan, week, tag));
+CREATE TABLE IF NOT EXISTS race_standings (clan TEXT, week TEXT, day INTEGER, rival TEXT, name TEXT, fame INTEGER, at TEXT, PRIMARY KEY (clan, week, day, rival));
+CREATE TABLE IF NOT EXISTS war_battles (clan TEXT, tag TEXT, at TEXT, type TEXT, won INTEGER, lost INTEGER, PRIMARY KEY (clan, tag, at));
 `.trim();
 
 export const q = v => v == null ? 'NULL'
@@ -93,8 +96,48 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   if (week && day && live.length) sql.push(`INSERT OR REPLACE INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES ${
     rows(live.map(p => [clan, week, day, clean(p.tag), p.name, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks, now]))}`);
 
+  // Donations and trophies, per war week (donations reset weekly in game)
+  const statWeek = week || 'unknown';
+  const stats = (members.items || []).map(m => [clan, statWeek, clean(m.tag), m.donations, m.donationsReceived, m.trophies, m.expLevel, now]);
+  if (stats.length) sql.push(`INSERT OR REPLACE INTO member_stats (clan,week,tag,donations,received,trophies,exp,at) VALUES ${rows(stats)}`);
+
+  // Rival clans in this race, per battle day
+  if (week && day && race.clans?.length) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ${
+    rows(race.clans.map(c => [clan, week, day, clean(c.tag), c.name, c.fame, now]))}`);
+
+  // War battles from players' battle logs (each log holds their last 25 battles).
+  // A few players per run, in rotation, to stay inside the free plan's per-run limits.
+  const tags = [...here].sort(), per = Number(env.BATTLELOGS_PER_RUN || 3);
+  const slot = Math.floor(Date.parse(now) / (15 * 60 * 1000)) % Math.max(1, Math.ceil(tags.length / per));
+  const pick = tags.slice(slot * per, slot * per + per);
+  const logs = await Promise.all(pick.map(tag => cr(env, `/players/${encodeURIComponent('#' + tag)}/battlelog`).catch(() => [])));
+  const battles = [];
+  pick.forEach((tag, i) => { for (const b of Array.isArray(logs[i]) ? logs[i] : []) { const x = warBattle(b); if (x) battles.push([clan, tag, b.battleTime, x.type, x.won, x.lost]); } });
+  if (battles.length) sql.push(`INSERT OR IGNORE INTO war_battles (clan,tag,at,type,won,lost) VALUES ${rows(battles)}`);
+
   if (sql.length) await db.batch(sql.map(s => db.prepare(s)));
-  return { clan, members: upserts.length, events: events.length, newWars: wars.length, week, day };
+  return { clan, members: upserts.length, events: events.length, newWars: wars.length, week, day, battlesFrom: pick, battles: battles.length };
+}
+
+// A war battle from a battle log entry: duel (wins/losses counted per game), 1v1 / special mode, or boat attack.
+export function warBattle(b) {
+  const t = String(b.type || '');
+  if (t === 'boatBattle') {
+    if (b.boatBattleSide && b.boatBattleSide !== 'attacker') return null;
+    return { type: 'boat', won: b.boatBattleWon ? 1 : 0, lost: b.boatBattleWon ? 0 : 1 };
+  }
+  if (!/^riverRace/.test(t)) return null;
+  const me = b.team?.[0] || {}, op = b.opponent?.[0] || {};
+  if (/Duel/.test(t)) {
+    const a = me.rounds || [], o = op.rounds || [];
+    if (a.length && a.length === o.length) {
+      let won = 0, lost = 0;
+      a.forEach((r, i) => (r.crowns > o[i].crowns ? won++ : lost++));
+      return { type: 'duel', won, lost };
+    }
+    return { type: 'duel', won: me.crowns > op.crowns ? 1 : 0, lost: me.crowns > op.crowns ? 0 : 1 };
+  }
+  return { type: 'pvp', won: me.crowns > op.crowns ? 1 : 0, lost: me.crowns > op.crowns ? 0 : 1 };
 }
 
 export async function snapshotAll(env) {
@@ -109,7 +152,7 @@ export async function readHistory(env, clan) {
   const db = env.DB;
   await db.exec(SCHEMA);
   const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
-  const [members, events, wars, players, periods, days, notes] = await Promise.all([
+  const [members, events, wars, players, periods, days, notes, stats, standings, battles] = await Promise.all([
     all('SELECT tag,name,role,in_clan,first_seen,last_seen_game FROM members WHERE clan = ?'),
     all('SELECT tag,name,kind,detail,at FROM member_events WHERE clan = ? ORDER BY at'),
     all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?'),
@@ -117,8 +160,11 @@ export async function readHistory(env, clan) {
     all('SELECT week,period,type,first_seen FROM periods WHERE clan = ? ORDER BY first_seen'),
     all('SELECT week,day,tag,fame,decks,today,boats,at FROM race_days WHERE clan = ?'),
     all('SELECT week,tag,kind,value,at FROM notes WHERE clan = ?'),
+    all('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?'),
+    all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?'),
+    all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?'),
   ]);
-  return { clan, members, events, wars, players, periods, days, notes };
+  return { clan, members, events, wars, players, periods, days, notes, stats, standings, battles };
 }
 
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];

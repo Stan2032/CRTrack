@@ -22,7 +22,7 @@ const join = { 'brayyisaac': '3', '>FRXNCHY<': 'excused' };
 const res = Object.fromEntries(m.players.map(p => [p.name, L.judgeEnd(p, r, join[p.name] || 'full')]));
 const expect = {
   'Manny1': 'Kick', 'ty': 'Kick', 'bestgirlclasher': 'Kick',
-  'notorious mike': 'Demote', 'Pirate Steve': 'Check',
+  'notorious mike': 'Warn', 'Pirate Steve': 'Check',
   'perc': 'Warn', 'boi in a jar': 'Warn', 'Mohammad nazari': 'Warn',
   'mattmk': 'Warn', 'Bob': 'Warn', 'Thomas king': 'Warn', 'Ninja': 'Warn',
   'brayyisaac': 'OK', '>FRXNCHY<': 'Excused', 'stuart': 'OK', 'Astin': 'OK',

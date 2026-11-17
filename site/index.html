@@ -291,7 +291,8 @@ function build({ roster = [], log = [], race = [], history = [] }, opts = {}) {
   const ref = seen.length ? Math.max(...seen) : Date.now();
 
   let base = roster.length
-    ? roster.map(r => ({ tag: cleanTag(r.tag), name: r.name, role: r.role || 'member', lastSeen: parseTime(r.lastSeen) }))
+    ? roster.map(r => ({ tag: cleanTag(r.tag), name: r.name, role: r.role || 'member', lastSeen: parseTime(r.lastSeen),
+        donations: r.donations === '' || r.donations == null ? null : +r.donations, received: r.donationsReceived === '' || r.donationsReceived == null ? null : +r.donationsReceived }))
     : Object.keys(raceBy).length
       ? Object.values(raceBy).map(r => ({ tag: cleanTag(r.player_tag), name: r.player_name, role: 'member', lastSeen: null }))
       : [];
@@ -368,7 +369,8 @@ function judgeEnd(p, r, join, override) {
     if (streak >= r.holdWeeks && p.offlineDays != null && p.offlineDays >= r.holdOffline)
       res = out('Check', `Offline ${Math.floor(p.offlineDays)} days, but reached ${r.target}+ the ${streak} wars before`);
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
-    else if (p.role === 'elder' && r.demoteElders) res = out('Demote', `Elder under ${r.target}`);
+    else if (p.role === 'elder' && r.demoteElders) res = (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
+      ? out('Demote', `Elder, second miss in a row`) : out('Warn', 'Elder, first miss');
     else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after final warning');
     else if (isBoater) res = out('Warn', `Played, but ${boatPct}% of decks on boats`);
     else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
@@ -468,7 +470,7 @@ const VALID_TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 
 function apiToRows({ clan, members, race, log }) {
   const ct = cleanTag(clan?.tag || race?.clan?.tag), cn = clan?.name || race?.clan?.name || '';
-  const roster = (members?.items || []).map(m => ({ tag: m.tag, name: m.name, role: m.role, lastSeen: m.lastSeen }));
+  const roster = (members?.items || []).map(m => ({ tag: m.tag, name: m.name, role: m.role, lastSeen: m.lastSeen, donations: m.donations, donationsReceived: m.donationsReceived }));
   const raceRows = (race?.clan?.participants || []).map(x => ({
     clan_tag: ct, clan_name: cn, player_tag: x.tag, player_name: x.name, player_fame: x.fame,
     player_boat_attacks: x.boatAttacks, player_decks_used: x.decksUsed, player_decks_used_today: x.decksUsedToday }));
@@ -483,7 +485,8 @@ function apiToRows({ clan, members, race, log }) {
   }
   const last = (log?.items || [])[0];
   const raceWeek = race && last ? `${race.sectionIndex > last.sectionIndex ? last.seasonId : last.seasonId + 1}-${race.sectionIndex + 1}` : null;
-  return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null };
+  const standings = (race?.clans || []).map(c => ({ tag: cleanTag(c.tag), name: c.name, fame: c.fame || 0 })).sort((a, b) => b.fame - a.fame);
+  return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null, standings };
 }
 
 // periodIndex: 0-2 training, 3-6 battle days 1-4 (repeats each week)
@@ -559,6 +562,15 @@ function applyHistory(model, h, liveWeek) {
     p.leftAt = left.length ? Math.max(...left) : null;
   }
   model.endedAt = war ? ms(war.ended_at) : null;
+  // War battles grouped by war week: a battle belongs to the first war that ended after it.
+  const ends = (h.wars || []).map(w => [w.week, ms(w.ended_at)]).filter(x => x[1]).sort((a, b) => a[1] - b[1]);
+  const weekOfBattle = t => (ends.find(e => t <= e[1]) || [liveWeek || 'current'])[0];
+  const byTag = {};
+  for (const b of h.battles || []) {
+    const wk = weekOfBattle(ms(b.at)), x = ((byTag[b.tag] ||= {})[wk] ||= { duel: [0, 0], pvp: [0, 0], boat: [0, 0] });
+    if (x[b.type]) { x[b.type][0] += b.won; x[b.type][1] += b.lost; }
+  }
+  for (const p of model.players) p.battles = byTag[p.tag] || null;
   const real = (h.events || []).filter(e => e.kind !== 'seen');
   model.history = {
     since: (h.events || []).length ? Math.min(...h.events.map(e => ms(e.at))) : null,
@@ -579,7 +591,13 @@ function autoDone(p, status, endMs) {
   return false;
 }
 
-if (typeof module !== 'undefined') module.exports = { autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+function battleText(x) {
+  if (!x) return '';
+  const part = (k, l) => x[k][0] + x[k][1] ? `${l} ${x[k][0]}W–${x[k][1]}L` : '';
+  return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
+}
+
+if (typeof module !== 'undefined') module.exports = { battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
 </script>
 <script>
 // ---- UI ----
@@ -595,7 +613,7 @@ let codeOk = false;
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
-  demoteElders: 'Elders who miss are demoted, not kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
+  demoteElders: 'Elders: final warning first, demote on 2nd miss in a row', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
   holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
   promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
@@ -689,7 +707,7 @@ async function pull() {
       site.history ? fetch('api/history?clan=' + t).then(r => r.ok ? r.json() : null).catch(() => null) : null]);
     hist = h;
     const rows = apiToRows({ clan, members, race, log });
-    raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod };
+    raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod, standings: rows.standings };
     if (raceInfo.day) day = raceInfo.day;
     pickWeek = null;
     load(rows, 'api');
@@ -755,6 +773,10 @@ function more(p) {
   if (p.joined) lines.push(p.joined.seen ? `In clan since at least ${fmtDate(p.joined.at)}` : `Joined ${fmtDate(p.joined.at)}`);
   if (days) lines.push('Decks by battle day: ' + days.map(d => d == null ? '–' : d).join(' · '));
   if (p.offlineDays != null) lines.push(`Last online ${p.offlineDays < 1 ? 'today' : Math.floor(p.offlineDays) + ' days ago'}`);
+  const bw = mode === 'end' ? model.season : (raceInfo.week || 'current');
+  const bt = battleText(p.battles?.[bw]);
+  if (bt) lines.push(`War battles ${mode === 'end' ? 'that war' : 'this war'}: ${bt}`);
+  if (p.donations != null && !p.gone) lines.push(`Donations this week: ${p.donations} given, ${p.received ?? 0} received`);
   if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
   return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div>Wars, oldest to newest (red = under ${r.target}):</div><div class="weeks">${weeks}</div>` : ''}<div class="row">${moreControls(p)}</div></div>`;
 }
@@ -799,7 +821,9 @@ function contextLine() {
   if (!model) return '';
   if (mode === 'end') return model.season ? '' : 'No finished war found';
   if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''}: training days. Battle days haven't started.`;
-  return `${raceInfo.week ? 'War ' + raceInfo.week + ': ' : ''}battle day ${day} of 4`;
+  const st = raceInfo.standings || [], i = st.findIndex(c => c.tag === model.clan.tag);
+  const place = i >= 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][i] || i + 1 + 'th'} of ${st.length} clans, ${st[i].fame.toLocaleString()} medals` : '';
+  return `${raceInfo.week ? 'War ' + raceInfo.week + ': ' : ''}battle day ${day} of 4${place}`;
 }
 function weekPicker() {
   if (mode !== 'end' || !model?.seasons?.length) return '';
