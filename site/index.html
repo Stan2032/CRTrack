@@ -354,10 +354,10 @@ function judgeEnd(p, r, join, override) {
     const missed = p.days.map((d, i) => d === 0 ? i + 1 : null).filter(Boolean);
     if (missed.length && missed.length < 4) res.why = [res.why, 'No decks day ' + missed.join(', ')].filter(Boolean).join(' · ');
   }
+  res.auto = res.status;
+  if (override && override !== 'Auto') { res.status = override; res.why = 'Changed by a leader' + (res.why ? ' · ' + res.why : ''); }
   if ((res.status === 'Demote' && p.roleNow && p.roleNow !== p.role) || (res.status === 'Promote' && p.roleNow && p.roleNow !== 'member'))
     res.why = [res.why, 'done'].filter(Boolean).join(' · ');
-  res.auto = res.status;
-  if (override && override !== 'Auto') { res.status = override; res.why = 'Set by you' + (res.why ? ' · ' + res.why : ''); }
   res.boatPct = boatPct;
   return res;
 }
