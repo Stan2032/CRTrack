@@ -124,6 +124,12 @@ span.tick { cursor: default; }
 .freshmsg:empty { display: none; }
 .btn.small { padding: 5px 10px; font-size: 13px; }
 .btn:disabled { opacity: .6; cursor: default; }
+.steps { border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 10px; padding: 10px 12px; margin: 10px 0 6px; background: var(--soft); }
+.steps-head { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.steps ol { margin: 0 0 8px; padding-left: 20px; }
+.steps li { margin: 6px 0; font-size: 14px; line-height: 1.5; }
+.steps li .btn { margin-left: 4px; vertical-align: middle; }
+.alldone { color: var(--green); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -166,6 +172,7 @@ span.tick { cursor: default; }
   </div>
   <div id="context" class="context"></div>
   <div class="summary" id="chips"></div>
+  <div id="steps" class="steps hidden"></div>
   <div id="groups"><div class="empty">Load a clan to start</div></div>
 </section>
 
@@ -446,7 +453,7 @@ function chatEnd(list, r) {
   if (warn.length) {
     const rows = warn.map(x => ({ x, n: recent(x, r).length, m: missCount(x, r) }))
       .sort((a, b) => b.m - a.m || b.m / b.n - a.m / a.n)
-      .map(({ x, n, m }) => `${x.name}: ${m}/${n} wks under`);
+      .map(({ x, n, m }) => `${x.name}: under in ${m} of ${n} wars`);
     msgs.push({ title: 'Warnings', text: lines(`First & only warnings (need ${r.target}+ next war):`, rows) });
   }
 
@@ -458,8 +465,9 @@ function chatEnd(list, r) {
 
   const check = by('Check');
   if (check.length) {
-    msgs.push({ title: 'Check in', text: check.map(x =>
-      `Holding ${x.name}'s spot, offline ${Math.floor(x.offlineDays)} days. Hope you're ok!`).join('\n') });
+    msgs.push({ title: 'Check in', text: lines(`Holding ${check.length === 1 ? 'a spot' : 'spots'} for:`,
+      check.map(x => x.offlineDays != null ? `${x.name} (offline ${Math.floor(x.offlineDays)} days)` : x.name))
+      + `\n${check.length === 1 ? "Hope you're ok!" : "Hope you're all ok!"}` });
   }
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
@@ -856,6 +864,7 @@ function render() {
   if (!model || !model.players.length) return;
   $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>`;
   if (mode === 'live' && source === 'api' && !raceInfo.day) {
+    $('#steps').classList.add('hidden');
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
     $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
   }
@@ -891,6 +900,7 @@ function render() {
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
       <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
+  renderSteps(all, msgs);
   renderLog();
   renderFresh();
   autoSave(all);
@@ -922,6 +932,60 @@ async function requestUpdate() {
     else { await pull(); msg('Updated'); }
   } catch (e) { $('#freshmsg').textContent = "Couldn't connect"; }
   b.disabled = false; b.textContent = 'Request updated data';
+}
+
+// ---- Recommended steps: in-game actions first, then what to post ----
+let stepTexts = [];
+function renderSteps(list, msgs) {
+  stepTexts = [];
+  const box = $('#steps');
+  const latest = mode === 'end' ? model.season === model.latest : true;
+  const pending = s => list.filter(p => p.res.status === s && !(p.done && (p.done.auto || p.done.manual)) && !p.gone).map(p => p.name);
+  const copyBtns = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
+    stepTexts.push(m.text); const i = stepTexts.length - 1;
+    return `<button class="btn small" data-copystep="${i}">Copy${m.title.match(/\d+\/\d+$/) ? ' ' + m.title.match(/\d+\/\d+$/)[0] : ''}</button>`;
+  }).join('');
+  const steps = [];
+  const names = a => a.map(esc).join(', ');
+  if (mode === 'end' && latest) {
+    const k = pending('Kick'), d = pending('Demote'), pr = pending('Promote'), w = pending('Warn'), c = pending('Check'), rv = pending('Review');
+    if (k.length) steps.push(`In game, <b>kick</b>: ${names(k)}`);
+    if (d.length) steps.push(`In game, <b>demote</b>: ${names(d)}`);
+    if (pr.length) steps.push(`In game, <b>promote to Elder</b>: ${names(pr)}`);
+    if (rv.length) steps.push(`<b>Decide with the other leaders</b>: ${names(rv)}`);
+    const results = copyBtns('Results');
+    if (results && (k.length || d.length || pr.length)) steps.push(`Post the results in clan chat ${results}`);
+    if (w.length) steps.push(`Post the <b>first &amp; only warnings</b> for ${names(w)} ${copyBtns('First & only')} <button class="btn small" data-markall="Warn">Mark all done</button>`);
+    const boats = copyBtns('Boat');
+    if (boats && w.length) steps.push(`Post the boat attack tip ${boats}`);
+    if (c.length) steps.push(`Post the <b>check-in</b> for ${names(c)} ${copyBtns('Check')} <button class="btn small" data-markall="Check">Mark all done</button>`);
+  } else if (mode === 'live') {
+    const out = list.filter(p => p.res.status === 'Out' && !p.gone);
+    const free = out.filter(p => p.res.today === 0).map(p => p.name);
+    if (free.length) steps.push(`Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`);
+    const need = copyBtns('Still need');
+    if (need) steps.push(`Post the reminder for players who still need medals ${need}`);
+  }
+  box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
+  box.innerHTML = `<div class="steps-head">Recommended</div>` + (steps.length
+    ? `<ol>${steps.map(x => `<li>${x}</li>`).join('')}</ol><button class="btn small" id="copysteps">Copy as checklist</button>`
+    : '<div class="alldone">✓ All done for this war</div>');
+}
+function stepsAsText() {
+  return [...$('#steps').querySelectorAll('li')].map((li, i) => `${i + 1}. ` + li.cloneNode(true).textContent.replace(/(Copy( \d+\/\d+)?|Mark all done)/g, '').replace(/\s+/g, ' ').trim()).join('\n');
+}
+async function markAll(status) {
+  const ps = evaluate().filter(p => p.res.status === status && !p.gone && !(p.done && p.done.manual));
+  const items = ps.map(p => ({ week: weekKey(), tag: p.tag, kind: 'done', value: '1' }));
+  const shared = await postNotes(items);
+  if (!shared) for (const i of items) local.notes[`done|${i.week}|${i.tag}`] = '1';
+  saveLocal(); render(); say(shared ? 'Saved for everyone' : 'Saved on this device');
+}
+function copyText(text, btn) {
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(() => {
+    const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+  });
+  const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = old, 1200);
 }
 
 function renderLog() {
@@ -998,6 +1062,11 @@ $('#saverules').onclick = async () => {
   say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
 };
 document.addEventListener('click', e => {
+  const cs = e.target.closest('[data-copystep]');
+  if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
+  if (e.target.id === 'copysteps') return copyText(stepsAsText(), e.target);
+  const ma = e.target.closest('[data-markall]');
+  if (ma) return markAll(ma.dataset.markall);
   const d = e.target.closest('[data-done]');
   if (d) { const p = model.players.find(x => x.tag === d.dataset.done); setNote('done', p, note('done', p) === '1' ? 'Auto' : '1'); return; }
   const m = e.target.closest('[data-more]');
