@@ -19,6 +19,53 @@ const DEFAULT_RULES = {
   lookback: 10,      // weeks used for history stats
 };
 
+// What each rule means and the values that make sense, used to build the Rules screen and to
+// correct anything out of range (a typo, an old saved value) before it reaches the decisions.
+//   Medal limits: 3,600 is the most possible in a war (4 days x 900); 1,600 is losing all 16 decks.
+//   Chat: the game keeps 256 characters. History: the page loads the last 26 wars.
+const RULE_SPEC = {
+  target:         { group: 'Target', label: 'Medals needed each war', min: 400, max: 3600, step: 50, unit: 'medals' },
+  perDay:         { group: 'Late joiners', label: 'Medals per battle day left after joining', min: 100, max: 900, step: 50, unit: 'medals' },
+  effortNet:      { group: 'Late joiners', label: 'Pass anyway if they used every deck they could' },
+  warnClear:      { group: 'Warnings', label: 'A warning clears after this many wars in a row at the target', min: 1, max: 10, step: 1, unit: 'wars' },
+  demoteElders:   { group: 'Warnings', label: 'Elders who miss are demoted, not kicked' },
+  elderWarnFirst: { group: 'Warnings', label: 'Elders get a first & only warning before demotion' },
+  spareBoats:     { group: 'Boat attackers', label: 'Mostly-boat players get a warning and a tip, not a kick' },
+  boatShare:      { group: 'Boat attackers', label: 'Counts as a boat attacker from this share of decks on boats', min: 10, max: 100, step: 5, unit: '%' },
+  boatRepeatKick: { group: 'Boat attackers', label: 'Kick if still under on boats after the warning' },
+  holdWeeks:      { group: 'Check on them', label: 'Hold their spot if they reached the target this many wars in a row before', min: 1, max: 10, step: 1, unit: 'wars' },
+  holdOffline:    { group: 'Check on them', label: '…and have been offline at least', min: 1, max: 14, step: 1, unit: 'days' },
+  promoWeeks:     { group: 'Promotions', label: 'Wars in the clan', min: 2, max: 26, step: 1, unit: 'wars' },
+  promoMisses:    { group: 'Promotions', label: 'Most misses allowed in that time', min: 0, max: 5, step: 1, unit: 'misses' },
+  promoAvg:       { group: 'Promotions', label: 'Average medals', min: 400, max: 3600, step: 50, unit: 'medals' },
+  chatLimit:      { group: 'Messages and history', label: 'Clan chat message length', min: 50, max: 256, step: 1, unit: 'characters' },
+  lookback:       { group: 'Messages and history', label: 'Recent wars used for history and stats', min: 3, max: 26, step: 1, unit: 'wars' },
+};
+
+// Corrects out-of-range or non-numeric values; returns the rules and what was changed.
+function sanitizeRules(r) {
+  const out = { ...DEFAULT_RULES, ...r }, fixed = [];
+  for (const [k, spec] of Object.entries(RULE_SPEC)) {
+    if (typeof DEFAULT_RULES[k] === 'boolean') { if (typeof out[k] !== 'boolean') { out[k] = DEFAULT_RULES[k]; fixed.push(k); } continue; }
+    let v = Number(out[k]);
+    if (!Number.isFinite(v)) v = DEFAULT_RULES[k];
+    const c = Math.min(spec.max, Math.max(spec.min, Math.round(v / spec.step) * spec.step));
+    if (c !== out[k]) fixed.push(k);
+    out[k] = c;
+  }
+  return { rules: out, fixed };
+}
+
+// Combinations that can't work as intended.
+function ruleProblems(r) {
+  const p = [];
+  if (r.promoWeeks > r.lookback) p.push(`Promotions need ${r.promoWeeks} wars, but only ${r.lookback} recent wars are used, so nobody can be promoted. Raise the wars used or lower the wars needed.`);
+  if (r.holdWeeks > r.lookback) p.push(`Check-ins need ${r.holdWeeks} wars in a row, more than the ${r.lookback} recent wars used.`);
+  if (r.perDay * 3 > r.target) p.push(`Someone joining on battle day 1 would need ${r.perDay * 3} medals, more than the full-war target of ${r.target}.`);
+  if (r.promoAvg < r.target) p.push(`The promotion average (${r.promoAvg}) is below the war target (${r.target}).`);
+  return p;
+}
+
 // War medal values (Clan Wars 2)
 const MEDALS = { duelWin: 250, winPvp: 200, loss: 100, boatWin: 125, boatLoss: 75 };
 // Most medals still possible today, by decks left today (duel needs 3+ decks)
@@ -448,4 +495,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

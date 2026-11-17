@@ -10,13 +10,6 @@ let settings = { key: '', tag: '', code: '' };
 let site = { key: false, clans: [], history: false, edit: false };
 let codeOk = false, leaderName = '';
 
-const RULE_LABELS = {
-  target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
-  demoteElders: 'Elders who miss are demoted, not kicked', elderWarnFirst: 'Elders get a first & only warning before demotion',
-  boatRepeatKick: 'Boat attackers still under after a warning are kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
-  holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
-  warnClear: 'Warning clears after this many wars in a row at target', promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
-};
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'First & only warning', Check: 'Check on them', Review: 'Leaders decide',
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
 const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused', 'Left'];
@@ -43,7 +36,9 @@ const serverNotes = () => model?.history?.notes || {};
 function rules() {
   let shared = {};
   try { shared = JSON.parse(serverNotes()['rules|*|*'] || '{}'); } catch (e) {}
-  return { ...DEFAULT_RULES, ...shared, ...local.rules };
+  // Saved values that are out of range (from before limits existed) are dropped, so the shared/default value applies.
+  for (const [k, v] of Object.entries(local.rules)) if (RULE_SPEC[k] && sanitizeRules({ [k]: v }).rules[k] !== v) delete local.rules[k];
+  return sanitizeRules({ ...sanitizeRules(shared).rules, ...local.rules }).rules;
 }
 const weekKey = () => mode === 'end' ? (model?.season || 'x') : (raceInfo.week || 'live');
 const nk = (kind, p) => `${kind}|${weekKey()}|${p.tag}`;
@@ -595,13 +590,29 @@ function renderLog() {
 function fit(el) { (el ? [el] : document.querySelectorAll('textarea')).forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }); }
 
 function renderRules() {
-  const r = rules();
-  $('#rules').innerHTML = Object.keys(DEFAULT_RULES).map(k => `<label class="rule"><span>${RULE_LABELS[k]}</span>${
-    typeof DEFAULT_RULES[k] === 'boolean' ? `<input type="checkbox" data-rule="${k}" ${r[k] ? 'checked' : ''}>`
-      : `<input type="number" data-rule="${k}" value="${r[k]}">`}</label>`).join('');
+  const r = rules(), groups = {};
+  for (const [k, spec] of Object.entries(RULE_SPEC)) (groups[spec.group] ||= []).push([k, spec]);
+  const changed = k => r[k] !== DEFAULT_RULES[k];
+  $('#rules').innerHTML = Object.entries(groups).map(([g, items]) => `<fieldset class="rgroup"><legend>${esc(g)}</legend>${items.map(([k, spec]) => typeof DEFAULT_RULES[k] === 'boolean'
+    ? `<label class="rule"><span>${esc(spec.label)}</span><input type="checkbox" role="switch" class="switch" data-rule="${k}" ${r[k] ? 'checked' : ''}></label>`
+    : `<div class="rule"><span>${esc(spec.label)}<small>${spec.min.toLocaleString()}–${spec.max.toLocaleString()} ${esc(spec.unit)}${changed(k) ? ` · default ${DEFAULT_RULES[k].toLocaleString()}` : ''}</small></span>
+        <span class="stepper"><button type="button" data-step="${k}" data-dir="-1" aria-label="Less" ${r[k] <= spec.min ? 'disabled' : ''}>−</button>
+        <input type="number" inputmode="numeric" data-rule="${k}" value="${r[k]}" min="${spec.min}" max="${spec.max}" step="${spec.step}" aria-label="${esc(spec.label)}">
+        <button type="button" data-step="${k}" data-dir="1" aria-label="More" ${r[k] >= spec.max ? 'disabled' : ''}>+</button></span></div>`).join('')}</fieldset>`).join('')
+    + (ruleProblems(r).length ? `<div class="rprob">${ruleProblems(r).map(x => `<div>⚠️ ${esc(x)}</div>`).join('')}</div>` : '');
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
   $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone.` : 'With the leader code, your changes are saved for everyone.';
+}
+
+// Set one rule, corrected to its allowed range, and say if it had to be changed.
+function setRule(k, v) {
+  const typed = typeof DEFAULT_RULES[k] === 'boolean' ? !!v : Number(v);
+  const { rules: fixed } = sanitizeRules({ ...rules(), [k]: typed });
+  local.rules[k] = fixed[k]; saveLocal(); render();
+  const spec = RULE_SPEC[k];
+  if (typeof typed === 'number' && fixed[k] !== typed) say(`${spec.label}: must be ${spec.min.toLocaleString()}–${spec.max.toLocaleString()} ${spec.unit} (steps of ${spec.step}). Set to ${fixed[k].toLocaleString()}.`, true);
+  else say(codeOk ? 'Changed here. Tap "Save rules for everyone" to share.' : 'Saved on this device');
 }
 
 function setMode(m) {
@@ -663,6 +674,8 @@ $('#saverules').onclick = async () => {
 document.addEventListener('click', e => {
   const ex = e.target.closest('[data-explain]');
   if (ex) return copyText(explainTexts[+ex.dataset.explain], ex);
+  const st = e.target.closest('[data-step]');
+  if (st) { const k = st.dataset.step; return setRule(k, rules()[k] + RULE_SPEC[k].step * Number(st.dataset.dir)); }
   const cs = e.target.closest('[data-copystep]');
   if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
   const ma = e.target.closest('[data-markall]');
@@ -685,7 +698,7 @@ document.addEventListener('change', e => {
   if (el.id === 'week') { pickWeek = el.value === model.latest ? null : el.value; load(data.__rows, source); return; }
   if (el.dataset.join && p) setNote('join', p, el.value);
   if (el.dataset.over && p) setNote('over', p, el.value);
-  if (el.dataset.rule) { local.rules[el.dataset.rule] = el.type === 'checkbox' ? el.checked : +el.value; saveLocal(); render(); say(codeOk ? 'Changed here. Tap "Save rules for everyone" to share.' : 'Saved on this device'); }
+  if (el.dataset.rule) setRule(el.dataset.rule, el.type === 'checkbox' ? el.checked : el.value);
 });
 document.addEventListener('input', e => {
   if (e.target.dataset.i == null) return;

@@ -197,3 +197,21 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
 #explain p { margin: 4px 0; font-size: 14px; line-height: 1.5; }
 #explain .card { margin-top: 8px; }
 .quote { font-size: 13px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; white-space: pre-wrap; }
+/* Rules: grouped settings with steppers and switches */
+.rgroup { border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px 8px; margin: 0 0 10px; }
+.rgroup legend { font-weight: 700; font-size: 13px; padding: 0 6px; color: var(--text); }
+.rules { display: block; }
+.rgroup .rule { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rgroup .rule:last-child { border-bottom: 0; }
+.rgroup .rule > span:first-child { font-size: 14px; line-height: 1.35; }
+.rgroup .rule small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; }
+.stepper button { width: 38px; height: 38px; border: 0; background: var(--soft); color: var(--text); font-size: 18px; font-weight: 700; cursor: pointer; }
+.stepper button:disabled { opacity: .35; cursor: default; }
+.stepper input { width: 64px; height: 38px; border: 0; border-radius: 0; text-align: center; padding: 0 4px; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.switch { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; flex: none; transition: background .15s; border: 0; padding: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+.switch:checked { background: var(--green); }
+.switch:checked::after { left: 21px; }
+.rprob { border: 1px solid var(--yellow); border-radius: 10px; padding: 8px 12px; font-size: 13px; color: var(--yellow); display: grid; gap: 4px; }

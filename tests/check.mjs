@@ -109,3 +109,14 @@ console.log('All checks passed');
   assert.equal(L.judgeEnd(p, r3, 'full').status, 'Warn');
   console.log('Warning duration checks passed');
 }
+
+// Rules are corrected to sensible ranges, and impossible combinations are flagged.
+{
+  const s = L.sanitizeRules({ lookback: 0, target: 99999, chatLimit: 300, boatShare: 47, promoAvg: 'abc' });
+  assert.equal(s.rules.lookback, 3); assert.equal(s.rules.target, 3600); assert.equal(s.rules.chatLimit, 256);
+  assert.equal(s.rules.boatShare, 45); assert.equal(s.rules.promoAvg, L.DEFAULT_RULES.promoAvg);
+  assert.equal(L.sanitizeRules({}).fixed.length, 0, 'defaults are all valid');
+  assert.equal(L.ruleProblems(L.DEFAULT_RULES).length, 0, 'defaults make sense together');
+  assert.ok(L.ruleProblems({ ...L.DEFAULT_RULES, lookback: 4 }).some(x => /nobody can be promoted/.test(x)));
+  console.log('Rule limit checks passed');
+}

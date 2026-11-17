@@ -19,7 +19,7 @@ async function show() {
 }
 
 function render(m) {
-  const r = { ...DEFAULT_RULES, ...(m.rules || {}) };
+  const r = sanitizeRules(m.rules || {}).rules;
   const weeks = m.weeks.map(w => ({ key: w.week, fame: w.fame, decks: w.decks, boats: w.boats })).sort((a, b) => weekCmp(b.key, a.key));
   const p = { tag: m.tag, name: cleanName(m.name), weeks, before: weeks };
   const cards = [];
