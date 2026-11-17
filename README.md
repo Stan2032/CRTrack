@@ -8,7 +8,7 @@ Open the hosted link (or `site/index.html`), and it loads the clan. Then work do
 
 1. **Clan**: type a tag and tap *Load clan* (automatic on the hosted link).
 2. **Who to act on**
-   - **Recommended**: numbered steps in order (in-game actions first, then what to post), with Copy buttons and *Mark all done*. *Copy as checklist* copies the steps as text.
+   - **Recommended**: numbered steps in order (in-game actions first, then what to post). Tap the circle when a step is done; in-game steps tick themselves. *Copy* copies that step's clan chat message.
    - **Last war**: who to kick, demote, warn, check on, or promote.
    - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
    - Each player: name, then medals and decks, then the reason. Dots show their recent wars (green = reached 1800).

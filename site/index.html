@@ -130,20 +130,18 @@ span.tick { cursor: default; }
 .steps li { margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
 .steps li:last-child { margin-bottom: 4px; }
 .steps li > .step-text { min-width: 0; }
-.steps ol { list-style: none; padding-left: 0; counter-reset: step; }
-.steps li { display: grid; grid-template-columns: 20px 1fr 140px; gap: 10px 10px; align-items: start; counter-increment: step; }
-.steps li::before { content: counter(step) "."; font-weight: 700; color: var(--muted); padding-top: 1px; }
-.steps li.is-done::before { content: "✓"; color: var(--green); }
-.steps li.is-done .step-text { opacity: .55; }
-.acts { display: flex; flex-direction: column; gap: 6px; }
-.acts.end { flex-direction: row; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
-.btn.act { width: 100%; text-align: center; border-radius: 8px; background: var(--card); padding: 7px 6px; font-size: 13px; }
-.acts.end .btn.act { width: auto; padding: 8px 14px; }
-.btn.act.copy { border-color: var(--blue); color: var(--blue); }
-.btn.act.mark { border-color: var(--green); color: var(--green); }
-.btn.act.mark.on { background: var(--green); color: #fff; }
-.act.state { display: block; text-align: center; font-size: 12px; color: var(--muted); padding: 7px 4px; border: 1px dashed var(--line); border-radius: 8px; }
-.act.state.done { color: var(--green); border: 1px solid var(--green); font-weight: 600; }
+.steps ul { list-style: none; padding: 0; margin: 4px 0 8px; }
+.steps li { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); margin: 0; font-size: 14px; line-height: 1.45; }
+.steps li:first-child { border-top: 0; }
+.steps li.is-done .step-text { opacity: .5; }
+.tickbox { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); background: var(--card); padding: 0; cursor: pointer; display: grid; place-items: center; margin-top: -1px; }
+.tickbox.on { background: var(--green); border-color: var(--green); }
+.tickbox.on::after { content: "✓"; color: #fff; font-size: 14px; font-weight: 700; line-height: 1; }
+.tickbox.auto { border-style: dashed; cursor: default; }
+.tickbox.auto.on { border-style: solid; }
+.copies { display: flex; flex-direction: column; gap: 6px; }
+.copybtn { border: 1px solid var(--blue); color: var(--blue); background: var(--card); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.steps .hint { margin-top: 2px; }
 .alldone { color: var(--green); font-weight: 600; }
 </style>
 </head>
@@ -961,20 +959,20 @@ function renderSteps(list, msgs) {
   const names = a => a.map(p => esc(p.name)).join(', ');
   const copy = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
     stepTexts.push(m.text); const i = stepTexts.length - 1, part = m.title.match(/\d+\/\d+$/);
-    return `<button class="btn small act copy" data-copystep="${i}">Copy message${part ? ' ' + part[0] : ''}</button>`;
+    return `<button class="copybtn" data-copystep="${i}">Copy${part ? ' ' + part[0] : ''}</button>`;
   }).join('');
   const steps = [];   // { text, copy, done, ctl }
   const auto = (ps, verb) => ps.length && steps.push({ text: `In game, <b>${verb}</b>: ${names(ps)}`, done: ps.every(isDone),
-    ctl: ps.every(isDone) ? '<span class="act state done">✓ Done</span>' : '<span class="act state">Ticks itself when done in game</span>' });
+    tick: `<span class="tickbox auto ${ps.every(isDone) ? 'on' : ''}" title="${ps.every(isDone) ? 'Done in game' : 'Ticks itself when done in game'}" aria-label="${ps.every(isDone) ? 'Done' : 'Not done yet'}"></span>` });
   const players = (ps, status, text, cp) => {
     if (!ps.length) return;
     const done = ps.every(isDone);
-    steps.push({ text, copy: cp, done, ctl: `<button class="btn small act mark ${done ? 'on' : ''}" data-markall="${status}" data-undo="${done ? 1 : ''}">${done ? '✓ Done' : 'Mark done'}</button>` });
+    steps.push({ text, copy: cp, done, tick: `<button class="tickbox ${done ? 'on' : ''}" data-markall="${status}" data-undo="${done ? 1 : ''}" aria-pressed="${done}" aria-label="Mark done"></button>` });
   };
   const posted = (id, text, cp) => {
     if (!cp) return;
     const done = note('done', STEP(id)) === '1';
-    steps.push({ text, copy: cp, done, ctl: `<button class="btn small act mark ${done ? 'on' : ''}" data-stepdone="${id}">${done ? '✓ Done' : 'Mark done'}</button>` });
+    steps.push({ text, copy: cp, done, tick: `<button class="tickbox ${done ? 'on' : ''}" data-stepdone="${id}" aria-pressed="${done}" aria-label="Mark done"></button>` });
   };
   if (mode === 'end' && latest) {
     const k = of('Kick'), d = of('Demote'), pr = of('Promote'), w = of('Warn'), c = of('Check'), rv = of('Review');
@@ -986,19 +984,16 @@ function renderSteps(list, msgs) {
     players(c, 'Check', `Post the <b>check-in</b> for ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
-    if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`, ctl: '' });
+    if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`, tick: '<span class="tickbox auto"></span>' });
     posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
   const left = steps.filter(x => !x.done).length;
   box.innerHTML = `<div class="steps-head">Recommended <span class="count">${steps.length ? `${steps.length - left} of ${steps.length} done` : ''}</span></div>` + (steps.length
-    ? `<ol>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}"><div class="step-text">${x.text}</div><div class="acts">${x.copy || ''}${x.ctl || ''}</div></li>`).join('')}</ol>
+    ? `<ul>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}">${x.tick || ''}<div class="step-text">${x.text}</div><div class="copies">${x.copy || ''}</div></li>`).join('')}</ul>
        ${left ? '' : '<div class="alldone">✓ All done for this war</div>'}
-       <div class="acts end"><button class="btn small act" id="copysteps">Copy steps as a checklist</button></div>`
+       <div class="hint">Tap a circle when done. In-game steps tick themselves.</div>`
     : '<div class="alldone">✓ Nothing to do for this war</div>');
-}
-function stepsAsText() {
-  return [...$('#steps').querySelectorAll('li')].map((li, i) => `${i + 1}. ` + (li.classList.contains('is-done') ? '✓ ' : '') + li.querySelector('.step-text').textContent.replace(/\s+/g, ' ').trim()).join('\n');
 }
 async function markAll(status, undo) {
   const ps = evaluate().filter(p => p.res.status === status && !p.gone && !(p.done && p.done.auto));
@@ -1011,7 +1006,7 @@ function copyText(text, btn) {
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(() => {
     const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
   });
-  const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = old, 1200);
+  const old = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = old, 1200);
 }
 
 function renderLog() {
@@ -1090,7 +1085,6 @@ $('#saverules').onclick = async () => {
 document.addEventListener('click', e => {
   const cs = e.target.closest('[data-copystep]');
   if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
-  if (e.target.id === 'copysteps') return copyText(stepsAsText(), e.target);
   const ma = e.target.closest('[data-markall]');
   if (ma) return markAll(ma.dataset.markall, !!ma.dataset.undo);
   const sd = e.target.closest('[data-stepdone]');
