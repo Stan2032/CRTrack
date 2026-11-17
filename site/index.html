@@ -129,14 +129,21 @@ span.tick { cursor: default; }
 .steps ol { margin: 0 0 8px; padding-left: 20px; }
 .steps li { margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
 .steps li:last-child { margin-bottom: 4px; }
-.steps li::marker { font-weight: 700; color: var(--muted); }
-.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; max-width: 420px; }
-.acts.end { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); max-width: none; }
-.acts.end .btn { grid-column: 1 / -1; justify-self: start; }
-.btn.act { width: 100%; text-align: center; border-radius: 8px; background: var(--card); padding: 8px 6px; }
+.steps li > .step-text { min-width: 0; }
+.steps ol { list-style: none; padding-left: 0; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 20px 1fr 140px; gap: 10px 10px; align-items: start; counter-increment: step; }
+.steps li::before { content: counter(step) "."; font-weight: 700; color: var(--muted); padding-top: 1px; }
+.steps li.is-done::before { content: "✓"; color: var(--green); }
+.steps li.is-done .step-text { opacity: .55; }
+.acts { display: flex; flex-direction: column; gap: 6px; }
+.acts.end { flex-direction: row; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.btn.act { width: 100%; text-align: center; border-radius: 8px; background: var(--card); padding: 7px 6px; font-size: 13px; }
 .acts.end .btn.act { width: auto; padding: 8px 14px; }
 .btn.act.copy { border-color: var(--blue); color: var(--blue); }
 .btn.act.mark { border-color: var(--green); color: var(--green); }
+.btn.act.mark.on { background: var(--green); color: #fff; }
+.act.state { display: block; text-align: center; font-size: 12px; color: var(--muted); padding: 7px 4px; border: 1px dashed var(--line); border-radius: 8px; }
+.act.state.done { color: var(--green); border: 1px solid var(--green); font-weight: 600; }
 .alldone { color: var(--green); font-weight: 600; }
 </style>
 </head>
@@ -944,51 +951,60 @@ async function requestUpdate() {
 
 // ---- Recommended steps: in-game actions first, then what to post ----
 let stepTexts = [];
+const STEP = id => ({ tag: 'STEP-' + id });
 function renderSteps(list, msgs) {
   stepTexts = [];
   const box = $('#steps');
   const latest = mode === 'end' ? model.season === model.latest : true;
-  const pending = s => list.filter(p => p.res.status === s && !(p.done && (p.done.auto || p.done.manual)) && !p.gone).map(p => p.name);
-  const copyBtns = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
-    stepTexts.push(m.text); const i = stepTexts.length - 1;
-    return `<button class="btn small act copy" data-copystep="${i}">Copy message${m.title.match(/\d+\/\d+$/) ? ' ' + m.title.match(/\d+\/\d+$/)[0] : ''}</button>`;
+  const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
+  const of = s => list.filter(p => p.res.status === s && (s === 'Kick' || !p.gone));
+  const names = a => a.map(p => esc(p.name)).join(', ');
+  const copy = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
+    stepTexts.push(m.text); const i = stepTexts.length - 1, part = m.title.match(/\d+\/\d+$/);
+    return `<button class="btn small act copy" data-copystep="${i}">Copy message${part ? ' ' + part[0] : ''}</button>`;
   }).join('');
-  const steps = [];   // [text, buttons]
-  const names = a => a.map(esc).join(', ');
-  const mark = st => `<button class="btn small act mark" data-markall="${st}">✓ Mark all done</button>`;
+  const steps = [];   // { text, copy, done, ctl }
+  const auto = (ps, verb) => ps.length && steps.push({ text: `In game, <b>${verb}</b>: ${names(ps)}`, done: ps.every(isDone),
+    ctl: ps.every(isDone) ? '<span class="act state done">✓ Done</span>' : '<span class="act state">Ticks itself when done in game</span>' });
+  const players = (ps, status, text, cp) => {
+    if (!ps.length) return;
+    const done = ps.every(isDone);
+    steps.push({ text, copy: cp, done, ctl: `<button class="btn small act mark ${done ? 'on' : ''}" data-markall="${status}" data-undo="${done ? 1 : ''}">${done ? '✓ Done' : 'Mark done'}</button>` });
+  };
+  const posted = (id, text, cp) => {
+    if (!cp) return;
+    const done = note('done', STEP(id)) === '1';
+    steps.push({ text, copy: cp, done, ctl: `<button class="btn small act mark ${done ? 'on' : ''}" data-stepdone="${id}">${done ? '✓ Done' : 'Mark done'}</button>` });
+  };
   if (mode === 'end' && latest) {
-    const k = pending('Kick'), d = pending('Demote'), pr = pending('Promote'), w = pending('Warn'), c = pending('Check'), rv = pending('Review');
-    if (k.length) steps.push([`In game, <b>kick</b>: ${names(k)}`, '']);
-    if (d.length) steps.push([`In game, <b>demote</b>: ${names(d)}`, '']);
-    if (pr.length) steps.push([`In game, <b>promote to Elder</b>: ${names(pr)}`, '']);
-    if (rv.length) steps.push([`<b>Decide with the other leaders</b>: ${names(rv)}`, '']);
-    const results = copyBtns('Results');
-    if (results && (k.length || d.length || pr.length)) steps.push(['Post the <b>results</b> in clan chat', results]);
-    if (w.length) steps.push([`Post the <b>first &amp; only warnings</b> for ${names(w)}`, copyBtns('First & only') + mark('Warn')]);
-    const boats = copyBtns('Boat');
-    if (boats && w.length) steps.push(['Post the <b>boat attack tip</b>', boats]);
-    if (c.length) steps.push([`Post the <b>check-in</b> for ${names(c)}`, copyBtns('Check') + mark('Check')]);
+    const k = of('Kick'), d = of('Demote'), pr = of('Promote'), w = of('Warn'), c = of('Check'), rv = of('Review');
+    auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder');
+    players(rv, 'Review', `<b>Decide with the other leaders</b>: ${names(rv)}`, '');
+    if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
+    players(w, 'Warn', `Post the <b>first &amp; only warnings</b> for ${names(w)}`, copy('First & only'));
+    if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
+    players(c, 'Check', `Post the <b>check-in</b> for ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
-    const out = list.filter(p => p.res.status === 'Out' && !p.gone);
-    const free = out.filter(p => p.res.today === 0).map(p => p.name);
-    if (free.length) steps.push([`Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`, '']);
-    const need = copyBtns('Still need');
-    if (need) steps.push(['Post the <b>reminder</b> for players who still need medals', need]);
+    const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
+    if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`, ctl: '' });
+    posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
-  box.innerHTML = `<div class="steps-head">Recommended</div>` + (steps.length
-    ? `<ol>${steps.map(([t, b]) => `<li><div class="step-text">${t}</div>${b ? `<div class="acts">${b}</div>` : ''}</li>`).join('')}</ol>
+  const left = steps.filter(x => !x.done).length;
+  box.innerHTML = `<div class="steps-head">Recommended <span class="count">${steps.length ? `${steps.length - left} of ${steps.length} done` : ''}</span></div>` + (steps.length
+    ? `<ol>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}"><div class="step-text">${x.text}</div><div class="acts">${x.copy || ''}${x.ctl || ''}</div></li>`).join('')}</ol>
+       ${left ? '' : '<div class="alldone">✓ All done for this war</div>'}
        <div class="acts end"><button class="btn small act" id="copysteps">Copy steps as a checklist</button></div>`
-    : '<div class="alldone">✓ All done for this war</div>');
+    : '<div class="alldone">✓ Nothing to do for this war</div>');
 }
 function stepsAsText() {
-  return [...$('#steps').querySelectorAll('li')].map((li, i) => `${i + 1}. ` + li.querySelector('.step-text').textContent.replace(/(Copy message( \d+\/\d+)?|✓ Mark all done)/g, '').replace(/\s+/g, ' ').trim()).join('\n');
+  return [...$('#steps').querySelectorAll('li')].map((li, i) => `${i + 1}. ` + (li.classList.contains('is-done') ? '✓ ' : '') + li.querySelector('.step-text').textContent.replace(/\s+/g, ' ').trim()).join('\n');
 }
-async function markAll(status) {
-  const ps = evaluate().filter(p => p.res.status === status && !p.gone && !(p.done && p.done.manual));
-  const items = ps.map(p => ({ week: weekKey(), tag: p.tag, kind: 'done', value: '1' }));
+async function markAll(status, undo) {
+  const ps = evaluate().filter(p => p.res.status === status && !p.gone && !(p.done && p.done.auto));
+  const items = ps.map(p => ({ week: weekKey(), tag: p.tag, kind: 'done', value: undo ? null : '1' }));
   const shared = await postNotes(items);
-  if (!shared) for (const i of items) local.notes[`done|${i.week}|${i.tag}`] = '1';
+  if (!shared) for (const i of items) { const k = `done|${i.week}|${i.tag}`; if (undo) delete local.notes[k]; else local.notes[k] = '1'; }
   saveLocal(); render(); say(shared ? 'Saved for everyone' : 'Saved on this device');
 }
 function copyText(text, btn) {
@@ -1076,7 +1092,9 @@ document.addEventListener('click', e => {
   if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
   if (e.target.id === 'copysteps') return copyText(stepsAsText(), e.target);
   const ma = e.target.closest('[data-markall]');
-  if (ma) return markAll(ma.dataset.markall);
+  if (ma) return markAll(ma.dataset.markall, !!ma.dataset.undo);
+  const sd = e.target.closest('[data-stepdone]');
+  if (sd) { const st = STEP(sd.dataset.stepdone); return setNote('done', st, note('done', st) === '1' ? 'Auto' : '1'); }
   const d = e.target.closest('[data-done]');
   if (d) { const p = model.players.find(x => x.tag === d.dataset.done); setNote('done', p, note('done', p) === '1' ? 'Auto' : '1'); return; }
   const m = e.target.closest('[data-more]');
