@@ -1,6 +1,9 @@
 # Clan War Audit
 
-One HTML file. Works for any Clash Royale clan. Runs on your device, with no account and no server.
+Clash Royale clan war audit for leaders: who to kick, demote, warn, check on or promote after each war, with clan chat
+messages ready to paste, live battle-day tracking, history and forecasts, phone alerts, and a Discord bot. Works for any
+clan. Hosted free on Cloudflare (**[setup](docs/SETUP.md)**); the page also works on its own with your own API key or
+RoyaleAPI CSVs.
 
 ## Use
 
@@ -29,11 +32,11 @@ left today, their forecast, their war history and consistency, how they play, an
 
 ## Discord
 
-A bot run by the same Worker. Members: `/link #TAG`, `/me` (a full personal war report), `/stats` (clan stats), `/away` (going away: leaders see it, no automatic kick),
+A bot run by the same Worker ([setup](docs/SETUP.md#5-discord-bot)). Members: `/link #TAG`, `/me` (a full personal war report), `/stats` (clan stats), `/away` (going away: leaders see it, no automatic kick),
 `/remind` (private message when a battle day is ending with decks left). Leaders: `/post-here` in each channel to choose
 what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only to-do list with tick buttons,
 rules, how to link, a clan stats board), `/setup`, `/sync`, `/todo`, `/player #TAG`, `/check #TAG` (someone applying). Roles and nicknames
-follow the game. Setup steps are in `docs/HANDOFF.md`.
+follow the game.
 
 ## Stats and forecasts
 
@@ -55,22 +58,10 @@ Every 15 minutes on battle days (twice a day on training days) the site saves th
 - **All past wars**, beyond the API's last 10
 - **Shared choices**: join days, changes, done ticks and results are the same for every leader (needs the leader code)
 
-## Share it (Cloudflare Workers, free)
+## Set it up
 
-Gives you a link like `https://crtrack.<you>.workers.dev/#PPCCR8VU` that anyone can open. Nobody else needs a key.
-
-1. Cloudflare → **Workers & Pages** → **Create** → **Import a repository** → `CRTrack`.
-2. Leave the defaults (build command empty, deploy command `npx wrangler deploy`). Deploy.
-3. Open the Worker → **Settings → Variables and Secrets** → **Add**:
-   - `CR_API_KEY` (type **Secret**): your key from developer.clashroyale.com, allowed IP `45.79.218.79`
-   - `ALLOWED_CLANS` (type Text, optional): e.g. `PPCCR8VU`, so the link only works for your clan
-   - `EDIT_KEY` (type **Secret**): a leader code you choose. Needed to save choices for everyone.
-4. Open the `workers.dev` link and send it. With a key on the site, the page hides key setup, fills in the clan (if `ALLOWED_CLANS` has one) and pulls on open.
-
-Only `site/` is published. Samples and notes stay private. Every push redeploys.
-To limit who can open the page, turn on **Cloudflare Access** for the Worker and allow only your emails.
-
-Join days and overrides are saved in each person's own browser, not shared.
+All setup (Clash Royale key, Cloudflare, leader codes, phone alerts, Discord bot, server roles and channels,
+troubleshooting) is in **[`docs/SETUP.md`](docs/SETUP.md)**. Free: Cloudflare Workers + D1.
 
 ## Rules
 
@@ -106,5 +97,6 @@ All numbers and switches can be changed.
 
 The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
 - `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources
+- `docs/SETUP.md`: setting it up, step by step
 - `docs/HANDOFF.md`: background, maths, and decisions so far
 - `docs/gemini/`: the earlier Gemini work, kept for reference

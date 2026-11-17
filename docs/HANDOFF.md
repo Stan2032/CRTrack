@@ -41,19 +41,12 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 Run all tests: `for t in check function history stats discord leaders; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
 (the GitHub workflow runs them too, but GitHub Actions is currently blocked by an account setting).
 
-## Cloudflare setup
+## Setup
 
-Worker `crtrack`, deployed by Workers Builds from the `main` branch (`wrangler.jsonc`, `keep_vars: true`).
-
-| Name | Type | What |
-|---|---|---|
-| `CR_API_KEY` | Secret | Clash Royale API key, allowed IP `45.79.218.79` (RoyaleAPI's proxy) |
-| `ALLOWED_CLANS` | Text | `PPCCR8VU`: only these clans can be used or tracked |
-| `EDIT_KEY` | Secret | Shared leader code |
-| `EDIT_KEYS` | Secret (optional) | Per-leader codes `Stan:xxx,Baki:yyy`, so logs show who |
-| `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID` | Secrets | Discord bot |
-| `DISCORD_GUILD_ID` | Text (optional) | Server id: commands appear instantly there |
-| `DB` | D1 binding | `crtrack-history`, id `513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe |
+Step by step (Cloudflare, secrets, leader codes, phone alerts, Discord app, server roles and channel permissions,
+commands, troubleshooting): **[`SETUP.md`](SETUP.md)**. Worker `crtrack`, deployed by Workers Builds from `main`
+(`wrangler.jsonc`: `keep_vars: true`, build runs `node worker/gen.mjs`). D1 `crtrack-history`
+(`513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe).
 
 ## Data and the schedule
 
@@ -144,12 +137,7 @@ themselves from the game; warnings, check-ins and decisions have buttons. Button
 page, and ticking on the page redraws the Discord list. Reads only `lookback + 2` wars of history (lite) to stay within
 the 10 ms CPU limit (~4 ms measured with 12 wars, 50 players, 2,000 events).
 
-Setup:
-1. discord.com/developers → New Application → Bot: copy the token. General Information: copy the Application ID and Public Key.
-2. Add Cloudflare secrets `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY` (and text `DISCORD_GUILD_ID`).
-3. General Information → Interactions Endpoint URL: `https://crtrack.stane203.workers.dev/api/discord`.
-4. OAuth2 → URL Generator: scopes `bot` + `applications.commands`; permissions Manage Roles, Manage Nicknames, View Channels, Send Messages, Embed Links, Attach Files, Pin Messages, Read Message History. Open the link to add the bot.
-5. In Discord: drag the bot's role **above** the clan roles. Leaders' page → Rules → **Register Discord commands** (with `DISCORD_GUILD_ID` set it also clears any older all-servers copy). Then `/setup`, `/sync`, and `/post-here` in each channel.
+Discord app and server setup: [`SETUP.md`](SETUP.md#5-discord-bot).
 
 ## Measured facts
 
