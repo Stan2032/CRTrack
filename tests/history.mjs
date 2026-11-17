@@ -141,7 +141,7 @@ console.log('History checks passed');
   state.members.items = state.members.items.filter(m => m.name !== 'Bob');
   await snapshotAll(env, { force: true, only: 'PPCCR8VU', now: Date.parse('2026-11-19T11:00:00.000Z') });
   const a = await latestAlerts(env, ['PPCCR8VU']);
-  assert.ok(a.some(x => x.title === 'Clan members changed' && /Bob/.test(x.body)), JSON.stringify(a));
+  assert.ok(a.some(x => x.title === 'Clan members changed' && /Bob/.test(x.body) && /spots open/.test(x.body)), JSON.stringify(a));
   globalThis.fetch = realFetch;
   console.log('Notification checks passed');
 }

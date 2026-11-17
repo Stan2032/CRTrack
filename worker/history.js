@@ -182,7 +182,7 @@ const list = (a, n = 6) => a.slice(0, n).map(x => String(x).replace(/<\/?c\d*>/g
 async function alertsFor(env, r, now) {
   if (!env.DB || r.firstRun) return;
   if (r.joined.length || r.left.length) {
-    const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`].filter(Boolean);
+    const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`, r.members < 50 && `${50 - r.members} spot${r.members === 49 ? '' : 's'} open`].filter(Boolean);
     await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
   }
   for (const w of r.wars) {
