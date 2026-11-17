@@ -56,10 +56,12 @@ Join days and overrides are saved in each person's own browser, not shared.
 |---|---|
 | Target | 1800 medals a week |
 | Late joiner | 450 per battle day left after joining, or used every deck |
-| Elder under | Demote |
-| Member under, 1st miss | Warn |
+| Elder under, 1st miss | First & only warning |
+| Elder under, 2nd miss in a row (or after a warning) | Demote |
+| Member under, 1st miss | First & only warning |
 | Member under, 2nd miss in a row or new | Kick |
-| Mostly boats (50%+, 8+ decks) | Warn |
+| Mostly boats (50%+, 8+ decks), incl. new members | First & only warning, with the boat attack tip |
+| Still on boats and under again after that | Kick (Elders: demote) |
 | Passed 5+ weeks in a row, now offline 3+ days | Check in |
 | Leader / co-leader under | Review |
 | Promote | Member, 6+ weeks, 1 miss max, avg 2300+ |

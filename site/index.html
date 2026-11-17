@@ -139,6 +139,9 @@ span.tick { cursor: default; }
 .tickbox.on::after { content: "✓"; color: #fff; font-size: 14px; font-weight: 700; line-height: 1; }
 .tickbox.auto { border-style: dashed; cursor: default; }
 .tickbox.auto.on { border-style: solid; }
+.pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.pill { font-size: 12.5px; padding: 2px 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+.pill.done { opacity: .5; text-decoration: line-through; }
 .copies { display: flex; flex-direction: column; gap: 6px; }
 .copybtn { border: 1px solid var(--blue); color: var(--blue); background: var(--card); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .steps .hint { margin-top: 2px; }
@@ -401,7 +404,13 @@ function judgeEnd(p, r, join, override) {
     else if (p.role === 'elder' && r.demoteElders) res = (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
       ? out('Demote', `Elder, second miss in a row`) : out('Warn', 'Elder, first miss');
     else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after their first & only warning');
-    else if (isBoater) res = out('Warn', `Played, but ${boatPct}% of decks on boats`);
+    else if (isBoater) {
+      // Boat attackers: a first & only warning; if they were warned (or under on boats) last war and still are, kick.
+      const prevBoats = p.prev && p.prev.decks && p.prev.boats != null && 100 * p.prev.boats / p.prev.decks >= r.boatShare;
+      const ignored = p.lastResult == null && p.prev && p.prev.fame < r.target && prevBoats;
+      res = ignored ? out('Kick', `Still on boats after last war's tip (${boatPct}% of decks), under again`)
+        : out('Warn', `${p.isNew ? 'New, ' : 'Played, but '}${boatPct}% of decks on boats`);
+    }
     else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
     else if (!p.prev) res = out('Kick', `Under ${r.target}, wasn't in the war before`);
@@ -956,13 +965,13 @@ function renderSteps(list, msgs) {
   const latest = mode === 'end' ? model.season === model.latest : true;
   const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
   const of = s => list.filter(p => p.res.status === s && (s === 'Kick' || !p.gone));
-  const names = a => a.map(p => esc(p.name)).join(', ');
+  const names = a => `<div class="pills">${a.map(p => `<span class="pill ${isDone(p) ? 'done' : ''}">${esc(p.name)}</span>`).join('')}</div>`;
   const copy = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
     stepTexts.push(m.text); const i = stepTexts.length - 1, part = m.title.match(/\d+\/\d+$/);
     return `<button class="copybtn" data-copystep="${i}">Copy${part ? ' ' + part[0] : ''}</button>`;
   }).join('');
   const steps = [];   // { text, copy, done, ctl }
-  const auto = (ps, verb) => ps.length && steps.push({ text: `In game, <b>${verb}</b>: ${names(ps)}`, done: ps.every(isDone),
+  const auto = (ps, verb) => ps.length && steps.push({ text: `In game, <b>${verb}</b> ${names(ps)}`, done: ps.every(isDone),
     tick: `<span class="tickbox auto ${ps.every(isDone) ? 'on' : ''}" title="${ps.every(isDone) ? 'Done in game' : 'Ticks itself when done in game'}" aria-label="${ps.every(isDone) ? 'Done' : 'Not done yet'}"></span>` });
   const players = (ps, status, text, cp) => {
     if (!ps.length) return;
@@ -977,14 +986,14 @@ function renderSteps(list, msgs) {
   if (mode === 'end' && latest) {
     const k = of('Kick'), d = of('Demote'), pr = of('Promote'), w = of('Warn'), c = of('Check'), rv = of('Review');
     auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder');
-    players(rv, 'Review', `<b>Decide with the other leaders</b>: ${names(rv)}`, '');
+    players(rv, 'Review', `<b>Decide with the other leaders</b> ${names(rv)}`, '');
     if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
-    players(w, 'Warn', `Post the <b>first &amp; only warnings</b> for ${names(w)}`, copy('First & only'));
+    players(w, 'Warn', `Post the <b>first &amp; only warnings</b> ${names(w)}`, copy('First & only'));
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
-    players(c, 'Check', `Post the <b>check-in</b> for ${names(c)}`, copy('Check'));
+    players(c, 'Check', `Post the <b>check-in</b> ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
-    if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today): ${names(free)}`, tick: '<span class="tickbox auto"></span>' });
+    if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today) ${names(free)}`, tick: '<span class="tickbox auto"></span>' });
     posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));

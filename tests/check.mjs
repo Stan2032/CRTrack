@@ -23,7 +23,7 @@ const res = Object.fromEntries(m.players.map(p => [p.name, L.judgeEnd(p, r, join
 const expect = {
   'Manny1': 'Kick', 'ty': 'Kick', 'bestgirlclasher': 'Kick',
   'notorious mike': 'Warn', 'Pirate Steve': 'Check',
-  'perc': 'Warn', 'boi in a jar': 'Warn', 'Mohammad nazari': 'Warn',
+  'perc': 'Kick', 'boi in a jar': 'Kick', 'Mohammad nazari': 'Warn',   // perc, boi: on boats and under 2 wars running (no saved warning in this test)
   'mattmk': 'Warn', 'Bob': 'Warn', 'Thomas king': 'Warn', 'Ninja': 'Warn',
   'brayyisaac': 'OK', '>FRXNCHY<': 'Excused', 'stuart': 'OK', 'Astin': 'OK',
   'Luke': 'Promote', 'Veiz': 'Promote', 'Marcus.B:)': 'Promote', 'Spud': 'Promote',
