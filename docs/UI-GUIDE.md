@@ -18,7 +18,7 @@ The rules this app's screens and wording follow, and where each comes from.
 | **Be consistent** | Each status has one name and one colour everywhere: chips, group headings, the Change menu, chat titles. |
 | **Provide feedback** / visibility of status | Done ticks; kicks, demotions and promotions tick themselves when the game shows them. Done rows fade and sink to the bottom of their group. |
 | **Provide feedback** (status line) | The status line says when data loaded, "Saved for everyone" or "Saved on this device", and how far back history goes. Training days say so, rather than showing an empty or wrong list. |
-| **Simple and natural dialogue** / minimalist design | One sentence summary ("To do: 6 final warnings, 1 check-in · 6 done") instead of coloured chips. Each player is two short lines: name and tick, then facts in words ("1450 medals · 9/16 decks") with no column labels. Menus live in the panel under the name. |
+| **Simple and natural dialogue** / minimalist design | One sentence summary ("To do: 6 first & only warnings, 1 check-in · 6 done") instead of coloured chips. Each player is two short lines: name and tick, then facts in words ("1450 medals · 9/16 decks") with no column labels. Menus live in the panel under the name. |
 | **Simple and natural dialogue** (layout) | Steps in the order they're used: Clan → Who to act on → Chat messages. Rarely used things (CSVs, Clan log, Rules) are folded. Passed and Excused groups are folded. No explanations unless needed to act. |
 | **Clearly marked exits** / user control | Any suggestion can be changed and changed back ("Suggested: …"). Reset rules. |
 | **Prevent errors** | Clan tag is checked (O→0). Saving shared data needs the leader code. Other clans are blocked on the hosted site. |
@@ -31,7 +31,7 @@ The rules this app's screens and wording follow, and where each comes from.
 |---|---|
 | Kick | Kick |
 | Demote | Demote |
-| Warn | Final warning |
+| Warn | First & only warning |
 | Check | Check on them |
 | Review | Leaders decide |
 | Promote | Promote to Elder |

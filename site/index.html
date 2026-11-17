@@ -112,6 +112,7 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 .tick { border: 1px solid var(--line); background: var(--soft); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .tick.done { background: transparent; border-color: var(--green); color: var(--green); }
 span.tick { cursor: default; }
+.toggle { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); margin-top: 4px; }
 .tick.wait { background: transparent; color: var(--muted); font-weight: 400; }
 .is-done .facts, .is-done .why, .is-done .name { opacity: .55; }
 .ask { margin-top: 6px; font-size: 13px; color: var(--blue); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -372,7 +373,7 @@ function judgeEnd(p, r, join, override) {
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', `Leader or co-leader under ${r.target}`);
     else if (p.role === 'elder' && r.demoteElders) res = (p.prev && p.prev.fame < r.target) || p.lastResult === 'Warn'
       ? out('Demote', `Elder, second miss in a row`) : out('Warn', 'Elder, first miss');
-    else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after final warning');
+    else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after their first & only warning');
     else if (isBoater) res = out('Warn', `Played, but ${boatPct}% of decks on boats`);
     else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
@@ -439,7 +440,7 @@ function chatEnd(list, r) {
     const rows = warn.map(x => ({ x, n: recent(x, r).length, m: missCount(x, r) }))
       .sort((a, b) => b.m - a.m || b.m / b.n - a.m / a.n)
       .map(({ x, n, m }) => `${x.name}: ${m}/${n} wks under`);
-    msgs.push({ title: 'Warnings', text: lines(`Final warnings (need ${r.target}+ next war):`, rows) });
+    msgs.push({ title: 'Warnings', text: lines(`First & only warnings (need ${r.target}+ next war):`, rows) });
   }
 
   const boats = list.map(x => ({ x, s: boatSwap(x.cur) })).filter(o => o.s && o.s.pvp > o.x.cur.fame);
@@ -606,6 +607,7 @@ const $ = s => document.querySelector(s);
 const PROXY = 'https://proxy.royaleapi.dev/v1';
 let data = { roster: [], log: [], race: [], history: [] };
 let model = null, mode = 'end', day = 4, source = '', hist = null, pickWeek = null;
+let showGone = get('cr-war-audit:showGone', false);
 let raceInfo = { week: null, day: 0, period: null };
 let local = { notes: {}, rules: {} };          // this device
 let settings = { key: '', tag: '', code: '' };
@@ -614,16 +616,16 @@ let codeOk = false;
 
 const RULE_LABELS = {
   target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
-  demoteElders: 'Elders: final warning first, demote on 2nd miss in a row', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
+  demoteElders: 'Elders: a first & only warning, then demote on 2nd miss in a row', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
   holdWeeks: 'Check on them: wars in a row at target', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
   promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
-const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'Final warning', Check: 'Check on them', Review: 'Leaders decide',
+const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'First & only warning', Check: 'Check on them', Review: 'Leaders decide',
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
 const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused', 'Left'];
 const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
 const AUTO_CHECKED = ['Kick', 'Demote', 'Promote'];   // the game shows these; no manual tick
-const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'final warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
+const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'first & only warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
 const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
 const FOLDED = ['OK', 'Excused', 'Safe', 'Left'];
 const JOIN = [['full', 'Joined before war'], ['1', 'Joined battle day 1'], ['2', 'Joined battle day 2'], ['3', 'Joined battle day 3'], ['4', 'Joined battle day 4'], ['excused', 'Excused this war']];
@@ -750,6 +752,13 @@ function evaluate() {
     // Gone: counts as a kick only if they left after the war ended (seen by the tracker); otherwise they just left.
     const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
     if (mode === 'end' && p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmtDate(p.leftAt) : 'Left during or before this war'; }
+    // A promotion or demotion seen in game after this war counts as this war's action, whatever was suggested.
+    if (mode === 'end' && !p.gone && model.endedAt) {
+      const after = (p.roleEvents || []).filter(e => e.at > model.endedAt).map(e => e.detail);
+      const promoted = after.some(d => /^member>(elder|coLeader)$/.test(d)), demoted = after.some(d => /^(elder>member|coLeader>(elder|member))$/.test(d));
+      if (promoted && res.status !== 'Promote') { res.status = 'Promote'; res.why = 'Promoted after this war'; }
+      if (demoted && res.status !== 'Demote') { res.status = 'Demote'; res.why = 'Demoted after this war'; }
+    }
     const done = mode === 'end' && ACTIONS.includes(res.status)
       ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p) === '1' } : null;
     return { ...p, join, joinAuto: !manual && !!auto, res, done };
@@ -843,7 +852,8 @@ function render() {
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
     $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
   }
-  const r = rules(), list = evaluate();
+  const r = rules(), all = evaluate(), goneCount = all.filter(p => p.gone).length;
+  const list = showGone ? all : all.filter(p => !p.gone);
   const groups = mode === 'end' ? GROUPS_END : GROUPS_LIVE;
   const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
   const sortKey = p => (isDone(p) ? 1e6 : 0) + (mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame);
@@ -854,7 +864,8 @@ function render() {
     const done = list.filter(isDone).length;
     const word = (n, s) => n + ' ' + VERB[s] + (n === 1 ? '' : 's');
     $('#chips').innerHTML = (todo.length ? `<b>To do:</b> ${todo.map(([s, n]) => `<a href="#g-${s}" class="s-${s}">${word(n, s)}</a>`).join(', ')}` : '<b>All done</b>')
-      + (done ? ` <span class="muted">· ${done} done</span>` : '');
+      + (done ? ` <span class="muted">· ${done} done</span>` : '')
+      + (goneCount ? `<label class="toggle"><input type="checkbox" id="showgone" ${showGone ? 'checked' : ''}> Show ${goneCount} who left the clan</label>` : '');
   } else {
     const out = list.filter(p => p.res.status === 'Out').length, need = list.filter(p => p.res.status === 'Need').length;
     $('#chips').innerHTML = `<a href="#g-Out" class="s-Out">${out} can't reach ${r.target}</a> · <a href="#g-Need" class="s-Need">${need} still need medals</a>`;
@@ -867,16 +878,16 @@ function render() {
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
-  const msgs = (mode === 'end' ? chatEnd(list.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
+  const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
       <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
   renderLog();
-  autoSave(list);
+  autoSave(all);
 }
-const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'Final warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
+const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'First & only warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
 
 function renderLog() {
   if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
@@ -963,6 +974,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, p = model && model.players.find(x => x.tag === (el.dataset.join || el.dataset.over));
+  if (el.id === 'showgone') { showGone = el.checked; put('cr-war-audit:showGone', showGone); render(); return; }
   if (el.id === 'week') { pickWeek = el.value === model.latest ? null : el.value; load(data.__rows, source); return; }
   if (el.dataset.join && p) setNote('join', p, el.value);
   if (el.dataset.over && p) setNote('over', p, el.value);

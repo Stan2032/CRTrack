@@ -11,7 +11,7 @@ Open the hosted link (or `site/index.html`), and it loads the clan. Then work do
    - **Last war**: who to kick, demote, warn, check on, or promote.
    - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
    - Each player: name, then medals and decks, then the reason. Dots show their recent wars (green = reached 1800).
-   - Kicks, demotions and promotions tick themselves once the game shows them. Final warnings and check-ins have **Mark done**.
+   - Kicks, demotions and promotions tick themselves once the game shows them. First & only warnings and check-ins have **Mark done** (they happen in clan chat, which the game's data doesn't include). People who've left are hidden unless you tick *Show … who left the clan*.
    - Tap a name for their history and to change the suggestion or join day.
    - Pick an earlier war to see what was decided and done. Results are remembered automatically.
 3. **Clan chat messages**: copy and paste.
