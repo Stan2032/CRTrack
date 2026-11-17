@@ -82,7 +82,19 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 .rule { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .rule input[type=number] { width: 80px; padding: 5px 8px; }
 .empty { color: var(--muted); padding: 10px 0; }
-.hidden { display: none !important; }
+.context { color: var(--muted); font-size: 13px; margin: 10px 0 8px; }
+#daywrap { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.hint { font-size: 12px; color: var(--muted); }
+.name { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--text); cursor: pointer; text-align: left; }
+.name:hover { text-decoration: underline; }
+.morewrap { grid-column: 1 / -1; }
+.more { font-size: 12px; color: var(--muted); background: var(--soft); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.weeks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; }
+.weeks .bad { color: var(--red); }
+.log .ev { font-size: 13px; padding: 4px 0; border-top: 1px solid var(--line); }
+.log .when { color: var(--muted); display: inline-block; min-width: 92px; }
+.btn.hidden, .hidden { display: none !important; }
 </style>
 </head>
 <body>
@@ -91,11 +103,12 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 <div id="sub"></div>
 
 <section class="step">
-  <h2><span class="n">1</span>Get data</h2>
+  <h2><span class="n">1</span>Clan</h2>
   <div class="row">
-    <label class="tagin"><span>#</span><input id="tag" placeholder="CLANTAG" autocomplete="off" spellcheck="false"></label>
-    <button class="btn main" id="pull">Pull</button>
+    <label class="tagin"><span>#</span><input id="tag" placeholder="CLANTAG" autocomplete="off" spellcheck="false" aria-label="Clan tag"></label>
+    <button class="btn main" id="pull">Load clan</button>
   </div>
+  <div class="status" id="status" role="status"></div>
   <details class="setup" id="other">
     <summary id="other-sum">Other ways: own key or CSVs</summary>
     <div id="setup">
@@ -104,37 +117,53 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
         <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
         <li>Paste the key here. It stays on this device.</li>
       </ol>
-      <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off"><button class="btn" id="savekey">Save</button></div>
+      <div class="row"><input id="key" type="password" class="grow" placeholder="API key" autocomplete="off" aria-label="API key"><button class="btn" id="savekey">Save key</button></div>
     </div>
     <div class="links" id="links" style="margin-top:10px"></div>
     <label class="drop" id="drop">Drop RoyaleAPI CSVs here
       <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
     </label>
   </details>
-  <div class="status" id="status"></div>
 </section>
 
 <section class="step">
-  <h2><span class="n">2</span>Actions
-    <span class="grow"></span>
-    <span class="seg"><button id="m-end" class="on">Week end</button><button id="m-live">Live</button></span>
-    <select id="day" class="hidden"><option value="1">Day 1</option><option value="2">Day 2</option><option value="3">Day 3</option><option value="4">Day 4</option></select>
-  </h2>
+  <h2><span class="n">2</span>Who to act on</h2>
+  <div class="row">
+    <span class="seg" role="tablist"><button id="m-end" class="on" role="tab">Last war</button><button id="m-live" role="tab">This war</button></span>
+    <label id="daywrap" class="hidden">Battle day
+      <select id="day"><option value="1">1 of 4</option><option value="2">2 of 4</option><option value="3">3 of 4</option><option value="4">4 of 4</option></select>
+    </label>
+  </div>
+  <div id="context" class="context"></div>
   <div class="chips" id="chips"></div>
-  <div id="groups"><div class="empty">No data yet</div></div>
+  <div id="groups"><div class="empty">Load a clan to start</div></div>
+  <div class="row foot hidden" id="savewrap">
+    <button class="btn" id="saveresults">Save results</button>
+    <span class="hint" id="savehint">So next war can spot repeat misses</span>
+  </div>
 </section>
 
 <section class="step">
-  <h2><span class="n">3</span>Chat</h2>
+  <h2><span class="n">3</span>Clan chat messages</h2>
   <div class="cards" id="cards"><div class="empty">Nothing yet</div></div>
 </section>
 
-<details class="step">
+<details class="step" id="logbox">
+  <summary>Clan log</summary>
+  <div id="log" class="log"><div class="empty">No history on this site</div></div>
+</details>
+
+<details class="step" id="rulesbox">
   <summary>Rules</summary>
   <div class="rules" id="rules"></div>
   <div class="row" style="margin-top:12px">
-    <button class="btn" id="reset">Reset</button>
-    <button class="btn" id="export">Save report</button>
+    <button class="btn" id="reset">Reset rules</button>
+    <button class="btn hidden" id="saverules">Save rules for everyone</button>
+    <button class="btn" id="export">Download report</button>
+  </div>
+  <div id="leader" class="hidden" style="margin-top:14px">
+    <div class="row"><input id="code" type="password" class="grow" placeholder="Leader code" autocomplete="off" aria-label="Leader code"><button class="btn" id="savecode">Use code</button></div>
+    <div class="hint" id="codehint">With the leader code, your changes are saved for everyone.</div>
   </div>
 </details>
 
@@ -154,6 +183,7 @@ const DEFAULT_RULES = {
   promoMisses: 1,    // max misses in that time
   promoAvg: 2300,    // average medals
   chatLimit: 250,
+  lookback: 10,      // weeks used for history stats
 };
 
 // War medal values (Clan Wars 2)
@@ -287,8 +317,9 @@ function boatSwap(w) {
   return { wins, losses, pvp: wins * MEDALS.winPvp + losses * MEDALS.loss };
 }
 
-function missCount(p, r) { return p.weeks.filter(w => w.fame < r.target).length; }
-function avgMedals(p) { return p.weeks.length ? Math.round(p.weeks.reduce((s, w) => s + w.fame, 0) / p.weeks.length) : 0; }
+const recent = (p, r) => p.weeks.slice(0, (r && r.lookback) || 10);
+function missCount(p, r) { return recent(p, r).filter(w => w.fame < r.target).length; }
+function avgMedals(p, r) { const w = recent(p, r); return w.length ? Math.round(w.reduce((s, x) => s + x.fame, 0) / w.length) : 0; }
 
 function judgeEnd(p, r, join, override) {
   const t = targetFor(join, r);
@@ -301,8 +332,8 @@ function judgeEnd(p, r, join, override) {
   if (!w) res = out('Excused', 'Not in last war');
   else if (t.excused) res = out('Excused', 'Excused');
   else if (w.fame >= t.medals || (t.late && r.effortNet && w.decks >= t.decks)) {
-    const n = p.weeks.length, miss = missCount(p, r), avg = avgMedals(p);
-    if (p.role === 'member' && n >= r.promoWeeks && miss <= r.promoMisses && avg >= r.promoAvg && boatPct < r.boatShare)
+    const n = recent(p, r).length, miss = missCount(p, r), avg = avgMedals(p, r);
+    if ((p.roleNow || p.role) === 'member' && n >= r.promoWeeks && miss <= r.promoMisses && avg >= r.promoAvg && boatPct < r.boatShare)
       res = out('Promote', `${n - miss}/${n} wks passed, avg ${avg}`);
     else res = out('OK', t.late ? `Late join, needed ${t.medals}` : '');
     if (boatPct >= 25) res.why = [res.why, `${boatPct}% boats`].filter(Boolean).join(' · ');
@@ -312,12 +343,19 @@ function judgeEnd(p, r, join, override) {
       res = out('Check', `Offline ${Math.floor(p.offlineDays)}d, passed ${streak} wks before`);
     else if (p.role === 'leader' || p.role === 'coLeader') res = out('Review', 'Leader/co-leader under');
     else if (p.role === 'elder' && r.demoteElders) res = out('Demote', 'Elder under');
+    else if (p.lastResult === 'Warn') res = out('Kick', 'Under again after final warning');
     else if (isBoater) res = out('Warn', `${boatPct}% boats`);
     else if (p.isNew) res = out('Kick', 'New, under');
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', '2nd miss in a row');
     else if (!p.prev) res = out('Kick', 'Under, not in war before');
     else res = out('Warn', '1st miss');
   }
+  if (w && p.days) {
+    const missed = p.days.map((d, i) => d === 0 ? i + 1 : null).filter(Boolean);
+    if (missed.length && missed.length < 4) res.why = [res.why, 'No decks day ' + missed.join(', ')].filter(Boolean).join(' · ');
+  }
+  if ((res.status === 'Demote' && p.roleNow && p.roleNow !== p.role) || (res.status === 'Promote' && p.roleNow && p.roleNow !== 'member'))
+    res.why = [res.why, 'done'].filter(Boolean).join(' · ');
   res.auto = res.status;
   if (override && override !== 'Auto') { res.status = override; res.why = 'Set by you' + (res.why ? ' · ' + res.why : ''); }
   res.boatPct = boatPct;
@@ -371,7 +409,7 @@ function chatEnd(list, r) {
 
   const warn = by('Warn');
   if (warn.length) {
-    const rows = warn.map(x => ({ x, n: x.weeks.length, m: missCount(x, r) }))
+    const rows = warn.map(x => ({ x, n: recent(x, r).length, m: missCount(x, r) }))
       .sort((a, b) => b.m - a.m || b.m / b.n - a.m / a.n)
       .map(({ x, n, m }) => `${x.name}: ${m}/${n} wks under`);
     msgs.push({ title: 'Warnings', text: lines(`Final warnings (need ${r.target}+ next war):`, rows) });
@@ -419,7 +457,9 @@ function apiToRows({ clan, members, race, log }) {
       season_key: key, clan_tag: ct, clan_name: cn, player_tag: x.tag, player_name: x.name,
       player_fame: x.fame, player_decks_used: x.decksUsed, player_boat_attacks: x.boatAttacks });
   }
-  return { roster, race: raceRows, log: logRows };
+  const last = (log?.items || [])[0];
+  const raceWeek = race && last ? `${race.sectionIndex > last.sectionIndex ? last.seasonId : last.seasonId + 1}-${race.sectionIndex + 1}` : null;
+  return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null };
 }
 
 // periodIndex: 0-2 training, 3-6 battle days 1-4 (repeats each week)
@@ -428,68 +468,175 @@ function raceDay(race) {
   return Math.min(4, Math.max(1, (race.periodIndex % 7) - 2));
 }
 
-if (typeof module !== 'undefined') module.exports = { apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+// ---- History from the site's /api/history ----
+const ms = s => parseTime(s);
+
+function historyLogRows(h) {
+  return (h.players || []).map(p => ({ season_key: p.week, clan_tag: h.clan, clan_name: '', player_tag: p.tag, player_name: p.name,
+    player_fame: p.fame, player_decks_used: p.decks, player_boat_attacks: p.boats }));
+}
+function mergeLog(primary, extra) {
+  const have = new Set(primary.map(r => r.season_key));
+  return primary.concat(extra.filter(r => !have.has(r.season_key)));
+}
+function battleStarts(h, week) {
+  return (h.periods || []).filter(x => x.week === week && x.type !== 'training').map(x => ms(x.first_seen)).sort((a, b) => a - b);
+}
+// Battle day a player joined on during `week`: 'full' (before battles), '1'-'4', or null if unknown.
+function autoJoin(h, week, tag) {
+  const all = (h.periods || []).filter(x => x.week === week).map(x => ms(x.first_seen));
+  if (!all.length) return null;
+  const starts = battleStarts(h, week);
+  const war = (h.wars || []).find(x => x.week === week);
+  const from = Math.min(...all), to = war ? ms(war.ended_at) : Infinity;
+  const joins = (h.events || []).filter(e => e.tag === tag && e.kind === 'join').map(e => ms(e.at)).filter(t => t >= from && t <= to);
+  if (!joins.length) return null;
+  const j = joins[joins.length - 1];
+  const day = starts.filter(t => t <= j).length;
+  return day ? String(day) : 'full';
+}
+function roleAt(h, tag, role, t) {
+  const later = (h.events || []).filter(e => e.tag === tag && e.kind === 'role' && ms(e.at) > t).sort((a, b) => ms(b.at) - ms(a.at));
+  for (const e of later) role = String(e.detail).split('>')[0];
+  return role;
+}
+function dayDecks(h, week, tag) {
+  const rows = (h.days || []).filter(d => d.week === week && d.tag === tag);
+  if (!rows.length) return null;
+  const out = [null, null, null, null];
+  for (const d of rows) out[d.day - 1] = d.today;
+  return out;
+}
+function joinedAt(h, tag) {
+  const e = (h.events || []).filter(x => x.tag === tag && (x.kind === 'join' || x.kind === 'seen'));
+  return e.length ? { at: ms(e[e.length - 1].at), seen: e[e.length - 1].kind === 'seen' } : null;
+}
+function notesMap(h) {
+  const m = {};
+  for (const n of h.notes || []) m[`${n.kind}|${n.week}|${n.tag}`] = n.value;
+  return m;
+}
+// Adds history facts to players: role at war end, auto join day, decks per day, last saved result.
+function applyHistory(model, h, liveWeek) {
+  if (!h) return model;
+  const notes = notesMap(h);
+  const war = (h.wars || []).find(x => x.week === model.season);
+  for (const p of model.players) {
+    p.roleNow = p.role;
+    if (war) p.role = roleAt(h, p.tag, p.role, ms(war.ended_at));
+    p.autoJoin = model.season ? autoJoin(h, model.season, p.tag) : null;
+    p.autoJoinLive = liveWeek ? autoJoin(h, liveWeek, p.tag) : null;
+    p.days = model.season ? dayDecks(h, model.season, p.tag) : null;
+    p.daysLive = liveWeek ? dayDecks(h, liveWeek, p.tag) : null;
+    p.joined = joinedAt(h, p.tag);
+    p.lastResult = model.prevSeason ? notes[`result|${model.prevSeason}|${p.tag}`] || null : null;
+  }
+  const real = (h.events || []).filter(e => e.kind !== 'seen');
+  model.history = {
+    since: (h.events || []).length ? Math.min(...h.events.map(e => ms(e.at))) : null,
+    weeks: (h.wars || []).length,
+    events: real.slice(-30).reverse(),
+    notes,
+    saved: !!model.season && Object.keys(notes).some(k => k.startsWith(`result|${model.season}|`)),
+  };
+  return model;
+}
+
+if (typeof module !== 'undefined') module.exports = { historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
 </script>
 <script>
 // ---- UI ----
 const $ = s => document.querySelector(s);
 const PROXY = 'https://proxy.royaleapi.dev/v1';
 let data = { roster: [], log: [], race: [], history: [] };
-let model = null, mode = 'end', day = 4, source = '';
-let store = { rules: { ...DEFAULT_RULES }, join: {}, over: {} };
-let settings = { key: '', tag: '' };
-let site = { key: false, clans: [] }; // what the hosting server offers
+let model = null, mode = 'end', day = 4, source = '', hist = null;
+let raceInfo = { week: null, day: 0, period: null };
+let local = { notes: {}, rules: {} };          // this device
+let settings = { key: '', tag: '', code: '' };
+let site = { key: false, clans: [], history: false, edit: false };
+let codeOk = false;
 
 const RULE_LABELS = {
-  target: 'Weekly medals', perDay: 'Late join, per day left', effortNet: 'Late join passes if all decks used',
-  demoteElders: 'Elders demoted, not kicked', spareBoats: 'Boat users warned, not kicked', boatShare: 'Boat user if boats % ≥',
-  holdWeeks: 'Check in: weeks passed in a row', holdOffline: 'Check in: days offline', promoWeeks: 'Promote: weeks in clan',
-  promoMisses: 'Promote: max misses', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length',
+  target: 'Weekly medals', perDay: 'Late joiner: medals per battle day left', effortNet: 'Late joiner passes if every deck used',
+  demoteElders: 'Elders who miss are demoted, not kicked', spareBoats: 'Boat attackers get a warning, not a kick', boatShare: 'Counts as boat attacker at % boats',
+  holdWeeks: 'Check on them: weeks passed in a row', holdOffline: 'Check on them: days offline', promoWeeks: 'Promote: weeks in clan',
+  promoMisses: 'Promote: most misses allowed', promoAvg: 'Promote: average medals', chatLimit: 'Chat message length', lookback: 'Weeks of history to use',
 };
-const GROUPS_END = [['Kick', 'Kick'], ['Demote', 'Demote'], ['Warn', 'Warn'], ['Check', 'Check in'], ['Review', 'Review'], ['Promote', 'Promote'], ['OK', 'OK'], ['Excused', 'Excused']];
-const GROUPS_LIVE = [['Out', "Can't make it"], ['Need', 'Still need'], ['Safe', 'Safe'], ['Excused', 'Excused']];
+const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'Final warning', Check: 'Check on them', Review: 'Leaders decide',
+  Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
+const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused'];
+const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
 const FOLDED = ['OK', 'Excused', 'Safe'];
-const JOIN = [['full', 'Joined: before'], ['1', 'Joined: day 1'], ['2', 'Joined: day 2'], ['3', 'Joined: day 3'], ['4', 'Joined: day 4'], ['excused', 'Excused']];
-const ROLE = { elder: 'Elder', coLeader: 'Co', leader: 'Leader' };
+const JOIN = [['full', 'Joined before war'], ['1', 'Joined battle day 1'], ['2', 'Joined battle day 2'], ['3', 'Joined battle day 3'], ['4', 'Joined battle day 4'], ['excused', 'Excused this war']];
+const ROLE = { elder: 'Elder', coLeader: 'Co-leader', leader: 'Leader' };
+const label = s => s === 'Out' ? `Can't reach ${rules().target}` : s === 'Safe' ? `Reached ${rules().target}` : LABEL[s] || s;
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
 function put(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+const fmtDate = t => t ? new Date(t).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-const storeKey = () => 'cr-war-audit:' + (model?.clan.tag || 'none');
-function loadStore() { const s = get(storeKey(), null); store = { join: {}, over: {}, ...(s || {}), rules: { ...DEFAULT_RULES, ...(s?.rules || {}) } }; }
-const saveStore = () => put(storeKey(), store);
-const pk = p => (mode === 'live' ? 'live' : (model.season || 'x')) + '|' + p.tag;
+// ---- choices: shared (server notes) with this-device fallback ----
+const localKey = () => 'cr-war-audit:' + (model?.clan.tag || 'none');
+function loadLocal() {
+  const s = get(localKey(), null) || {};
+  local = { notes: s.notes || {}, rules: s.rules || {} };
+  for (const [k, v] of Object.entries(s.join || {})) local.notes['join|' + k] ??= v;   // older format
+  for (const [k, v] of Object.entries(s.over || {})) local.notes['over|' + k] ??= v;
+}
+const saveLocal = () => put(localKey(), local);
+const serverNotes = () => model?.history?.notes || {};
+function rules() {
+  let shared = {};
+  try { shared = JSON.parse(serverNotes()['rules|*|*'] || '{}'); } catch (e) {}
+  return { ...DEFAULT_RULES, ...shared, ...local.rules };
+}
+const weekKey = () => mode === 'end' ? (model?.season || 'x') : (raceInfo.week || 'live');
+const nk = (kind, p) => `${kind}|${weekKey()}|${p.tag}`;
+const note = (kind, p) => local.notes[nk(kind, p)] ?? serverNotes()[nk(kind, p)];
+
+async function postNotes(items) {
+  if (!codeOk || !model) return false;
+  const r = await fetch('api/notes?clan=' + model.clan.tag, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ items }) });
+  if (!r.ok) return false;
+  for (const i of items) { const k = `${i.kind}|${i.week}|${i.tag}`; if (i.value == null) delete model.history.notes[k]; else model.history.notes[k] = i.value; }
+  return true;
+}
+async function setNote(kind, p, value) {
+  const k = nk(kind, p), v = value === 'Auto' ? null : value;
+  const shared = await postNotes([{ week: weekKey(), tag: p.tag, kind, value: v }]);
+  if (shared) delete local.notes[k]; else if (v == null) delete local.notes[k]; else local.notes[k] = v;
+  saveLocal(); render();
+  say(shared ? 'Saved for everyone' : 'Saved on this device');
+}
 
 function say(msg, err) { const el = $('#status'); el.textContent = msg; el.classList.toggle('err', !!err); }
-
 function cleanInputTag() { return $('#tag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'); }
-
 function setLinks() {
-  const t = cleanInputTag();
-  const base = 'https://royaleapi.com/clan/' + t;
+  const t = cleanInputTag(), base = 'https://royaleapi.com/clan/' + t;
   $('#links').innerHTML = VALID_TAG.test(t)
-    ? `CSVs: <a href="${base}" target="_blank" rel="noopener">Members</a> · <a href="${base}/war/log" target="_blank" rel="noopener">War log</a> · <a href="${base}/war/race" target="_blank" rel="noopener">Race</a>`
-    : '';
+    ? `Download CSVs: <a href="${base}" target="_blank" rel="noopener">Members</a> · <a href="${base}/war/log" target="_blank" rel="noopener">War log</a> · <a href="${base}/war/race" target="_blank" rel="noopener">Race</a>` : '';
 }
 
 function load(rows, src) {
   data = { roster: [], log: [], race: [], history: [], ...rows };
+  if (hist) data.log = mergeLog(data.log, historyLogRows(hist));
   model = build(data);
+  if (hist) applyHistory(model, hist, raceInfo.week);
   if (model.clan.tag) { $('#tag').value = model.clan.tag; settings.tag = model.clan.tag; put('cr-war-audit:settings', settings); setLinks(); }
-  loadStore();
+  loadLocal();
   source = src;
-  $('#sub').textContent = [model.clan.name, model.clan.tag && '#' + model.clan.tag, model.season && 'last war ' + model.season].filter(Boolean).join(' · ');
+  $('#sub').textContent = [model.clan.name, model.clan.tag && '#' + model.clan.tag].filter(Boolean).join(' · ');
   render();
 }
 
 async function pull() {
   const t = cleanInputTag();
   if (!VALID_TAG.test(t)) return say('Check the clan tag', true);
-  // Own key: call the proxy directly. No key on a hosted copy: use the site's /api (key kept on the server).
   const viaSite = !settings.key && site.key;
   if (!settings.key && !viaSite) { $('#other').open = true; $('#key').focus(); return say('Add an API key first', true); }
-  say('Pulling…');
+  say('Loading…');
   const call = async path => {
     const url = (viaSite ? 'api/v1' : PROXY) + '/clans/' + encodeURIComponent('#' + t) + path;
     const r = await fetch(url, viaSite ? {} : { headers: { Authorization: 'Bearer ' + settings.key } });
@@ -497,118 +644,173 @@ async function pull() {
     return r.json();
   };
   try {
-    const [clan, members, race, log] = await Promise.all([call(''), call('/members'), call('/currentriverrace'), call('/riverracelog?limit=10')]);
-    load(apiToRows({ clan, members, race, log }), 'api');
-    const d = raceDay(race);
-    if (d) { day = d; $('#day').value = d; setMode('live'); } else setMode('end');
-    say(`Pulled ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${d ? 'battle day ' + d : 'training days'}`);
+    const [clan, members, race, log, h] = await Promise.all([call(''), call('/members'), call('/currentriverrace'), call('/riverracelog?limit=10'),
+      site.history ? fetch('api/history?clan=' + t).then(r => r.ok ? r.json() : null).catch(() => null) : null]);
+    hist = h;
+    const rows = apiToRows({ clan, members, race, log });
+    raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod };
+    if (raceInfo.day) day = raceInfo.day;
+    load(rows, 'api');
+    setMode(raceInfo.day ? 'live' : 'end');
+    say('Updated ' + fmtTime(Date.now()) + (hist?.events?.length ? ' · history since ' + fmtDate(model.history.since) : ''));
   } catch (e) {
-    const msg = viaSite && e === 501 ? 'No key on this site. Add your own in pull setup.'
-      : viaSite && e === 403 ? 'Clan not allowed here, or key refused'
-      : e === 403 ? 'Key refused. Check the allowed IP in pull setup.'
-      : e === 404 ? (viaSite ? 'Clan not found, or this site has no pull' : 'Clan not found')
-      : typeof e === 'number' ? 'Error ' + e : "Couldn't connect";
+    const msg = viaSite && e === 501 ? 'This site has no key. Add your own below.'
+      : viaSite && e === 403 ? 'This site only works for its own clan'
+      : e === 403 ? 'Key refused. Check the allowed IP.'
+      : e === 404 ? 'Clan not found' : typeof e === 'number' ? 'Error ' + e : "Couldn't connect";
     say(msg, true);
     if (e === 403 || e === 501) $('#other').open = true;
   }
 }
 
 async function addFiles(files) {
-  const rows = { ...data };
-  if (source === 'api') Object.assign(rows, { roster: [], log: [], race: [], history: [] });
+  const rows = source === 'api' ? { roster: [], log: [], race: [], history: [] } : { ...data };
+  hist = null; raceInfo = { week: null, day: 0, period: null };
   const bad = [];
-  for (const f of files) {
-    const r = parseCSV(await f.text()), kind = detect(r);
-    if (kind) rows[kind] = r; else bad.push(f.name);
-  }
+  for (const f of files) { const r = parseCSV(await f.text()), kind = detect(r); if (kind) rows[kind] = r; else bad.push(f.name); }
   load(rows, 'csv');
-  if (rows.race.length && !rows.log.length && !rows.history.length) setMode('live');
   if (rows.race.length) { day = guessDay(model.players); $('#day').value = day; }
+  if (rows.race.length && !rows.log.length && !rows.history.length) setMode('live');
   const have = [['roster', 'Members'], ['log', 'War log'], ['race', 'Race']].map(([k, n]) => (rows[k].length ? '✓ ' : '✗ ') + n);
   say(have.join('   ') + (bad.length ? '   · not recognised: ' + bad.join(', ') : ''));
 }
 
 function evaluate() {
-  const r = store.rules;
+  const r = rules();
   return model.players.map(p => {
-    const join = store.join[pk(p)] || 'full';
-    const res = mode === 'end' ? judgeEnd(p, r, join, store.over[pk(p)]) : judgeLive(p, r, join, day);
-    return { ...p, join, res };
+    const manual = note('join', p);
+    const auto = mode === 'end' ? p.autoJoin : p.autoJoinLive;
+    const join = manual || auto || 'full';
+    const res = mode === 'end' ? judgeEnd(p, r, join, note('over', p)) : judgeLive(p, r, join, day);
+    return { ...p, join, joinAuto: !manual && !!auto, res };
   });
 }
 
+function more(p) {
+  const r = rules();
+  const weeks = p.weeks.slice(0, 20).map(w => `<span class="${w.fame < r.target ? 'bad' : ''}">${esc(w.key)}: ${w.fame}${w.decks < 16 ? ` (${w.decks} decks)` : ''}${w.boats ? ` · ${w.boats} boat` : ''}</span>`).join('');
+  const days = (mode === 'end' ? p.days : p.daysLive);
+  const lines = [];
+  if (p.joined) lines.push(p.joined.seen ? `In clan since at least ${fmtDate(p.joined.at)}` : `Joined ${fmtDate(p.joined.at)}`);
+  if (days) lines.push('Decks by battle day: ' + days.map(d => d == null ? '–' : d).join(' · '));
+  if (p.offlineDays != null) lines.push(`Last online ${p.offlineDays < 1 ? 'today' : Math.floor(p.offlineDays) + ' days ago'}`);
+  if (p.roleNow && p.roleNow !== p.role) lines.push(`Was ${p.role} at war end, now ${p.roleNow}`);
+  return `<div class="more">${lines.map(l => `<div>${esc(l)}</div>`).join('')}${weeks ? `<div class="weeks">${weeks}</div>` : ''}</div>`;
+}
+
 function row(p) {
-  const name = `<b>${esc(p.name)}</b>${ROLE[p.role] ? `<span class="role">${ROLE[p.role]}</span>` : ''}${p.isNew ? '<span class="new">NEW</span>' : ''}`;
-  const join = (p.isNew || p.join !== 'full')
-    ? `<select data-join="${esc(p.tag)}">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : '';
+  const r = rules();
+  const role = p.roleNow || p.role;
+  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${p.isNew ? '<span class="new">NEW</span>' : ''}`;
+  const why = [p.res.why, p.joinAuto && p.join !== 'full' ? JOIN.find(j => j[0] === p.join)[1].toLowerCase() : ''].filter(Boolean).join(' · ');
   const num = (v, l) => `<span>${v}<small>${l}</small></span>`;
-  let nums, ctl = join;
+  let nums, ctl = '';
+  if (p.isNew || p.join !== 'full' || note('join', p))
+    ctl += `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
   if (mode === 'end') {
-    const w = p.cur, n = p.weeks.length, miss = missCount(p, store.rules);
-    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks')
-      + num(n ? `${n - miss}/${n}` : '–', 'weeks ok');
-    const o = store.over[pk(p)] || 'Auto';
-    ctl += `<select data-over="${esc(p.tag)}" title="Change result">${['Auto', ...GROUPS_END.map(g => g[0])].map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>${s === 'Auto' ? 'Auto' : '→ ' + s}</option>`).join('')}</select>`;
+    const w = p.cur, n = recent(p, r).length, miss = missCount(p, r);
+    nums = num(w ? w.fame : '–', 'medals') + num(w ? `${w.decks}/16` : '–', w && w.boats ? `decks · ${w.boats} boat` : 'decks') + num(n ? `${n - miss}/${n}` : '–', 'weeks passed');
+    const o = note('over', p) || 'Auto';
+    ctl += `<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`;
   } else {
-    nums = num(p.res.fame, 'medals') + num(`${p.res.today}/4`, 'today') + num(p.res.need ? '+' + p.res.need : '–', 'need') + num(p.res.max, 'max left');
+    nums = num(p.res.fame, 'medals') + num(`${p.res.today}/4`, 'decks today') + num(p.res.need ? p.res.need : '–', 'still needs') + num(p.res.max, 'most possible');
   }
-  return `<div class="p"><div class="who">${name}<div class="why">${esc(p.res.why || '')}</div></div><div class="nums">${nums}</div><div class="ctl">${ctl}</div></div>`;
+  return `<div class="p"><div class="who"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)}</button>${tags}<div class="why">${esc(why)}</div></div>
+    <div class="nums">${nums}</div><div class="ctl">${ctl}</div><div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
+}
+
+function contextLine() {
+  if (!model) return '';
+  if (mode === 'end') {
+    const war = hist?.wars?.find(w => w.week === model.season);
+    return model.season ? `War ${model.season}${war && parseTime(war.ended_at) ? ' · ended ' + fmtDate(parseTime(war.ended_at)) : ''}` : 'No finished war found';
+  }
+  if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''} · training days. Battle days haven't started.`;
+  return `${raceInfo.week ? 'War ' + raceInfo.week + ' · ' : ''}battle day ${day} of 4`;
 }
 
 function render() {
   renderRules();
+  $('#daywrap').classList.toggle('hidden', !(mode === 'live' && source === 'csv'));
+  $('#savewrap').classList.toggle('hidden', !(model && mode === 'end' && model.season));
   if (!model || !model.players.length) return;
-  const list = evaluate();
+  $('#context').textContent = contextLine();
+  if (mode === 'live' && source === 'api' && !raceInfo.day) {
+    $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
+    $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
+  }
+  const r = rules(), list = evaluate();
   const groups = mode === 'end' ? GROUPS_END : GROUPS_LIVE;
   const sortKey = p => mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame;
-  const parts = groups.map(([s, label]) => [s, label, list.filter(p => p.res.status === s).sort((a, b) => sortKey(a) - sortKey(b))]).filter(g => g[2].length);
+  const parts = groups.map(s => [s, list.filter(p => p.res.status === s).sort((a, b) => sortKey(a) - sortKey(b))]).filter(g => g[1].length);
 
-  $('#chips').innerHTML = parts.map(([s, l, ps]) => `<a class="chip s-${s}" href="#g-${s}">${l} ${ps.length}</a>`).join('');
-  $('#groups').innerHTML = parts.map(([s, l, ps]) => {
-    const body = ps.map(row).join('');
-    return FOLDED.includes(s)
-      ? `<details class="group" id="g-${s}"><summary class="s-${s}">${l} · ${ps.length}</summary>${body}</details>`
-      : `<div class="group" id="g-${s}"><h3 class="s-${s}">${l} · ${ps.length}</h3>${body}</div>`;
+  $('#chips').innerHTML = parts.map(([s, ps]) => `<a class="chip s-${s}" href="#g-${s}">${esc(label(s))} ${ps.length}</a>`).join('');
+  $('#groups').innerHTML = parts.map(([s, ps]) => {
+    const body = ps.map(row).join(''), head = `${esc(label(s))} · ${ps.length}`;
+    return FOLDED.includes(s) ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
+      : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
-  const msgs = mode === 'end' ? chatEnd(list, store.rules) : chatLive(list, store.rules);
-  const lim = store.rules.chatLimit;
+  const saved = model.history?.saved;
+  $('#saveresults').textContent = saved ? 'Save results again' : 'Save results';
+  $('#savehint').textContent = !site.edit ? 'Saving needs a site with history' : !codeOk ? 'Needs the leader code (in Rules)' : saved ? 'Saved. Next war uses these.' : 'So next war can spot repeat misses';
+
+  const msgs = (mode === 'end' ? chatEnd(list, r) : chatLive(list, r)).map(m => ({ ...m, title: titleFor(m.title) }));
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
-      <b>${esc(m.title)}<span class="cnt ${m.text.length > lim ? 'over' : ''}" id="c${i}">${m.text.length}/${lim}</span></b>
-      <textarea data-i="${i}" rows="${m.text.split('\n').length + 1}">${esc(m.text)}</textarea>
+      <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
+      <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
       <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
+  renderLog();
+}
+const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'Final warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
+
+function renderLog() {
+  if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
+  const h = model.history, words = { join: 'joined', leave: 'left', role: 'role' };
+  const ev = h.events.map(e => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(e.at)))}</span> <b>${esc(e.name || e.tag)}</b> ${
+    e.kind === 'role' ? esc(String(e.detail).replace('>', ' → ')) : words[e.kind] || esc(e.kind)}</div>`).join('');
+  $('#log').innerHTML = `<div class="hint">${h.weeks} wars stored${h.since ? ' · tracking since ' + esc(fmtDate(h.since)) : ''}</div>${ev || '<div class="empty">No joins or leaves yet</div>'}`;
 }
 
-function fit(el) {
-  (el ? [el] : document.querySelectorAll('textarea')).forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; });
-}
+function fit(el) { (el ? [el] : document.querySelectorAll('textarea')).forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }); }
 
 function renderRules() {
-  const r = store.rules;
+  const r = rules();
   $('#rules').innerHTML = Object.keys(DEFAULT_RULES).map(k => `<label class="rule"><span>${RULE_LABELS[k]}</span>${
     typeof DEFAULT_RULES[k] === 'boolean' ? `<input type="checkbox" data-rule="${k}" ${r[k] ? 'checked' : ''}>`
       : `<input type="number" data-rule="${k}" value="${r[k]}">`}</label>`).join('');
+  $('#leader').classList.toggle('hidden', !site.edit);
+  $('#saverules').classList.toggle('hidden', !codeOk);
+  $('#codehint').textContent = codeOk ? 'Leader code accepted. Changes are saved for everyone.' : 'With the leader code, your changes are saved for everyone.';
 }
 
 function setMode(m) {
   mode = m;
   $('#m-end').classList.toggle('on', m === 'end'); $('#m-live').classList.toggle('on', m === 'live');
-  $('#day').classList.toggle('hidden', m !== 'live');
+  $('#m-end').setAttribute('aria-selected', m === 'end'); $('#m-live').setAttribute('aria-selected', m === 'live');
   render();
+}
+
+async function checkCode(code) {
+  if (!site.edit || !code || !settings.tag) return false;
+  try {
+    const r = await fetch('api/notes?clan=' + settings.tag, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': code }, body: '{"items":[]}' });
+    return r.ok;
+  } catch (e) { return false; }
 }
 
 function exportMd() {
   if (!model) return;
-  const list = evaluate();
-  const md = [`# War audit: ${model.clan.name} #${model.clan.tag} ${mode === 'end' ? model.season || '' : 'live, day ' + day}`.trim(), '',
+  const list = evaluate(), r = rules();
+  const md = [`# War audit: ${model.clan.name} #${model.clan.tag} · ${contextLine()}`, '',
     '| Player | Role | Result | Why |', '|---|---|---|---|',
-    ...list.map(p => `| ${p.name} | ${p.role} | ${p.res.status} | ${p.res.why || ''} |`),
-    '', '## Chat', '', ...(mode === 'end' ? chatEnd(list, store.rules) : chatLive(list, store.rules)).map(m => '```\n' + m.text + '\n```'),
+    ...list.map(p => `| ${p.name} | ${p.role} | ${label(p.res.status)} | ${p.res.why || ''} |`),
+    '', '## Chat', '', ...(mode === 'end' ? chatEnd(list, r) : chatLive(list, r)).map(m => '```\n' + m.text + '\n```'),
   ].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
-  a.download = `war-audit-${model.clan.tag || 'clan'}-${mode === 'end' ? model.season || 'week' : 'live'}.md`; a.click();
+  a.download = `war-audit-${model.clan.tag || 'clan'}-${weekKey()}.md`; a.click();
 }
 
 // events
@@ -624,7 +826,28 @@ $('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-w
 $('#m-end').onclick = () => setMode('end');
 $('#m-live').onclick = () => setMode('live');
 $('#day').onchange = e => { day = +e.target.value; render(); };
+$('#saveresults').onclick = async () => {
+  if (!codeOk) { $('#rulesbox').open = true; $('#code').focus(); return say('Enter the leader code to save', true); }
+  const items = evaluate().map(p => ({ week: model.season, tag: p.tag, kind: 'result', value: p.res.status }));
+  const ok = await postNotes(items);
+  say(ok ? 'Results saved for everyone' : 'Saving failed', !ok);
+  if (!ok) return;
+  model.history.saved = true; render();
+};
+$('#savecode').onclick = async () => {
+  const c = $('#code').value.trim();
+  codeOk = await checkCode(c);
+  settings.code = codeOk ? c : ''; put('cr-war-audit:settings', settings);
+  say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render();
+};
+$('#saverules').onclick = async () => {
+  const ok = await postNotes([{ week: '*', tag: '*', kind: 'rules', value: JSON.stringify(rules()) }]);
+  if (ok) { local.rules = {}; saveLocal(); }
+  say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
+};
 document.addEventListener('click', e => {
+  const m = e.target.closest('[data-more]');
+  if (m) { const box = document.getElementById('m-' + m.dataset.more); box.classList.toggle('hidden'); m.setAttribute('aria-expanded', !box.classList.contains('hidden')); }
   const c = e.target.closest('[data-copy]');
   if (!c) return;
   const t = document.querySelector(`textarea[data-i="${c.dataset.copy}"]`);
@@ -633,32 +856,30 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, p = model && model.players.find(x => x.tag === (el.dataset.join || el.dataset.over));
-  if (el.dataset.join && p) { store.join[pk(p)] = el.value; saveStore(); render(); }
-  if (el.dataset.over && p) { store.over[pk(p)] = el.value; saveStore(); render(); }
-  if (el.dataset.rule) { store.rules[el.dataset.rule] = el.type === 'checkbox' ? el.checked : +el.value; saveStore(); render(); }
+  if (el.dataset.join && p) setNote('join', p, el.value);
+  if (el.dataset.over && p) setNote('over', p, el.value);
+  if (el.dataset.rule) { local.rules[el.dataset.rule] = el.type === 'checkbox' ? el.checked : +el.value; saveLocal(); render(); say(codeOk ? 'Changed here. Tap "Save rules for everyone" to share.' : 'Saved on this device'); }
 });
 document.addEventListener('input', e => {
   if (e.target.dataset.i == null) return;
-  const n = e.target.value.length, c = $('#c' + e.target.dataset.i), lim = store.rules.chatLimit;
+  const n = e.target.value.length, c = $('#c' + e.target.dataset.i), lim = rules().chatLimit;
   c.textContent = `${n}/${lim}`; c.classList.toggle('over', n > lim); fit(e.target);
 });
 window.addEventListener('resize', () => fit());
-$('#reset').onclick = () => { store.rules = { ...DEFAULT_RULES }; saveStore(); render(); };
+$('#reset').onclick = () => { local.rules = {}; saveLocal(); render(); say('Rules reset on this device'); };
 $('#export').onclick = exportMd;
 
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
 $('#key').value = settings.key || '';
 (async () => {
   if (/^https?:$/.test(location.protocol)) {
-    try { const r = await fetch('api/status'); if (r.ok) site = await r.json(); } catch (e) {}
+    try { const r = await fetch('api/status'); if (r.ok) site = { ...site, ...(await r.json()) }; } catch (e) {}
   }
-  if (site.key) {
-    $('#setup').classList.add('hidden');
-    $('#other-sum').textContent = 'Use CSVs instead';
-  }
+  if (site.key) { $('#setup').classList.add('hidden'); $('#other-sum').textContent = 'Use CSVs instead'; }
   const hashTag = location.hash.replace(/^#/, '');
   $('#tag').value = hashTag || settings.tag || (site.clans.length === 1 ? site.clans[0] : '');
   setLinks();
+  if (settings.code) { settings.tag ||= cleanInputTag(); codeOk = await checkCode(settings.code); $('#code').value = codeOk ? settings.code : ''; }
   renderRules();
   if ((settings.key || site.key) && VALID_TAG.test(cleanInputTag())) pull();
 })();

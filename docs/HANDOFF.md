@@ -40,6 +40,24 @@ Hosted on Cloudflare Workers (`wrangler.jsonc`, `worker/index.js` serves `site/`
 
 Live at `https://crtrack.stane203.workers.dev` (Workers Builds from this repo; `CR_API_KEY` secret and `ALLOWED_CLANS=PPCCR8VU` set in the dashboard; `keep_vars` stops deploys wiping them).
 
+## History (D1)
+
+Database `crtrack-history` (id `513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe), bound as `DB`.
+A cron every 15 minutes (`worker/history.js`, `snapshot()`) saves, for each clan in `TRACK_CLANS` or `ALLOWED_CLANS`:
+
+| Table | What |
+|---|---|
+| `members` | current members, role, last online |
+| `member_events` | `seen` (first sighting), `join`, `leave`, `role` (`member>elder`), with time |
+| `wars`, `war_players` | every finished war, kept forever |
+| `periods` | when each training / battle day was first seen (used to tell which battle day someone joined on) |
+| `race_days` | each player's decks/medals per battle day (last value before the day reset) |
+| `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `rules` |
+
+Free plan limits per run: 50 queries and 10 ms CPU. Writes use one multi-row statement per table, with values inlined via `q()` (escapes quotes).
+Seeded on 17 Nov 2026 with the 16 Nov roster (as `seen`) and Stan's 138-2 calls (join days, changes, results).
+Writing notes needs the `EDIT_KEY` secret sent as `X-Edit-Key`. The page calls it the "leader code".
+
 ## Data (RoyaleAPI CSV exports)
 
 Detected by column names, so file names don't matter.

@@ -8,5 +8,10 @@
     "directory": "./site",
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
-  }
+  },
+  // History store. Snapshots of members and the current race every 15 minutes.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "crtrack-history", "database_id": "513fad6e-908f-4a83-b3c4-b142df48b364" }
+  ],
+  "triggers": { "crons": ["*/15 * * * *"] }
 }

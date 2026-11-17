@@ -4,22 +4,31 @@ One HTML file. Works for any Clash Royale clan. Runs on your device, with no acc
 
 ## Use
 
-Open `site/index.html` in a browser (or your hosted link), type the clan tag, then either:
+Open the hosted link (or `site/index.html`), and it loads the clan. Then work down the page:
 
-- **Pull**: gets everything automatically. One-time setup: make a free key at
-  [developer.clashroyale.com](https://developer.clashroyale.com) with allowed IP `45.79.218.79`
-  ([RoyaleAPI proxy](https://docs.royaleapi.com/proxy.html)), then paste it under *Pull setup*.
-  The key stays in your browser.
-- **CSVs**: use the Members / War log / Race links to open RoyaleAPI, download the CSVs, and drop them in.
+1. **Clan**: type a tag and tap *Load clan* (automatic on the hosted link).
+2. **Who to act on**
+   - **Last war**: who to kick, demote, warn, check on, or promote.
+   - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
+   - Tap a name for their history. Use the menu on the right to change a suggestion.
+   - **Save results** after acting, so next war spots anyone who misses again after a final warning.
+3. **Clan chat messages**: copy and paste.
 
-Then work down the page:
+Folded at the bottom: **Clan log** (joins, leaves, promotions) and **Rules**.
 
-1. **Get data**
-2. **Actions**: grouped Kick → Demote → Warn → Check in → Review → Promote. Set *Joined* for NEW players who joined mid-war. Use the right-hand menu to override any result.
-   **Week end** checks the last finished war. **Live** shows, during battle days, who can't reach the target any more.
-3. **Chat**: copy the messages into clan chat.
+Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
+or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
-Opening the page with `#CLANTAG` on the end pulls straight away. Choices are saved in your browser for each clan.
+## History (hosted link only)
+
+Every 15 minutes the site saves the clan's members and this war's progress. Over time that gives:
+
+- **Join dates**, so a late joiner's battle day is filled in automatically
+- **Who left, joined, was promoted or demoted, and when** (Clan log)
+- **Role at the end of each war**, so promoting someone after the war doesn't flag them for demotion
+- **Decks used each battle day**, e.g. "No decks day 3"
+- **All past wars**, beyond the API's last 10
+- **Shared choices**: join days, changes and saved results are the same for every leader (needs the leader code)
 
 ## Share it (Cloudflare Workers, free)
 
@@ -30,6 +39,7 @@ Gives you a link like `https://crtrack.<you>.workers.dev/#PPCCR8VU` that anyone 
 3. Open the Worker → **Settings → Variables and Secrets** → **Add**:
    - `CR_API_KEY` (type **Secret**): your key from developer.clashroyale.com, allowed IP `45.79.218.79`
    - `ALLOWED_CLANS` (type Text, optional): e.g. `PPCCR8VU`, so the link only works for your clan
+   - `EDIT_KEY` (type **Secret**): a leader code you choose. Needed to save choices for everyone.
 4. Open the `workers.dev` link and send it. With a key on the site, the page hides key setup, fills in the clan (if `ALLOWED_CLANS` has one) and pulls on open.
 
 Only `site/` is published. Samples and notes stay private. Every push redeploys.
@@ -54,9 +64,10 @@ Join days and overrides are saved in each person's own browser, not shared.
 ## Files
 
 - `site/index.html`: the app
-- `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key for Pull)
+- `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
 - `functions/api/`: the same for Cloudflare Pages, if used instead
 - `samples/`: real exports from #WINNING, week 138-2
-- `tests/`: `node tests/check.mjs` and `node tests/function.mjs`
+- `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs`
+- `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources
 - `docs/HANDOFF.md`: background, maths, and decisions so far
 - `docs/gemini/`: the earlier Gemini work, kept for reference
