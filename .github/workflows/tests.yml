@@ -16,5 +16,6 @@ jobs:
       - run: node tests/stats.mjs
       - run: node --no-warnings tests/discord.mjs
       - run: node --no-warnings tests/leaders.mjs
+      - run: node --no-warnings tests/extras.mjs
       - run: npm install --no-save playwright && npx playwright install --with-deps chromium
       - run: node tests/ui.mjs

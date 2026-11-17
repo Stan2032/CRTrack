@@ -5,12 +5,14 @@
 import { readMember, writeNotes, cr } from './history.js';
 import { reliability } from './stats.gen.js';
 import { meCard, statsBoard } from './cards.js';
+import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
 import { PUSH_SCHEMA } from './push.js';
 import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
 const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
-CREATE TABLE IF NOT EXISTS discord_reminders (guild TEXT, user_id TEXT, hours INTEGER, dm TEXT, PRIMARY KEY (guild, user_id));`;
+CREATE TABLE IF NOT EXISTS discord_reminders (guild TEXT, user_id TEXT, hours INTEGER, dm TEXT, PRIMARY KEY (guild, user_id));
+CREATE TABLE IF NOT EXISTS discord_digest (guild TEXT, user_id TEXT, dm TEXT, PRIMARY KEY (guild, user_id));`;
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
 const MANAGE_ROLES = 1n << 28n, ADMIN = 1n << 3n;  // who counts as a leader in Discord
@@ -56,6 +58,13 @@ export const COMMANDS = [
     { type: 6, name: 'user', description: 'Or a linked Discord member' }] },
   { name: 'check', description: 'Leaders: check someone who wants to join (war record, activity)', options: [
     { type: 3, name: 'tag', description: 'Their player tag, e.g. #ABC123', required: true }] },
+  { name: 'season', description: 'Season recap: placings, top 5, everyone at target every war, most improved', options: [
+    { type: 4, name: 'number', description: 'Season number (default: the latest)' },
+    { type: 5, name: 'share', description: 'Post it for everyone to see (default: only you)' }] },
+  { name: 'scout', description: 'The clans we\'re racing this war: their recent results vs ours' },
+  { name: 'digest', description: 'Leaders: a private weekly digest before battle days (warnings, close to Elder, slipping…)', options: [
+    { type: 5, name: 'on', description: 'On or off', required: true }] },
+  { name: 'backup', description: 'Leaders: post a backup file of the full history in the leaders\' channel now' },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
 ];
 
@@ -281,6 +290,41 @@ export async function handleDiscord(request, env, ctx) {
       later((async () => {
         const msg = await recruitCard(env, clan, tag).catch(e => /404/.test(String(e.message)) ? `#${tag}: player not found.` : `Couldn't check #${tag} right now.`);
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'season': {
+      let sid = Number(opt.number) || 0;
+      if (!sid) { const w = await env.DB.prepare('SELECT week FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(clan).first(); sid = w ? Number(String(w.week).split('-')[0]) : 0; }
+      const text = sid && await seasonRecap(env, clan, sid);
+      return Response.json(reply(text || `No wars saved for season ${sid || '?'}.`, !(text && opt.share)));
+    }
+    case 'scout': {
+      later((async () => {
+        const t = encodeURIComponent('#' + clan);
+        const race = await cr(env, `/clans/${t}/currentriverrace`).catch(() => null);
+        const rivals = (race?.clans || []).map(c => ({ tag: String(c.tag).replace('#', ''), name: c.name, score: c.clanScore || 0 }));
+        const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
+        const msg = await scoutRivals(env, clan, week, rivals).catch(() => null);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg || 'No race found right now.', allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'digest': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!opt.on) { await env.DB.prepare('DELETE FROM discord_digest WHERE guild = ? AND user_id = ?').bind(guild, user).run(); return Response.json(reply('Weekly digest off.')); }
+      const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
+      const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: '🗞️ Weekly digest on: you\'ll get it here on the last training day, before battle days start. Stop with `/digest on:False`.' }).then(() => true, () => false);
+      if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then try again.'));
+      await env.DB.prepare('INSERT OR REPLACE INTO discord_digest (guild, user_id, dm) VALUES (?, ?, ?)').bind(guild, user, dm).run();
+      return Response.json(reply('Done: the weekly digest will come to you privately on the last training day each week. I\'ve sent a test message.'));
+    }
+    case 'backup': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!chan(cfg, 'leaders')) return Response.json(reply('Choose the leaders\' channel first: go to it and run `/post-here` → **Leaders only**.'));
+      later((async () => {
+        const n2 = await postBackup(env, clan, guild).catch(e => `error: ${String(e.message || e).slice(0, 80)}`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: n2 === 1 ? `Backup posted in <#${chan(cfg, 'leaders')}>.` : `Couldn't post the backup (${n2}).` });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
@@ -595,6 +639,49 @@ export async function shoutOuts(env, clan, week, target) {
   const body = [`${now.slice(0, 3).map((x, i) => `${medal[i]} ${cleanName(x.name)} ${n(x.fame)}`).join(' · ')}`,
     streaks.length ? `🔥 ${streaks.join('\n🔥 ')}` : ''].filter(Boolean).join('\n');
   return discordPost(env, clan, `🏆 War ${week} shout-outs`, body, [], 'joins');
+}
+
+// Post a message to one job's channel in every server set up for this clan.
+export async function postToJob(env, clan, job, content) {
+  if (!discordReady(env) || !content) return 0;
+  await setupDB(env);
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) if (await postJob(env, cfg.guild, cfg, job, content).catch(() => null)) sent++;
+  return sent;
+}
+
+// The weekly digest: privately to leaders who asked (/digest); to the leaders' channel if nobody has.
+export async function sendDigest(env, clan) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const to = (await env.DB.prepare('SELECT dm FROM discord_digest WHERE guild = ?').bind(cfg.guild).all()).results;
+    if (!to.length && !chan(cfg, 'leaders')) continue;
+    const text = await leaderDigest(env, clan, cfg.guild);
+    if (to.length) { for (const x of to.slice(0, 10)) if (await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content: text, allowed_mentions: { parse: [] } }).then(() => true, () => false)) sent++; }
+    else if (await postJob(env, cfg.guild, cfg, 'leaders', text).catch(() => null)) sent++;
+  }
+  return sent;
+}
+
+// Monthly backup: the full history as a file in each leaders' channel (Discord keeps it).
+export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  const cfgs = (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'leaders') && (!onlyGuild || c.guild === onlyGuild));
+  if (!cfgs.length) return 0;
+  const f = await backupFile(env, clan, now);
+  if (f.size > 9.5 * 1024 * 1024) return 'too big for Discord (use the site\'s Download full history)';
+  let sent = 0;
+  for (const cfg of cfgs) {
+    const form = new FormData();
+    form.append('payload_json', JSON.stringify({ content: `🗄️ **Backup** of the full history: ${f.summary}. Keep it safe (it's also on the site: Rules → Download full history).`, allowed_mentions: { parse: [] }, attachments: [{ id: 0, filename: f.name }] }));
+    form.append('files[0]', new Blob([f.data], { type: 'application/gzip' }), f.name);
+    const r = await fetch(`${API}/channels/${chan(cfg, 'leaders')}/messages`, { method: 'POST', headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN }, body: form });
+    if (r.ok) sent++;
+  }
+  return sent;
 }
 
 // Re-write every posted stats board for this clan (after each war).

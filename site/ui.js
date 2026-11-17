@@ -66,7 +66,7 @@ function rulesExplained(r) {
   const chat = [
     `📜 War rules: ${n(r.target)}+ medals every war (play all 16 decks; 2 wins is enough). Joined mid-war? ${n(r.perDay)} per battle day left.`,
     `Miss once: first & only warning, until you hit ${n(r.target)}+ ${r.warnClear} wars in a row. Miss again before then: kicked${r.demoteElders ? ' (Elders demoted)' : ''}.`,
-    `Duels pay most, boats least 🚤❌ Away? Tell a leader 💬 ${r.promoWeeks}+ wars, max ${r.promoMisses} miss, avg ${n(r.promoAvg)}+ = Elder ⭐`,
+    `Duels pay most, boats least 🚤❌ Away? Tell a leader 💬 ${r.promoWeeks}+ wars, max ${r.promoMisses} miss, avg ${n(r.promoAvg)}+ gets Elder ⭐`,
   ].flatMap(t => split(t, r.chatLimit))
     // fewer messages: join parts while they still fit one chat message
     .reduce((acc, t) => { const last = acc[acc.length - 1]; if (last && last.length + 1 + t.length <= r.chatLimit) acc[acc.length - 1] = last + '\n' + t; else acc.push(t); return acc; }, []);

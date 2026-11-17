@@ -68,6 +68,12 @@ try {
   // Clan stats and the rules explainer open without errors
   await p.click('#statsbox summary'); await p.waitForTimeout(200); assert.match(await p.textContent('#statsbody'), /What stands out|Charts/);
   await p.click('#explainbox summary'); assert.match(await p.textContent('#explain'), /first & only warning/);
+  // Clan description: versions that fit in 128 characters; extra text is added where it fits.
+  assert.ok(await p.locator('#desccards .card').count() >= 2);
+  await p.fill('#descextra', 'Discord: dsc.gg/x');
+  assert.match(await p.textContent('#desccards'), /Discord: dsc\.gg\/x/);
+  for (const c of await p.locator('#desccards .cnt').allTextContents()) assert.ok(+c.split('/')[0] <= 128, c);
+  if (process.env.SHOT) { await p.evaluate(() => { const el = document.querySelector('#descextra'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); }); await p.screenshot({ path: process.env.SHOT }); }
   assert.deepEqual(p.errs, [], 'no page errors');
 
   // Members' page: own numbers only

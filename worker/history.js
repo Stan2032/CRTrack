@@ -3,7 +3,8 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts, updateStatsBoards } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup } from './discord.js';
+import { seasonRecap, scoutRivals } from './extras.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -154,6 +155,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   }
   return {
     clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
+    period: race.periodIndex, rivals: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, score: c.clanScore || 0 })),
     joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
     out, target, firstRun,
     wars: wars.map(w => {
@@ -228,6 +230,8 @@ async function alertsFor(env, r, now) {
     const sentW = await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
     await discordPost(env, r.clan, `🏁 War ${w.week} finished${place}${trophies}`, `${w.passed} of ${w.played} reached ${r.target}. Thanks all! ⚔️`, [], 'results');
     await shoutOuts(env, r.clan, w.week, r.target).catch(() => {});
+    // Last war of a season (the race has moved on to a new season): season recap.
+    if (r.week && r.week.split('-')[0] !== w.week.split('-')[0]) await postToJob(env, r.clan, 'results', await seasonRecap(env, r.clan, Number(w.week.split('-')[0])).catch(() => null)).catch(() => {});
   }
   for (const p of r.promoted || []) await discordPost(env, r.clan, `🎉 Congrats ${String(p.name).replace(/<\/?c\d*>/gi, '')} on ${p.role === 'coLeader' ? 'Co-leader' : 'Elder'}!`, p.role === 'elder' ? `Earned by hitting ${r.target}+ war after war. ⭐` : 'Thanks for everything you do for the clan. ⭐', [], 'joins');
   // Every battle day, in its last 4 hours: who still has decks to play.
@@ -268,6 +272,13 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
           out.push({ clan, todo: await postTodo(env, clan, null, true).catch(e => String(e.message || e)), stats: await updateStatsBoards(env, clan).catch(() => 0) });
           continue;
         }
+        // Last training day: the leaders' weekly digest, also in a run of its own.
+        const dig = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('digest:due:' + clan).first();
+        if (dig) {
+          await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('digest:due:' + clan).run();
+          out.push({ clan, digest: await sendDigest(env, clan).catch(e => String(e.message || e)) });
+          continue;
+        }
       }
       if (!force) {
         await env.DB.exec(SCHEMA);
@@ -276,6 +287,15 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
           (SELECT max(updated_at) FROM members WHERE clan = ?1) AS lastRun,
           (SELECT ended_at FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT 1) AS lastEnd`).bind(clan).first();
         const state = { lastType: st?.lastType, lastRun: st?.lastRun ? Date.parse(st.lastRun) : null, resetAt: st?.lastEnd ? ms(st.lastEnd) : null };
+        // Once a month, on a training day: a backup file of the full history to the leaders' channel (a run of its own).
+        const month = new Date(now).toISOString().slice(0, 7);
+        if (state.lastType === 'training' && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`backup:${clan}:${month}`).first())) {
+          await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`backup:${clan}:${month}`, String(now)).run();
+          const b = await postBackup(env, clan, null, now).catch(e => String(e.message || e));
+          out.push({ clan, backup: b });
+          if (b === 0) await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(`backup:${clan}:${month}`).run();   // nowhere to post yet
+          else continue;
+        }
         if (!shouldRun(state, now)) { out.push({ clan, skipped: 'training day' }); continue; }
       }
       const res = await snapshot(env, clan, new Date(now).toISOString());
@@ -284,6 +304,16 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
       if (res.changedTags?.length) await refreshTodo(env, clan, res.changedTags).catch(() => {});
       if (res.wars?.length) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('todo:due:' + clan, String(now)).run();
+      // A new race: scout the other clans once.
+      if (res.week && res.rivals?.length > 1 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`scout:${clan}:${res.week}`).first())) {
+        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${res.week}`, String(now)).run();
+        await postToJob(env, clan, 'war', await scoutRivals(env, clan, res.week, res.rivals).catch(() => null)).catch(() => {});
+      }
+      // Last training day: queue the weekly digest for the next run.
+      if (!res.day && res.week && res.period % 7 === 2 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`digest:${clan}:${res.week}`).first())) {
+        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`digest:${clan}:${res.week}`, '1').run();
+        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('digest:due:' + clan, '1').run();
+      }
       await warBoard(env, res, now).catch(() => {});
       // A new battle day began: summarise the one that ended. A war ended: summarise its day 4.
       if (res.day > 1 && res.prevDay === res.day - 1) await daySummary(env, clan, res.week, res.day - 1).catch(() => {});

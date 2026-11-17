@@ -274,6 +274,27 @@ function judgeEnd(p, r, join, override) {
   return res;
 }
 
+// In-game clan description (128 characters), from the rules: several versions, most detail first, all that fit.
+// Avoids "=" and ">" (the game's font draws them like ":" and ")"). `extra` (e.g. "Discord: abc") is added where it fits.
+function clanDescriptions(r, extra = '', limit = 128) {
+  const T = r.target, A = r.promoAvg, W = r.promoWeeks, x = String(extra || '').trim();
+  const kick = r.demoteElders ? 'kick (Elders demoted)' : 'kick';
+  const base = [
+    `⚔️ ${T}+ medals every war. Miss once: warning. Miss again: ${kick}. Elder: ${W} wars, avg ${A}+. Away? Tell a leader!`,
+    `⚔️ ${T}+ medals every war. Miss once: warning, again: kick. Elder: ${W} wars, avg ${A}+. Away? Tell a leader!`,
+    `⚔️ ${T}+ medals every war! 1 miss: warning. 2: kick. Elder: avg ${A}+ over ${W} wars. Away? Tell us.`,
+    `⚔️ War clan: ${T}+ medals every war. 1 miss: warning, 2: kick. Elder at avg ${A}+.`,
+    `⚔️ ${T}+ war medals every week. 1 miss: warning, 2: kick.`,
+  ];
+  const out = [];
+  for (const b of base) {
+    const t = x && (b + ' ' + x).length <= limit ? b + ' ' + x : b;
+    if (t.length <= limit && !/[=>]/.test(t) && !out.includes(t)) out.push(t);
+  }
+  if (x && !out.some(t => t.includes(x))) { const t = `⚔️ ${T}+ medals every war. ${x}`; if (t.length <= limit) out.push(t); }
+  return out.slice(0, 4);
+}
+
 // One player's after-war result, as the leaders' page shows it (the Discord bot uses the same).
 //   note(kind, tag): the shared choice for this war; past: looking back at an older war; fmt: date format.
 const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
@@ -568,4 +589,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

@@ -223,3 +223,4 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
 
 /* Leader code: hidden like a password, but not a password field (stops browser "save password" pop-ups). */
 .masked { -webkit-text-security: disc; text-security: disc; }
+#descextra { width: 100%; box-sizing: border-box; margin: 4px 0 8px; }

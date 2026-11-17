@@ -146,3 +146,11 @@ log('All checks passed');
   assert.deepEqual(outOfDate(), [], 'run: node worker/gen.mjs');
   log('Worker copy checks passed');
 }
+
+// Clan description: every version fits, none uses characters the game draws wrongly, rules show through.
+{
+  const ds = L.clanDescriptions({ ...L.DEFAULT_RULES, target: 2000, promoAvg: 2400 }, 'Discord: dsc.gg/abc');
+  assert.ok(ds.length >= 2 && ds.every(t => t.length <= 128 && !/[=>]/.test(t)));
+  assert.match(ds[0], /2000\+ medals every war/); assert.ok(ds.some(t => /avg 2400\+/.test(t)) && ds.some(t => t.includes('Discord: dsc.gg/abc')));
+  log('Clan description checks passed');
+}

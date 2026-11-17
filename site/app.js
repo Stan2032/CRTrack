@@ -555,8 +555,20 @@ function renderExplain() {
   explainTexts = chat;
   $('#explain').innerHTML = sections.map(([h, ps]) => `<h3>${h}</h3>${ps.filter(Boolean).map(x => `<p>${x}</p>`).join('')}`).join('')
     + `<h3>Post in clan chat</h3>${chat.map((t, i) => `<div class="card"><b>Part ${i + 1} of ${chat.length}<span class="cnt">${t.length}/${rules().chatLimit}</span></b><div class="quote">${esc(t)}</div><button class="copybtn" data-explain="${i}">Copy</button></div>`).join('')}
-       <div class="hint">Written from the current rules, so it updates if a rule changes.</div>`;
+       <div class="hint">Written from the current rules, so it updates if a rule changes.</div>
+       <h3>Clan description (in game, 128 characters)</h3>
+       <input id="descextra" class="grow" placeholder="Add something, e.g. your Discord link (optional)" aria-label="Extra text for the clan description" value="${esc(get('cr-war-audit:descextra', ''))}">
+       <div id="desccards"></div>`;
+  renderDesc();
 }
+let descTexts = [];
+function renderDesc() {
+  const box = $('#desccards'); if (!box) return;
+  descTexts = clanDescriptions(rules(), $('#descextra')?.value || '');
+  box.innerHTML = descTexts.map((t, i) => `<div class="card"><b>${i ? 'Shorter' : 'Most detail'}<span class="cnt">${t.length}/128</span></b><div class="quote">${esc(t)}</div><button class="copybtn" data-desc="${i}">Copy</button></div>`).join('')
+    + '<div class="hint">Clan → Edit → Description. If the game cuts it off, use a shorter one (emoji can count as 2).</div>';
+}
+document.addEventListener('input', e => { if (e.target.id === 'descextra') { put('cr-war-audit:descextra', e.target.value); renderDesc(); } });
 
 function renderLog() {
   if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
@@ -677,6 +689,8 @@ $('#saverules').onclick = async () => {
   say(ok ? 'Rules saved for everyone' : 'Saving failed', !ok); render();
 };
 document.addEventListener('click', e => {
+  const dz = e.target.closest('[data-desc]');
+  if (dz) return copyText(descTexts[+dz.dataset.desc], dz);
   const ex = e.target.closest('[data-explain]');
   if (ex) return copyText(explainTexts[+ex.dataset.explain], ex);
   const st = e.target.closest('[data-step]');

@@ -104,7 +104,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 14 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 18 commands in your server".
    (Do this again whenever new commands are added. If Discord shows commands twice, register again and reopen the app.)
 2. In Discord, anywhere: **`/setup`**. It finds the four roles and shows what goes where.
 3. **`/link #YOURTAG`** for yourself, then **`/sync`**.
@@ -119,12 +119,16 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | Anyone | `/link #TAG`, `/unlink` | Link your Discord to your player; role and nickname follow the game |
 | Anyone | `/me` | Your full war report (only you see it; `share` to post it) |
 | Anyone | `/stats` | Clan stats |
+| Anyone | `/season` | Season recap (latest, or `number`) |
+| Anyone | `/scout` | The clans we're racing: their recent results vs ours |
 | Anyone | `/away 3 holiday` | Away for 3 days: leaders see it, no automatic kick (`/away 0` = back) |
 | Anyone | `/remind 3` | Private message 3 hours before reset if you have decks left (`/remind 0` = off) |
 | Leaders | `/setup`, `/post-here`, `/sync` | Roles, channel jobs, update everyone's roles and nicknames |
 | Leaders | `/links`, `/linkuser @who #TAG` | Who's linked; link someone else |
 | Leaders | `/todo` | Post or refresh the after-war to-do list |
 | Leaders | `/player #TAG`, `/check #TAG` | A member's record; someone applying to join |
+| Leaders | `/digest on:True` | Weekly digest privately (last training day): warnings, close to Elder, slipping, away, not linked |
+| Leaders | `/backup` | Post a backup file of the full history in the leaders' channel now |
 
 "Leaders" means anyone with Manage Roles or Administrator in Discord.
 
@@ -138,6 +142,10 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | After each daily reset | Battle day summary (+/- % vs the day before) | Results |
 | War ends | Result; shout-outs (top 3, streaks); to-do list + clan chat messages ~15 min later; stats board refresh | Results, Welcomes, Leaders, Rules |
 | Someone joins / is promoted in game | Welcome / congrats; role and nickname updated | Welcomes |
+| New race starts | Rival scouting: each clan's last 5 wars vs ours | War |
+| Last training day | Leaders' weekly digest (DM to `/digest` leaders, else the leaders' channel) | DMs / Leaders |
+| Last war of a season | Season recap | Results |
+| Once a month (training day) | Backup file of the full history | Leaders |
 | Rules saved on the site | Rules message rewritten | Rules |
 | Ticks on the site or Discord | Each updates the other | Leaders |
 
@@ -148,7 +156,8 @@ Clan chat (fits the 256-character limit):
 > Join our Discord! Link with /link #YOURTAG to get your role. /me = your war report, /remind 3 = reminder before
 > reset, /away = tell leaders you're away.
 
-Clan description (128 characters): keep it to the rules; the game shows `=` like `:` and `>` like `)`.
+Clan description (128 characters): the site writes versions that fit, from your rules, under **Clan rules explained →
+Clan description** (add your Discord link there). Copy one into Clan → Edit → Description.
 
 ## 9. Troubleshooting
 

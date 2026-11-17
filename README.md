@@ -93,7 +93,7 @@ All numbers and switches can be changed.
 - `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `stats.js` for forecasts and stats, `app.js` for the screen)
 - `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
 - `samples/`: real exports from #WINNING, week 138-2
-- `tests/`: `check`, `function`, `history`, `stats`, `discord`, `leaders`, `ui` (run with `node tests/<name>.mjs`)
+- `tests/`: `check`, `function`, `history`, `stats`, `discord`, `leaders`, `extras`, `ui` (run with `node tests/<name>.mjs`)
 
 The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
 - `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources

@@ -31,6 +31,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/history.js` | Snapshots into D1, alerts, history and member reads, shared notes |
 | `worker/push.js` | Web Push (VAPID keys made on first use, kept in D1) |
 | `worker/discord.js` | Discord bot |
+| `worker/extras.js` | Season recap, rival scouting, weekly digest, monthly backup |
 | `worker/cards.js` | `/me` report and the clan stats board |
 | `worker/leaders.js` | After-war to-do list for the leaders' channel (decisions from `logic.gen.js`) |
 | `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
@@ -38,7 +39,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `samples/` | Real RoyaleAPI exports from 16 Nov 2026 (used by tests) |
 | `docs/gemini/` | The earlier Gemini work this replaced |
 
-Run all tests: `for t in check function history stats discord leaders; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
+Run all tests: `for t in check function history stats discord leaders extras; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
 (the GitHub workflow runs them too, but GitHub Actions is currently blocked by an account setting).
 
 ## Setup
@@ -129,6 +130,12 @@ after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (a
 last 8 wars as bars, pass-rate trend, most reliable, streaks, most improved, battle types, busiest hours, joins/leaves,
 top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
 `{clan, channels: {war, results, joins, leaders}, roles}`.
+
+**Also** (`worker/extras.js`): season recap when a war ends and the race has moved to a new season (and `/season`);
+rival scouting once per race from each rival's last 5 wars (`/scout`); the leaders' weekly digest on the last training
+day (queued, then sent in a run of its own; DM to `/digest` leaders, else the leaders' channel); a monthly backup file
+(gzipped full history, posted as an attachment, in a run of its own on a training day; `/backup`). Heavy jobs each get
+their own 15-minute run: to-do list, then digest, then backup.
 
 **Leaders' to-do list**: when a war ends, the next 15-minute run (a run of its own) works out the decisions with the
 page's own code (`worker/gen.mjs` copies `site/logic.js` / `site/stats.js` to `worker/*.gen.js` on every deploy; a test
