@@ -152,9 +152,9 @@ export function shouldRun({ lastType, lastRun, resetAt }, now) {
 
 const ms = s => { const m = String(s || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s); };
 
-export async function snapshotAll(env, { force = false, now = Date.now() } = {}) {
+export async function snapshotAll(env, { force = false, now = Date.now(), only = null } = {}) {
   const out = [];
-  for (const clan of trackedClans(env)) {
+  for (const clan of only ? [only] : trackedClans(env)) {
     try {
       if (!force) {
         await env.DB.exec(SCHEMA);
@@ -171,12 +171,22 @@ export async function snapshotAll(env, { force = false, now = Date.now() } = {})
   return out;
 }
 
+// On request from the page: anyone may ask, at most once every 5 minutes per clan.
+export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
+  await env.DB.exec(SCHEMA);
+  const r = await env.DB.prepare('SELECT max(updated_at) AS last FROM members WHERE clan = ?').bind(clan).first();
+  const last = r?.last ? Date.parse(r.last) : 0;
+  if (!isEditor && now - last < 5 * 60e3) return { status: 429, body: { reason: 'tooSoon', lastRun: r.last, retryAfter: Math.ceil((last + 5 * 60e3 - now) / 1000) } };
+  const res = await snapshotAll(env, { force: true, now, only: clan });
+  return res[0]?.error ? { status: 502, body: res[0] } : { status: 200, body: res[0] };
+}
+
 export async function readHistory(env, clan) {
   const db = env.DB;
   await db.exec(SCHEMA);
   const all = s => db.prepare(s).bind(clan).all().then(r => r.results);
   const [members, events, wars, players, periods, days, notes, stats, standings, battles] = await Promise.all([
-    all('SELECT tag,name,role,in_clan,first_seen,last_seen_game FROM members WHERE clan = ?'),
+    all('SELECT tag,name,role,in_clan,first_seen,last_seen_game,updated_at FROM members WHERE clan = ?'),
     all('SELECT tag,name,kind,detail,at FROM member_events WHERE clan = ? ORDER BY at'),
     all('SELECT week,ended_at,rank,fame,trophy_change FROM wars WHERE clan = ?'),
     all('SELECT week,tag,name,fame,decks,boats FROM war_players WHERE clan = ?'),
@@ -187,7 +197,8 @@ export async function readHistory(env, clan) {
     all('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?'),
     all('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?'),
   ]);
-  return { clan, members, events, wars, players, periods, days, notes, stats, standings, battles };
+  const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
+  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles };
 }
 
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done'];

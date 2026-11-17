@@ -12,6 +12,7 @@ function fakeD1() {
   const stmt = (sql, args = []) => ({
     bind: (...a) => stmt(sql, a),
     all: async () => { queries++; return { results: db.prepare(sql).all(...args) }; },
+    first: async () => { queries++; return db.prepare(sql).get(...args) ?? null; },
     run: async () => { queries++; db.prepare(sql).run(...args); return {}; },
   });
   return {
@@ -91,7 +92,11 @@ console.log('History checks passed');
 
 // schedule: training days run just after the daily reset and every 12 h; battle days always
 {
-  const { shouldRun } = await import('../worker/history.js');
+  const { shouldRun, requestSnapshot } = await import('../worker/history.js');
+  const rq = await requestSnapshot(env, 'PPCCR8VU', false, Date.parse('2026-11-19T10:02:00.000Z'));
+  assert.equal(rq.status, 429, 'too soon after last run');
+  assert.equal((await requestSnapshot(env, 'PPCCR8VU', false, Date.parse('2026-11-19T10:30:00.000Z'))).status, 200);
+  assert.ok((await readHistory(env, 'PPCCR8VU')).lastRun.startsWith('2026-11-19T10:30'));
   const reset = Date.UTC(2026, 10, 16, 9, 43), H = 3600e3;
   const at = (d, h, m) => Date.UTC(2026, 10, d, h, m);
   assert.equal(shouldRun({ lastType: 'warDay', lastRun: at(19, 9, 0), resetAt: reset }, at(19, 9, 15)), true);

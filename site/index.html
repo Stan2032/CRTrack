@@ -118,12 +118,17 @@ span.tick { cursor: default; }
 .ask { margin-top: 6px; font-size: 13px; color: var(--blue); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .more .row { margin-top: 6px; }
 #context { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
+.fresh { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted);
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: -6px 0 14px; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: .6; cursor: default; }
 </style>
 </head>
 <body>
 
 <h1>Clan War Audit</h1>
 <div id="sub"></div>
+<div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button></div>
 
 <section class="step">
   <h2><span class="n">1</span>Clan</h2>
@@ -885,9 +890,36 @@ function render() {
       <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
   renderLog();
+  renderFresh();
   autoSave(all);
 }
 const titleFor = t => t.replace(/^Update/, 'Results').replace(/^Warnings/, 'First & only warnings').replace(/^Boats/, 'Boat attacks').replace(/^Check in/, 'Check-ins').replace(/^Out/, "Can't reach target").replace(/^Still need/, 'Still need medals');
+
+// Last scheduled/requested pull, in UK time: DD-MM-YYYY HH:MM
+function ukTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    .formatToParts(d).map(x => [x.type, x.value]));
+  return `${p.day}-${p.month}-${p.year} ${p.hour}:${p.minute}`;
+}
+function renderFresh() {
+  const show = site.history && hist && hist.lastRun;
+  $('#fresh').classList.toggle('hidden', !show);
+  if (show) $('#lastpull').textContent = `Data last pulled: ${ukTime(hist.lastRun)} (UK time)`;
+}
+async function requestUpdate() {
+  const b = $('#refresh'), t = model?.clan.tag || cleanInputTag();
+  b.disabled = true; b.textContent = 'Updating…';
+  try {
+    const r = await fetch('api/snapshot?clan=' + t, { method: 'POST', headers: codeOk ? { 'X-Edit-Key': settings.code } : {} });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 429) say(`Updated less than 5 minutes ago. Try again in ${Math.ceil(j.retryAfter / 60)} min.`, true);
+    else if (!r.ok) say("Couldn't update right now", true);
+    else await pull();
+  } catch (e) { say("Couldn't connect", true); }
+  b.disabled = false; b.textContent = 'Request updated data';
+}
 
 function renderLog() {
   if (!model?.history) { $('#log').innerHTML = `<div class="empty">${site.history ? 'Nothing yet' : 'This site has no history'}</div>`; return; }
@@ -944,6 +976,7 @@ const drop = $('#drop');
 drop.addEventListener('drop', ev => { ev.preventDefault(); addFiles(ev.dataTransfer.files); });
 $('#pick').addEventListener('change', e => addFiles(e.target.files));
 $('#pull').onclick = pull;
+$('#refresh').onclick = requestUpdate;
 $('#tag').addEventListener('input', setLinks);
 $('#tag').addEventListener('keydown', e => { if (e.key === 'Enter') pull(); });
 $('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-war-audit:settings', settings); $('#other').open = false; say(settings.key ? 'Key saved' : 'Key removed'); };

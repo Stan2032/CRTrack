@@ -3,9 +3,9 @@
 //   GET  /api/v1/clans/%23TAG[/members|/currentriverrace|/riverracelog]  -> RoyaleAPI proxy with CR_API_KEY
 //   GET  /api/history?clan=TAG             stored history (needs D1 binding DB)
 //   POST /api/notes?clan=TAG               shared choices (needs EDIT_KEY in X-Edit-Key)
-//   POST /api/snapshot                     take a snapshot now (needs EDIT_KEY)
+//   POST /api/snapshot[?clan=TAG]          take a snapshot now (anyone: once per 5 min per clan; all clans needs EDIT_KEY)
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
-import { readHistory, writeNotes, snapshotAll } from './history.js';
+import { readHistory, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 
 const PROXY_PATH = /^v1\/clans\/%23[0289PYLQGRJCUV]{3,12}(\/(members|currentriverrace|riverracelog))?$/;
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
@@ -23,6 +23,13 @@ export async function handleApi(request, env) {
     if (!env.DB) return json({ reason: 'noHistory' }, 501);
     if (url.pathname === '/api/snapshot') {
       if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
+      const one = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
+      if (one) {
+        if (!clanOk(one)) return json({ reason: 'clanNotAllowed' }, 403);
+        if (!env.CR_API_KEY) return json({ reason: 'noServerKey' }, 501);
+        const r = await requestSnapshot(env, one, isEditor());
+        return json(r.body, r.status, 'no-store');
+      }
       if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);
       return json(await snapshotAll(env, { force: true }), 200);
     }

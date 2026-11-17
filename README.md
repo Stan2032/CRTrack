@@ -70,6 +70,8 @@ Join days and overrides are saved in each person's own browser, not shared.
 - `functions/api/`: the same for Cloudflare Pages, if used instead
 - `samples/`: real exports from #WINNING, week 138-2
 - `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs`
+
+The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
 - `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources
 - `docs/HANDOFF.md`: background, maths, and decisions so far
 - `docs/gemini/`: the earlier Gemini work, kept for reference
