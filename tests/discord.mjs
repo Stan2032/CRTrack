@@ -21,6 +21,7 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
+  if (/\/users\/@me\/channels$/.test(url)) return JSON.parse(opt.body).recipient_id === 'BLOCKED' ? new Response('{}', { status: 403 }) : Response.json({ id: 'DM-' + JSON.parse(opt.body).recipient_id });
   if (/\/channels\/(C|R|LC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
@@ -82,12 +83,28 @@ const msg = calls.find(c => /channels\/C\/messages/.test(c.url)).body;
 assert.match(msg.content, /<@U1> \(4 left\)/); assert.match(msg.content, /perc \(2 left\)/);
 assert.deepEqual(msg.allowed_mentions, { parse: [], users: ['U1'] });
 
+// /remind: checks a private message gets through, then DMs once per battle day when time is short.
+const { dmReminders } = await import('../worker/discord.js');
+calls.length = 0;
+assert.match(await text(await cmd('remind', [{ name: 'hours', value: 3 }])), /3 hours\*\* left/);
+assert.ok(calls.some(c => c.url.endsWith('/channels/DM-U1/messages')), 'test DM sent');
+await DB.prepare("INSERT INTO discord_links (guild, user_id, clan, tag) VALUES ('G', 'BLOCKED', 'PPCCR8VU', 'YVJRGLCC')").run();
+assert.match(await text(await cmd('remind', [{ name: 'hours', value: 3 }], member('BLOCKED'))), /can't send you private messages/);
+const leftNow = [{ tag: '2VJ9V2PV', name: 'Luke', left: 2 }];
+calls.length = 0;
+assert.equal(await dmReminders(env, 'PPCCR8VU', '138-3', 2, 5 * 3600e3, leftNow), 0, 'not yet: 5 hours left');
+assert.equal(await dmReminders(env, 'PPCCR8VU', '138-3', 2, 2.5 * 3600e3, leftNow, '09:43'), 1);
+assert.match(calls.find(c => c.url.endsWith('/channels/DM-U1/messages')).body.content, /Battle day 2 ends in about 3 hours \(09:43 UK\)[\s\S]*\*\*2 decks\*\*/);
+assert.equal(await dmReminders(env, 'PPCCR8VU', '138-3', 2, 1 * 3600e3, leftNow), 0, 'once per day');
+assert.equal(await dmReminders(env, 'PPCCR8VU', '138-3', 3, 1 * 3600e3, []), 0, 'all decks played: nothing');
+assert.match(await text(await cmd('remind', [{ name: 'hours', value: 0 }])), /Reminders off/);
+
 // Leaving the clan removes the clan role.
 await DB.prepare("UPDATE members SET in_clan = 0 WHERE tag = '2VJ9V2PV'").run();
 currentRoles = ['OTHER', 'RE'];
 calls.length = 0;
 await syncGuild(env, 'G', { roles: { member: 'RM', elder: 'RE' } }, 'PPCCR8VU');
-assert.deepEqual(calls.find(c => c.method === 'PATCH').body, { roles: ['OTHER'] });
+assert.deepEqual(calls.find(c => c.method === 'PATCH' && /members\/U1$/.test(c.url)).body, { roles: ['OTHER'] });
 
 // Live war board: posted once, then edited in place.
 calls.length = 0;

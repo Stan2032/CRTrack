@@ -7,7 +7,8 @@ import { PUSH_SCHEMA } from './push.js';
 import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
 const API = 'https://discord.com/api/v10';
-export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));`;
+export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
+CREATE TABLE IF NOT EXISTS discord_reminders (guild TEXT, user_id TEXT, hours INTEGER, dm TEXT, PRIMARY KEY (guild, user_id));`;
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
 const MANAGE_ROLES = 1n << 28n, ADMIN = 1n << 3n;  // who counts as a leader in Discord
@@ -22,6 +23,8 @@ export const COMMANDS = [
   { name: 'linkuser', description: 'Leaders: link someone else', options: [
     { type: 6, name: 'user', description: 'Discord member', required: true },
     { type: 3, name: 'tag', description: 'Their player tag', required: true }] },
+  { name: 'remind', description: 'Get a private message when a battle day is ending and you still have decks to play', options: [
+    { type: 4, name: 'hours', description: 'How many hours before the reset (0 = stop)', required: true, min_value: 0, max_value: 12 }] },
   { name: 'away', description: 'Going away? Tell the leaders (no kick for missing medals while away; leaders decide)', options: [
     { type: 4, name: 'days', description: 'How many days (0 = I\'m back)', required: true, min_value: 0, max_value: 21 },
     { type: 3, name: 'reason', description: 'Optional, e.g. holiday', max_length: 100 },
@@ -121,9 +124,10 @@ async function syncOne(env, guild, cfg, userId, m) {
   const want = m && m.in_clan ? cfg.roles[m.role] || cfg.roles.member : null;
   const cur = await dapi(env, 'GET', `/guilds/${guild}/members/${userId}`).catch(() => null);
   if (!cur) return;
-  const roles = cur.roles.filter(r => !clanRoles.includes(r)).concat(want ? [want] : []);
+  const has = Array.isArray(cur.roles) ? cur.roles : [];
+  const roles = has.filter(r => !clanRoles.includes(r)).concat(want ? [want] : []);
   const patch = {};
-  if (roles.slice().sort().join() !== cur.roles.slice().sort().join()) patch.roles = roles;
+  if (roles.slice().sort().join() !== has.slice().sort().join()) patch.roles = roles;
   const nick = m && m.in_clan ? cleanName(m.name).slice(0, 32) : null;
   if (nick && cur.nick !== nick) patch.nick = nick;
   if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
@@ -179,6 +183,21 @@ export async function handleDiscord(request, env, ctx) {
       const lw = m.weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))[0];
       if (lw) lines.push(`Last war (${lw.week}): ${lw.fame.toLocaleString()} medals ${lw.fame >= target ? '✅' : '❌'}`);
       return Response.json(reply(lines.join('\n')));
+    }
+    case 'remind': {
+      const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
+      if (!link) return Response.json(reply('Link your account first: `/link #YOURTAG`'));
+      const hours = Math.max(0, Math.min(12, Number(opt.hours) || 0));
+      if (!hours) {
+        await env.DB.prepare('DELETE FROM discord_reminders WHERE guild = ? AND user_id = ?').bind(guild, user).run();
+        return Response.json(reply('Reminders off.'));
+      }
+      // Check now that a private message gets through (it doesn't if they block DMs from server members).
+      const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
+      const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: `✅ Reminders on: I'll message you here when a battle day has ${hours} hour${hours === 1 ? '' : 's'} left and you still have decks to play. Stop with \`/remind 0\`.` }).then(() => true, () => false);
+      if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then run `/remind` again.'));
+      await env.DB.prepare('INSERT OR REPLACE INTO discord_reminders (guild, user_id, hours, dm) VALUES (?, ?, ?, ?)').bind(guild, user, hours, dm).run();
+      return Response.json(reply(`Done: you'll get a private message when a battle day has **${hours} hour${hours === 1 ? '' : 's'}** left and you still have decks to play. I've sent one now so you can see it.`));
     }
     case 'away': {
       const other = opt.user && opt.user !== user;
@@ -316,6 +335,30 @@ export async function discordPost(env, clan, title, body, pings = [], job = 'war
     const users = [], parts = pings.map(p => { const u = links.get(p.tag); if (u) users.push(u); return u ? `<@${u}> ${p.text}` : `${cleanName(p.name)} ${p.text}`; });
     const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
     await dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
+  }
+  return sent;
+}
+
+// Private reminders for members who asked (/remind): once per battle day, when the time left drops under
+// their chosen hours and they still have decks to play. At most 8 per run (Worker request limit); the rest go 15 minutes later.
+export async function dmReminders(env, clan, week, day, msLeft, leftToday, resetLabel = '') {
+  if (!discordReady(env) || !leftToday?.length) return 0;
+  await setupDB(env);
+  const left = new Map(leftToday.map(p => [p.tag, p.left]));
+  const rows = (await env.DB.prepare('SELECT r.guild, r.user_id, r.hours, r.dm, l.tag FROM discord_reminders r JOIN discord_links l ON l.guild = r.guild AND l.user_id = r.user_id WHERE l.clan = ? AND r.hours > 0').bind(clan).all()).results;
+  const due = rows.filter(x => left.has(x.tag) && msLeft <= x.hours * 3600e3);
+  if (!due.length) return 0;
+  const done = new Set((await env.DB.prepare('SELECT k FROM kv WHERE k LIKE ?').bind(`dm:${clan}:${week}:${day}:%`).all()).results.map(x => x.k));
+  const h = msLeft / 3600e3, when = h < 1 ? 'in under an hour' : `in about ${Math.round(h)} hour${Math.round(h) === 1 ? '' : 's'}`;
+  let sent = 0;
+  for (const x of due) {
+    const key = `dm:${clan}:${week}:${day}:${x.user_id}`;
+    if (done.has(key)) continue;
+    if (sent >= 8) break;
+    await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, '1').run();   // once, even if it fails
+    const n2 = left.get(x.tag);
+    const content = `⏰ Battle day ${day} ends ${when}${resetLabel ? ` (${resetLabel} UK)` : ''}. You still have **${n2} deck${n2 === 1 ? '' : 's'}** to play: each one is worth at least 100 medals, win or lose.\n_Stop these with \`/remind 0\`._`;
+    if (await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content }).then(() => true, () => false)) sent++;
   }
   return sent;
 }

@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders } from './discord.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -231,6 +231,7 @@ async function alertsFor(env, r, now) {
   if (r.day && r.decksLeft) {
     const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
     const reset0 = st0 ? ms(st0.ended_at) : null, left0 = reset0 == null ? 864e5 : (((reset0 - now) % 864e5) + 864e5) % 864e5;
+    if (reset0 != null) await dmReminders(env, r.clan, r.week, r.day, left0, r.leftToday, r.board?.reset).catch(() => {});
     if (left0 < 4 * 3600e3) {
       const sentL = await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
         (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + ' · under 4 hours left');
