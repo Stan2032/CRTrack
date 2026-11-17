@@ -22,15 +22,20 @@ export const COMMANDS = [
     { type: 6, name: 'user', description: 'Discord member', required: true },
     { type: 3, name: 'tag', description: 'Their player tag', required: true }] },
   { name: 'links', description: 'Leaders: who is linked, and who isn\'t yet' },
-  { name: 'setup', description: 'Leaders: choose the war channel and the clan roles', options: [
-    { type: 7, name: 'channel', description: 'Channel for war reminders and results', required: true },
+  { name: 'post-here', description: 'Leaders: choose what the bot posts in THIS channel', options: [
+    { type: 3, name: 'what', description: 'What this channel is for', required: true, choices: [
+      { name: 'War board + battle-day reminders', value: 'war' },
+      { name: 'Battle day summaries + war results', value: 'results' },
+      { name: 'Welcomes for new members', value: 'joins' },
+      { name: 'Rules (kept up to date)', value: 'rules' },
+      { name: 'How to link (for newcomers)', value: 'welcome' },
+      { name: 'Nothing (stop posting here)', value: 'none' }] }] },
+  { name: 'setup', description: 'Leaders: see what the bot posts where, and which roles it uses', options: [
     { type: 8, name: 'member_role', description: 'Role for clan Members' },
     { type: 8, name: 'elder_role', description: 'Role for Elders' },
     { type: 8, name: 'coleader_role', description: 'Role for Co-leaders' },
     { type: 8, name: 'leader_role', description: 'Role for the Leader' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
-  { name: 'welcome', description: 'Leaders: post how-to-link instructions here (stays, kept up to date)' },
-  { name: 'rules', description: 'Leaders: post the clan rules here (kept up to date automatically)' },
 ];
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
@@ -69,7 +74,33 @@ async function getConfig(env, guild) {
 }
 async function setConfig(env, guild, cfg) { await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('discord:' + guild, JSON.stringify(cfg)).run(); }
 async function allConfigs(env) {
-  return (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE 'discord:%'").all()).results.map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
+  return (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE 'discord:%'").all()).results
+    .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
+}
+// Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
+export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes for new members' };
+const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : cfg?.channel;
+
+async function findRoles(env, guild, opt, cfg) {
+  const byName = {};
+  if (!opt.member_role || !opt.elder_role || !opt.coleader_role || !opt.leader_role) {
+    const list = await dapi(env, 'GET', `/guilds/${guild}/roles`).catch(() => []);
+    for (const r of Array.isArray(list) ? list : []) { const k = String(r.name).toLowerCase().replace(/[^a-z]/g, ''); if (['member', 'elder', 'coleader', 'leader'].includes(k) && !byName[k]) byName[k] = r.id; }
+  }
+  return { member: opt.member_role || cfg?.roles?.member || byName.member, elder: opt.elder_role || cfg?.roles?.elder || byName.elder,
+    coLeader: opt.coleader_role || cfg?.roles?.coLeader || byName.coleader, leader: opt.leader_role || cfg?.roles?.leader || byName.leader };
+}
+
+async function overview(env, guild, cfg) {
+  const at = ch => ch ? `<#${ch}>` : '_not set_';
+  const saved = async k => { const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first(); return r ? JSON.parse(r.v).channel : null; };
+  const r = cfg?.roles || {};
+  return [`**What the bot posts where**`,
+    ...Object.entries(JOBS).map(([k, label]) => `• ${label} → ${at(chan(cfg, k))}`),
+    `• Rules → ${at(await saved('discord:rules:' + guild))}`,
+    `• How to link → ${at(await saved('discord:welcome:' + guild))}`,
+    ``, `**Roles that follow the game:** ${[['Member', r.member], ['Elder', r.elder], ['Co-leader', r.coLeader], ['Leader', r.leader]].map(([k, id]) => `${k} → ${id ? `<@&${id}>` : 'none'}`).join(', ')}`,
+    ``, `To change a channel: go to it and run \`/post-here\`.`].join('\n');
 }
 
 const reply = (content, ephemeral = true) => ({ type: 4, data: { content, flags: ephemeral ? EPHEMERAL : 0, allowed_mentions: { parse: [] } } });
@@ -150,30 +181,30 @@ export async function handleDiscord(request, env, ctx) {
     }
     case 'setup': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
-      // Roles not picked: use server roles named Member / Elder / Co-Leader / Leader.
-      const byName = {};
-      if (!opt.member_role || !opt.elder_role || !opt.coleader_role || !opt.leader_role) {
-        const list = await dapi(env, 'GET', `/guilds/${guild}/roles`).catch(() => []);
-        for (const r of Array.isArray(list) ? list : []) { const n = String(r.name).toLowerCase().replace(/[^a-z]/g, ''); if (['member', 'elder', 'coleader', 'leader'].includes(n) && !byName[n]) byName[n] = r.id; }
+      const next = { clan, channels: cfg?.channels || {}, roles: await findRoles(env, guild, opt, cfg) };
+      await setConfig(env, guild, next);
+      return Response.json(reply((await overview(env, guild, next)) + (Object.values(next.roles).some(Boolean) ? '\n\nRun `/sync` once to update everyone\'s roles now.' : '\n\nNo roles found: name them Member, Elder, Co-Leader, Leader, or pick them in `/setup`.')));
+    }
+    case 'post-here': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      const ch = i.channel_id || i.channel?.id, what = opt.what;
+      const next = { clan, channels: { ...(cfg?.channels || {}) }, roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
+      if (what === 'rules' || what === 'welcome') {
+        const err = await upsert(env, `discord:${what}:${guild}`, ch, what === 'rules' ? rulesText(await clanRules(env, clan)) : WELCOME).then(() => '', e => e.message);
+        if (err) return Response.json(reply(cantPost(ch, err)));
+        return Response.json(reply(`Posted. Long-press it → **Pin**. I'll keep it up to date${what === 'rules' ? ' when the rules change on the site' : ''}.`));
       }
-      const roles = { member: opt.member_role || cfg?.roles?.member || byName.member, elder: opt.elder_role || cfg?.roles?.elder || byName.elder, coLeader: opt.coleader_role || cfg?.roles?.coLeader || byName.coleader, leader: opt.leader_role || cfg?.roles?.leader || byName.leader };
-      const test = await dapi(env, 'POST', `/channels/${opt.channel}/messages`, { content: 'War Audit will post war reminders and results here.', allowed_mentions: { parse: [] } }).then(() => '', e => e.message);
-      if (test) return Response.json(reply(cantPost(opt.channel, test) + ' Nothing was changed; run /setup again after fixing it.'));
-      await setConfig(env, guild, { clan, channel: opt.channel, roles });
-      return Response.json(reply(`Set up: war reminders and results go to <#${opt.channel}>.` + (Object.values(roles).some(Boolean) ? ` Roles: ${[['Member', roles.member], ['Elder', roles.elder], ['Co-leader', roles.coLeader], ['Leader', roles.leader]].map(([n, id]) => `${n} → ${id ? `<@&${id}>` : 'none'}`).join(', ')}. These follow the game for linked members (run \`/sync\` once now).` : ' Add roles any time by running /setup again.')));
-    }
-    case 'rules': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
-      const text = rulesText(await clanRules(env, clan));
-      const ch = i.channel_id || i.channel?.id;
-      const err = await upsert(env, 'discord:rules:' + guild, ch, text).then(() => '', e => e.message);
-      return Response.json(reply(err ? cantPost(ch, err) : 'Rules posted here. I\'ll edit that message whenever the rules change on the site. Pin it to keep it handy.'));
-    }
-    case 'welcome': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
-      const ch = i.channel_id || i.channel?.id;
-      const err = await upsert(env, 'discord:welcome:' + guild, ch, WELCOME).then(() => '', e => e.message);
-      return Response.json(reply(err ? cantPost(ch, err) : 'Posted. Long-press it → Pin, so it stays at the top.'));
+      if (what === 'none') {
+        for (const k of Object.keys(next.channels)) if (next.channels[k] === ch) delete next.channels[k];
+        await setConfig(env, guild, next);
+        return Response.json(reply('I won\'t post war messages here any more.\n\n' + await overview(env, guild, next)));
+      }
+      if (!JOBS[what]) return Response.json(reply('Unknown choice'));
+      const err = await dapi(env, 'POST', `/channels/${ch}/messages`, { content: `War Audit will post **${JOBS[what].toLowerCase()}** here.`, allowed_mentions: { parse: [] } }).then(() => '', e => e.message);
+      if (err) return Response.json(reply(cantPost(ch, err) + ' Nothing was changed.'));
+      next.channels[what] = ch;
+      await setConfig(env, guild, next);
+      return Response.json(reply('Done.\n\n' + await overview(env, guild, next)));
     }
     case 'sync': {
       if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
@@ -197,15 +228,15 @@ export async function syncGuild(env, guild, cfg, clan, limit = 10, onlyTags = nu
 }
 
 // Post to every configured server for this clan. `pings`: [{ tag, text }] mention linked users, plain names otherwise.
-export async function discordPost(env, clan, title, body, pings = []) {
+export async function discordPost(env, clan, title, body, pings = [], job = 'war') {
   if (!discordReady(env)) return 0;
   await setupDB(env);
   let sent = 0;
-  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.channel)) {
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) {
     const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
     const users = [], parts = pings.map(p => { const u = links.get(p.tag); if (u) users.push(u); return u ? `<@${u}> ${p.text}` : `${cleanName(p.name)} ${p.text}`; });
     const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
-    await dapi(env, 'POST', `/channels/${cfg.channel}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
+    await dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
   }
   return sent;
 }
@@ -298,8 +329,8 @@ export async function warBoard(env, r, now) {
     `_Updated ${ukClock(now)} UK_`,
   ].filter(Boolean).join('\n');
   let sent = 0;
-  for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && c.channel)) {
-    if (await upsert(env, `discord:board:${cfg.guild}:${r.week}`, cfg.channel, content).catch(() => null)) sent++;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && chan(c, 'war'))) {
+    if (await upsert(env, `discord:board:${cfg.guild}:${r.week}`, chan(cfg, 'war'), content).catch(() => null)) sent++;
   }
   return sent;
 }
@@ -332,8 +363,8 @@ export async function daySummary(env, clan, week, day) {
   ].filter(Boolean).join('\n');
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
   let sent = 0;
-  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.channel)) {
-    await dapi(env, 'POST', `/channels/${cfg.channel}/messages`, { content, allowed_mentions: { parse: [] } }).then(() => sent++).catch(() => {});
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'results'))) {
+    await dapi(env, 'POST', `/channels/${chan(cfg, 'results')}/messages`, { content, allowed_mentions: { parse: [] } }).then(() => sent++).catch(() => {});
   }
   return sent;
 }

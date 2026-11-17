@@ -30,7 +30,8 @@ left today, their forecast, their war history and consistency, how they play, an
 ## Discord
 
 A bot run by the same Worker: `/link #TAG`, `/me`, roles and nicknames that follow the game, battle-day pings for
-linked members with decks left, and war results. Setup steps are in `docs/HANDOFF.md`.
+linked members with decks left, a live war board, battle day summaries, war results, and rules kept up to date.
+Leaders run `/post-here` in each channel to choose what it gets, and `/setup` to see what goes where. Setup steps are in `docs/HANDOFF.md`.
 
 ## Stats and forecasts
 

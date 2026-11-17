@@ -218,14 +218,14 @@ async function alertsFor(env, r, now) {
   if (r.joined.length || r.left.length) {
     const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`, r.members < 50 && `${50 - r.members} spot${r.members === 49 ? '' : 's'} open`].filter(Boolean);
     await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
-    if (r.joined.length) await discordPost(env, r.clan, `👋 Welcome ${list(r.joined)}!`, 'Link your account with `/link #YOURTAG` so you get war reminders. Check the pinned rules.');
+    if (r.joined.length) await discordPost(env, r.clan, `👋 Welcome ${list(r.joined)}!`, 'Link your account with `/link #YOURTAG` so you get war reminders. Check the pinned rules.', [], 'joins');
   }
   for (const w of r.wars) {
     const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
     const trophies = w.trophies ? `, ${w.trophies > 0 ? '+' : ''}${w.trophies} trophies` : '';
     const body = `${w.passed} of ${w.played} reached ${r.target}.` + (w.under.length ? ` Under: ${list(w.under, 5)}.` : ' Everyone made it!') + ' Open the app for who to act on.';
     const sentW = await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}${trophies}`, body);
-    await discordPost(env, r.clan, `🏁 War ${w.week} finished${place}${trophies}`, `${w.passed} of ${w.played} reached ${r.target}. Thanks all! ⚔️`);
+    await discordPost(env, r.clan, `🏁 War ${w.week} finished${place}${trophies}`, `${w.passed} of ${w.played} reached ${r.target}. Thanks all! ⚔️`, [], 'results');
   }
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day && r.decksLeft) {

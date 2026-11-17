@@ -21,7 +21,7 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
-  if (/\/channels\/C\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
+  if (/\/channels\/[CR]\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
 
@@ -37,7 +37,10 @@ assert.equal((await (await interaction({ type: 1 })).json()).type, 1, 'endpoint 
 assert.equal((await interaction({ type: 1 }, { forge: true })).status, 401, 'forged request refused');
 
 assert.match(await text(await cmd('links')), /Leaders only/);
-assert.match(await text(await cmd('setup', [{ name: 'channel', value: 'C' }, { name: 'member_role', value: 'RM' }, { name: 'elder_role', value: 'RE' }], leader)), /<#C>/);
+const here = (what, ch = 'C', g = 'G', m = leader) => interaction({ type: 2, guild_id: g, channel_id: ch, member: m, data: { name: 'post-here', options: [{ name: 'what', value: what }] } });
+assert.match(await text(await cmd('setup', [{ name: 'member_role', value: 'RM' }, { name: 'elder_role', value: 'RE' }], leader)), /War board \+ battle-day reminders → _not set_[\s\S]*Member → <@&RM>, Elder → <@&RE>/);
+assert.match(await text(await here('war')), /War board \+ battle-day reminders → <#C>[\s\S]*summaries \+ war results → _not set_/);
+assert.match(await text(await here('war', 'C', 'G', member('U5'))), /Leaders only/);
 
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2vj9v2pv' }])), /Linked <@U1> to \*\*Luke\*\*/);
 await Promise.all(pending);
@@ -78,15 +81,19 @@ await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,bo
   ('PPCCR8VU','138-3',1,'2VJ9V2PV','Luke',800,4,4,0,'x'),('PPCCR8VU','138-3',2,'2VJ9V2PV','Luke',1700,8,4,0,'x'),
   ('PPCCR8VU','138-3',1,'YVJRGLCC','perc',500,4,4,0,'x'),('PPCCR8VU','138-3',2,'YVJRGLCC','perc',900,6,2,0,'x');
   INSERT INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ('PPCCR8VU','138-3',1,'PPCCR8VU','#WINNING',10000,'x'),('PPCCR8VU','138-3',2,'PPCCR8VU','#WINNING',21000,'x'),('PPCCR8VU','138-3',2,'AAA','Rival',22500,'x');`);
+assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'no results channel yet: nothing posted');
+await DB.prepare("DELETE FROM kv WHERE k LIKE 'dsum:%'").run();
+await here('results', 'R');
 calls.length = 0;
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 1);
+assert.ok(calls.some(c => c.method === 'POST' && /channels\/R\/messages$/.test(c.url)), 'summary went to the results channel');
 const sum = calls.find(c => c.method === 'POST').body.content;
 assert.match(sum, /Battle day 2 summary[\s\S]*\+11,000\*\* \(\+10% vs day 1\)[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*2nd of 2, 1,500 behind Rival[\s\S]*Luke \+900/);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
 
 // Rules: posted with /rules, then edited when the rules change.
 calls.length = 0;
-assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'rules', options: [] } })), /Rules posted here/);
+assert.match(await text(await here('rules')), /Posted/);
 assert.match(calls.find(c => c.method === 'POST').body.content, /1,800\+ medals every war/);
 await DB.exec(`INSERT OR REPLACE INTO notes (clan,week,tag,kind,value,at) VALUES ('PPCCR8VU','*','*','rules','{"target":2000}','x')`);
 calls.length = 0;
@@ -94,18 +101,18 @@ assert.equal(await updateRulesMessages(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /2,000\+ medals every war/);
 
 // /setup without picking roles finds them by name.
-assert.match(await text(await interaction({ type: 2, guild_id: 'G2', member: leader, data: { name: 'setup', options: [{ name: 'channel', value: 'C' }] } })), /Member → <@&R1>, Elder → <@&R2>, Co-leader → <@&R3>, Leader → <@&R4>/);
+assert.match(await text(await interaction({ type: 2, guild_id: 'G2', member: leader, data: { name: 'setup', options: [] } })), /Member → <@&R1>, Elder → <@&R2>, Co-leader → <@&R3>, Leader → <@&R4>/);
 
 // Welcome / how-to-link message.
-assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: leader, data: { name: 'welcome', options: [] } })), /Posted/);
-assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'C', member: member('U9'), data: { name: 'welcome', options: [] } })), /Leaders only/);
+assert.match(await text(await here('welcome')), /Posted/);
+assert.match(await text(await here('welcome', 'C', 'G', member('U9'))), /Leaders only/);
 
 // A channel the bot can't post in: told why, in plain words, and /setup changes nothing.
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opt = {}) => /channels\/LOCKED\//.test(url) ? new Response('{}', { status: 403 }) : realFetch(url, opt);
-assert.match(await text(await interaction({ type: 2, guild_id: 'G', channel_id: 'LOCKED', member: leader, data: { name: 'rules', options: [] } })), /missing permission[\s\S]*Send Messages/);
-assert.match(await text(await cmd('setup', [{ name: 'channel', value: 'LOCKED' }], leader)), /missing permission[\s\S]*Nothing was changed/);
-assert.match(await text(await cmd('me')), /Luke|linked/i);
+assert.match(await text(await here('rules', 'LOCKED')), /missing permission[\s\S]*Send Messages/);
+assert.match(await text(await here('results', 'LOCKED')), /missing permission[\s\S]*Nothing was changed/);
+assert.match(await text(await cmd('setup', [], leader)), /summaries \+ war results → <#R>/, 'locked channel not saved');
 globalThis.fetch = realFetch;
 
 // Registering for one server also clears the all-servers copy (no duplicate commands).
@@ -113,6 +120,8 @@ calls.length = 0;
 await registerCommands({ ...env, DISCORD_GUILD_ID: 'G' });
 assert.ok(calls.some(c => c.method === 'PUT' && /applications\/A\/guilds\/G\/commands$/.test(c.url)));
 assert.deepEqual(calls.find(c => c.method === 'PUT' && /applications\/A\/commands$/.test(c.url)).body, []);
+
+assert.match(await text(await here('none', 'R')), /won't post[\s\S]*summaries \+ war results → _not set_/);
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };
