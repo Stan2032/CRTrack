@@ -61,7 +61,7 @@ const fake = { race: { fame: 850, decks: 12, today: 0 } };
 assert.equal(L.judgeLive(fake, r, 'full', 4).status, 'Out');   // 850 + 900 < 1800
 assert.equal(L.judgeLive({ race: { fame: 900, decks: 12, today: 0 } }, r, 'full', 4).status, 'Need');
 assert.equal(L.judgeLive({ race: { fame: 1300, decks: 14, today: 2 } }, r, 'full', 4).status, 'Out'); // 1300+400
-assert.equal(L.split('a\n'.repeat(300), 250).every(s => s.length <= 250), true);
+assert.equal(L.split('a\n'.repeat(300), 194).every(s => s.length <= 194), true);
 
 
 // API path: fake API replies built from the samples give the same results

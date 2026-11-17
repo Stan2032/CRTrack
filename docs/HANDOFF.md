@@ -122,4 +122,4 @@ With brayyisaac set to Day 3 and >FRXNCHY< set to Excused, the app reproduces th
 - The RoyaleAPI page links (`/clan/TAG`, `/war/log`, `/war/race`) are best guesses, because royaleapi.com blocks automated checks.
 - **Join dates** from RoyaleAPI's join/leave log, once it has been running a week.
 - **Track warnings across weeks** (now inferred from "missed the week before").
-- The Clash Royale chat length limit is set to 250 as a guess. It can be changed in Rules.
+- Clan chat accepts 194 characters (measured in game on 17 Nov 2026 by pasting a long string). Longer messages are split into parts. Changeable in Rules.
