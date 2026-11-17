@@ -56,6 +56,8 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     cr(env, `/clans/${t}/riverracelog?limit=${haveWars.length ? 3 : 10}`),
   ]);
   const sql = [];
+  // An empty member list means a bad reply, not an empty clan: don't record everyone as leaving.
+  if (!(members.items || []).length) throw new Error('empty member list');
 
   // Members: joins, leaves, role changes
   const known = (await db.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ?').bind(clan).all()).results;

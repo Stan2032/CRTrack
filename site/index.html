@@ -120,6 +120,7 @@ span.tick { cursor: default; }
 #context { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
 .fresh { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted);
   background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: -6px 0 14px; }
+.fresh.stale { border-color: var(--red); color: var(--red); }
 .freshmsg { flex-basis: 100%; font-size: 12px; color: var(--muted); }
 .freshmsg:empty { display: none; }
 .btn.small { padding: 5px 10px; font-size: 13px; }
@@ -359,7 +360,7 @@ function build({ roster = [], log = [], race = [], history = [] }, opts = {}) {
 // join: 'full' | '1' | '2' | '3' | '4' | 'excused'  (battle day they joined on)
 function targetFor(join, r) {
   if (join === 'excused' || join === '4') return { medals: 0, decks: 0, excused: true };
-  if (!join || join === 'full') return { medals: r.target, decks: 16, late: false };
+  if (!join || join === 'full' || join === 'unknown') return { medals: r.target, decks: 16, late: false };
   const left = 4 - Number(join);
   return { medals: left * r.perDay, decks: left * 4, late: true };
 }
@@ -413,6 +414,7 @@ function judgeEnd(p, r, join, override) {
       res = ignored ? out('Kick', `Still on boats after last war's tip (${boatPct}% of decks), under again`)
         : out('Warn', `${p.isNew ? 'New, ' : 'Played, but '}${boatPct}% of decks on boats`);
     }
+    else if (p.isNew && join === 'unknown') res = out('Review', `New member, under ${r.target}: set when they joined`);
     else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
     else if (!p.prev) res = out('Kick', `Under ${r.target}, wasn't in the war before`);
@@ -597,7 +599,9 @@ function applyHistory(model, h, liveWeek) {
     p.days = model.season ? dayDecks(h, model.season, p.tag) : null;
     p.daysLive = liveWeek ? dayDecks(h, liveWeek, p.tag) : null;
     p.joined = joinedAt(h, p.tag);
-    p.lastResult = model.prevSeason ? notes[`result|${model.prevSeason}|${p.tag}`] || null : null;
+    const prevRes = model.prevSeason ? notes[`result|${model.prevSeason}|${p.tag}`] || null : null;
+    // A first & only warning only counts if a leader marked it as posted.
+    p.lastResult = prevRes === 'Warn' && notes[`done|${model.prevSeason}|${p.tag}`] !== '1' ? 'WarnNotPosted' : prevRes;
     p.roleEvents = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'role').map(e => ({ at: ms(e.at), detail: String(e.detail) }));
     const left = (h.events || []).filter(e => e.tag === p.tag && e.kind === 'leave').map(e => ms(e.at));
     p.leftAt = left.length ? Math.max(...left) : null;
@@ -668,7 +672,7 @@ const AUTO_CHECKED = ['Kick', 'Demote', 'Promote'];   // the game shows these; n
 const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'first & only warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
 const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
 const FOLDED = ['OK', 'Excused', 'Safe', 'Left'];
-const JOIN = [['full', 'Joined before war'], ['1', 'Joined battle day 1'], ['2', 'Joined battle day 2'], ['3', 'Joined battle day 3'], ['4', 'Joined battle day 4'], ['excused', 'Excused this war']];
+const JOIN = [['unknown', 'Joined when?'], ['full', 'Joined before war'], ['1', 'Joined battle day 1'], ['2', 'Joined battle day 2'], ['3', 'Joined battle day 3'], ['4', 'Joined battle day 4'], ['excused', 'Excused this war']];
 const ROLE = { elder: 'Elder', coLeader: 'Co-leader', leader: 'Leader' };
 const label = s => s === 'Out' ? `Can't reach ${rules().target}` : s === 'Safe' ? `Reached ${rules().target}` : LABEL[s] || s;
 
@@ -785,7 +789,7 @@ function evaluate() {
   return model.players.map(p => {
     const manual = note('join', p);
     const auto = mode === 'end' ? p.autoJoin : p.autoJoinLive;
-    const join = manual || auto || 'full';
+    const join = manual || auto || (p.isNew && !p.gone && mode === 'end' ? 'unknown' : 'full');
     const saved = past ? note('result', p) : null;
     const res = mode === 'end' ? judgeEnd(p, r, join, note('over', p) || saved) : judgeLive(p, r, join, day);
     if (mode === 'end' && saved && !note('over', p)) res.why = res.why.replace(/^Changed by a leader/, 'Saved result');
@@ -943,7 +947,10 @@ function ukTime(iso) {
 function renderFresh() {
   const show = site.history && hist && hist.lastRun;
   $('#fresh').classList.toggle('hidden', !show);
-  if (show) $('#lastpull').textContent = `Data last pulled: ${ukTime(hist.lastRun)} (UK time)`;
+  if (!show) return;
+  const age = Date.now() - Date.parse(hist.lastRun), limit = raceInfo.day ? 45 * 60e3 : 13 * 3600e3;
+  $('#lastpull').textContent = `Data last pulled: ${ukTime(hist.lastRun)} (UK time)` + (age > limit ? ' · older than expected, the schedule may have stopped' : '');
+  $('#fresh').classList.toggle('stale', age > limit);
 }
 async function requestUpdate() {
   const b = $('#refresh'), t = model?.clan.tag || cleanInputTag();
