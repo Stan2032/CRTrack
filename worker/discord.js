@@ -200,7 +200,9 @@ export async function handleDiscord(request, env, ctx) {
         return Response.json(reply('I won\'t post war messages here any more.\n\n' + await overview(env, guild, next)));
       }
       if (!JOBS[what]) return Response.json(reply('Unknown choice'));
-      const err = await dapi(env, 'POST', `/channels/${ch}/messages`, { content: `War Audit will post **${JOBS[what].toLowerCase()}** here.`, allowed_mentions: { parse: [] } }).then(() => '', e => e.message);
+      // Test post (proves the bot may post here), then removed so the channel stays tidy.
+      const err = await dapi(env, 'POST', `/channels/${ch}/messages`, { content: `War Audit will post **${JOBS[what].toLowerCase()}** here.`, allowed_mentions: { parse: [] } })
+        .then(m => { if (m?.id) later(dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`)); return ''; }, e => e.message);
       if (err) return Response.json(reply(cantPost(ch, err) + ' Nothing was changed.'));
       next.channels[what] = ch;
       await setConfig(env, guild, next);

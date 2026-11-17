@@ -40,6 +40,8 @@ assert.match(await text(await cmd('links')), /Leaders only/);
 const here = (what, ch = 'C', g = 'G', m = leader) => interaction({ type: 2, guild_id: g, channel_id: ch, member: m, data: { name: 'post-here', options: [{ name: 'what', value: what }] } });
 assert.match(await text(await cmd('setup', [{ name: 'member_role', value: 'RM' }, { name: 'elder_role', value: 'RE' }], leader)), /War board \+ battle-day reminders → _not set_[\s\S]*Member → <@&RM>, Elder → <@&RE>/);
 assert.match(await text(await here('war')), /War board \+ battle-day reminders → <#C>[\s\S]*summaries \+ war results → _not set_/);
+await Promise.all(pending);
+assert.ok(calls.some(c => c.method === 'DELETE' && /channels\/C\/messages\/M\d+$/.test(c.url)), 'test post removed');
 assert.match(await text(await here('war', 'C', 'G', member('U5'))), /Leaders only/);
 
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2vj9v2pv' }])), /Linked <@U1> to \*\*Luke\*\*/);
