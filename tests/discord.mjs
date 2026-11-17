@@ -25,6 +25,7 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC\/battlelog$/.test(url)) return Response.json([{ type: 'riverRacePvP', battleTime: '20261116T120000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] }, { type: 'boatBattle' }]);
   if (/\/users\/@me\/channels$/.test(url)) return JSON.parse(opt.body).recipient_id === 'BLOCKED' ? new Response('{}', { status: 403 }) : Response.json({ id: 'DM-' + JSON.parse(opt.body).recipient_id });
+  if (/\/channels\/C\/messages\?limit=50$/.test(url)) return Response.json([{ id: 'OLD1', author: { id: 'A' } }, { id: 'USER1', author: { id: 'U1' } }, { id: 'OLD2', author: { id: 'A' } }]);
   if (/\/channels\/(C|R|LC|J)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
@@ -207,6 +208,20 @@ const sb = await statsBoard(env, 'PPCCR8VU');
 assert.match(sb, /Clan stats\*\* · 2\/50 members[\s\S]*Last 5 wars[\s\S]*2-1 .*4,100 +1\/2 +🥇[\s\S]*Most reliable:\*\* 1\. Luke[\s\S]*Streaks at 2,000\+:\*\* Luke 5[\s\S]*Battle types:\*\* Duels 75% won \(~213\/deck\) · Boats 33% won[\s\S]*Top donors this week:\*\* Luke 320 · perc 150/);
 assert.ok(sb.length <= 1990);
 assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: member('U1'), data: { name: 'stats', options: [] } })), /Clan stats/);
+
+// /refresh clean: deletes only the bot's own old messages, then re-posts and pins what it keeps.
+const { refreshAll } = await import('../worker/discord.js');
+const cfgG = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G'").first()).v);
+calls.length = 0;
+const rf = await refreshAll(env, 'G', cfgG, 'PPCCR8VU', true);
+const dels = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').pop());
+assert.ok(dels.includes('OLD1') && dels.includes('OLD2') && !dels.includes('USER1'), 'only the bot\'s messages');
+assert.match(rf, /Deleted \d+ old messages[\s\S]*✅ Rules → <#C>[\s\S]*✅ How to link → <#C>[\s\S]*✅ To-do list → <#LC>/);
+assert.ok(calls.some(c => c.method === 'PUT' && /\/pins\/M\d+$/.test(c.url)), 'pinned');
+calls.length = 0;
+assert.match(await refreshAll(env, 'G', cfgG, 'PPCCR8VU', false), /Refreshed/);
+assert.ok(!calls.some(c => c.method === 'DELETE'), 'without clean: nothing deleted');
+assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set up yet/);
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };

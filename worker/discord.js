@@ -65,6 +65,8 @@ export const COMMANDS = [
   { name: 'digest', description: 'Leaders: a private weekly digest before battle days (warnings, close to Elder, slipping…)', options: [
     { type: 5, name: 'on', description: 'On or off', required: true }] },
   { name: 'backup', description: 'Leaders: post a backup file of the full history in the leaders\' channel now' },
+  { name: 'refresh', description: 'Leaders: re-post everything the bot keeps (rules, how to link, stats, to-do list)', options: [
+    { type: 5, name: 'clean', description: 'First delete the bot\'s old messages in those channels' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
 ];
 
@@ -325,6 +327,14 @@ export async function handleDiscord(request, env, ctx) {
       later((async () => {
         const n2 = await postBackup(env, clan, guild).catch(e => `error: ${String(e.message || e).slice(0, 80)}`);
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: n2 === 1 ? `Backup posted in <#${chan(cfg, 'leaders')}>.` : `Couldn't post the backup (${n2}).` });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'refresh': {
+      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      later((async () => {
+        const msg = await refreshAll(env, guild, cfg, clan, !!opt.clean).catch(e => `Something went wrong: ${String(e.message || e).slice(0, 100)}`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
@@ -682,6 +692,43 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
     if (r.ok) sent++;
   }
   return sent;
+}
+
+// /refresh: re-post (or edit) every message the bot keeps, optionally deleting its old messages first, and pin them.
+// Stays within the Worker's 50 requests per run: at most 25 deletions per go (run it again to clear more).
+export async function refreshAll(env, guild, cfg, clan, clean) {
+  await setupDB(env);
+  const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
+  const kept = { rules: await kv('discord:rules:' + guild), welcome: await kv('discord:welcome:' + guild), stats: await kv('discord:stats:' + guild) };
+  const channels = [...new Set([...Object.values(cfg?.channels || {}), ...Object.values(kept).filter(Boolean).map(x => x.channel)])];
+  if (!channels.length) return 'Nothing set up yet: go to a channel and run `/post-here`.';
+  const done = [];
+  if (clean) {
+    let removed = 0, more = false;
+    for (const ch of channels) {
+      const list = await dapi(env, 'GET', `/channels/${ch}/messages?limit=50`).catch(() => []);
+      const mine = (Array.isArray(list) ? list : []).filter(m => m.author?.id === env.DISCORD_APP_ID);
+      for (const m of mine) {
+        if (removed >= 25) { more = true; break; }
+        if (await dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`).then(() => true, () => false)) removed++;
+      }
+    }
+    // Forget the old message ids, so everything below is posted fresh.
+    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?")
+      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`).run();
+    done.push(`🧹 Deleted ${removed} old message${removed === 1 ? '' : 's'}${more ? ' (more left: run `/refresh clean:True` again)' : ''}`);
+  }
+  const pin = async (ch, id) => id && dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).catch(() => null);
+  const post = async (key, ch, text, label) => {
+    const id = await upsert(env, key, ch, text).catch(() => null);
+    if (id) { await pin(ch, id); done.push(`✅ ${label} → <#${ch}>`); } else done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
+  };
+  if (kept.rules) await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
+  if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
+  if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
+  if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: couldn\'t make it (try `/todo`)'));
+  if (chan(cfg, 'war')) done.push(`➖ War board: posts itself at the next pull on a battle day`);
+  return ['**Refreshed**', ...done, '', 'Rules, how to link and stats are pinned.'].join('\n');
 }
 
 // Re-write every posted stats board for this clan (after each war).

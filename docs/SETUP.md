@@ -104,13 +104,14 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 18 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 19 commands in your server".
    (Do this again whenever new commands are added. If Discord shows commands twice, register again and reopen the app.)
 2. In Discord, anywhere: **`/setup`**. It finds the four roles and shows what goes where.
 3. **`/link #YOURTAG`** for yourself, then **`/sync`**.
 4. In each channel from the table: **`/post-here`** → its job. Pin the How to link, Rules and Stats messages.
 5. **`/setup`** again to check every job has a channel.
 6. Optional: **`/todo`** in `#leaders` shows the list for the last war.
+7. Messy channels later? **`/refresh clean:True`** clears the bot's old posts and puts everything back, pinned.
 
 **Commands**
 
@@ -128,6 +129,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | Leaders | `/todo` | Post or refresh the after-war to-do list |
 | Leaders | `/player #TAG`, `/check #TAG` | A member's record; someone applying to join |
 | Leaders | `/digest on:True` | Weekly digest privately (last training day): warnings, close to Elder, slipping, away, not linked |
+| Leaders | `/refresh` (`clean:True`) | Re-post everything the bot keeps and pin it; `clean` first deletes the bot's old messages in its channels |
 | Leaders | `/backup` | Post a backup file of the full history in the leaders' channel now |
 
 "Leaders" means anyone with Manage Roles or Administrator in Discord.
