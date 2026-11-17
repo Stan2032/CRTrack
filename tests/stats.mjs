@@ -60,7 +60,22 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
     for (let d = 1; d <= 3; d++) hist.days.push({ week: '9-1', tag, day: d, fame: (good ? 600 : 300) * d });
   }
   const c = S.calibrate(hist, 1800);
-  assert.ok(c && c.n > 0 && c.brier < 0.1, JSON.stringify(c));
+  assert.ok(c && c.n > 0 && c.brier < 0.1 && c.brier <= c.baseline, JSON.stringify(c));
+  // a forecast-'Likely' player who then plays nothing is counted as a miss
+  hist.players.push({ week: '9-1', tag: 'Z', fame: 0, decks: 0 });
+  for (const w of ['8-1', '8-2', '8-3']) hist.players.push({ week: w, tag: 'Z', fame: 2500, decks: 16 });
+  hist.days.push({ week: '9-1', tag: 'Z', day: 1, fame: 0 });
+  const c2 = S.calibrate(hist, 1800);
+  assert.ok(c2.bands.Likely.n - c2.bands.Likely.hit > c.bands.Likely.n - c.bands.Likely.hit, 'no-show counted as a miss');
+  // a day-3 joiner is only forecast from day 3, against 2 days x 450
+  hist.players.push({ week: '9-1', tag: 'L', fame: 950, decks: 8 });
+  hist.days.push({ week: '9-1', tag: 'L', day: 3, fame: 500 });
+  const c3 = S.calibrate(hist, 1800);
+  assert.equal(c3.n, c2.n + 2, 'late joiner forecast from their first day only (days 3 and 4)');
+  // excused players are skipped
+  hist.notes = [{ week: '9-1', tag: 'L', kind: 'join', value: 'excused' }];
+  assert.equal(S.calibrate(hist, 1800).n, c2.n);
+  assert.equal(S.band(0.85), 'Likely'); assert.equal(S.band(0.5), 'At risk'); assert.equal(S.band(0.1), 'Unlikely');
   assert.ok(c.bands.Likely.hit / c.bands.Likely.n > 0.9, 'likely ones made it');
   assert.equal(S.calibrate({ wars: [], players: [], days: [] }, 1800), null);
   console.log(`Calibration checks passed (Brier ${c.brier.toFixed(3)} on ${c.n} forecasts)`);

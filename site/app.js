@@ -239,7 +239,7 @@ function row(p) {
   const why = mode === 'end' ? p.res.why
     : p.res.status === 'Out' ? `Most possible ${p.res.fame + p.res.max}` + (p.res.today === 0 ? ' · no decks today, kicking frees a slot' : '')
     : p.res.status === 'Need' ? `Needs ${p.res.need} more · up to ${p.res.max} still possible` : '';
-  const fcBand = p.fc ? (p.fc.prob >= 0.8 ? ['Likely', 'ok'] : p.fc.prob >= 0.2 ? ['At risk', 'risk'] : ['Unlikely', 'bad']) : null;
+  const fcBand = p.fc ? [band(p.fc.prob), { Likely: 'ok', 'At risk': 'risk', Unlikely: 'bad' }[band(p.fc.prob)]] : null;
   const fcText = p.fc && p.res.status === 'Need' ? `${fcBand[0]} ${Math.round(p.fc.prob * 100)}%` : '';
   const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
@@ -327,7 +327,7 @@ function render() {
   } else {
     const out = list.filter(p => p.res.status === 'Out').length, need = list.filter(p => p.res.status === 'Need').length;
     const fcs = list.filter(p => p.fc && p.res.status === 'Need');
-    const likely = fcs.filter(p => p.fc.prob >= 0.8).length, risk = fcs.filter(p => p.fc.prob >= 0.2 && p.fc.prob < 0.8).length, unlikely = fcs.filter(p => p.fc.prob < 0.2).length;
+    const cnt = b => fcs.filter(p => band(p.fc.prob) === b).length, likely = cnt('Likely'), risk = cnt('At risk'), unlikely = cnt('Unlikely');
     $('#chips').innerHTML = `<a href="#g-Out" class="s-Out">${out} can't reach ${r.target}</a> · <a href="#g-Need" class="s-Need">${need} still need medals</a>`
       + (fcs.length ? `<div class="muted">Forecast for those still needing medals: ${likely} likely, ${risk} at risk, ${unlikely} unlikely</div>` : '');
   }
@@ -494,14 +494,16 @@ function bars(items, { h = 110, fmt = v => v, ref = null, label = '' } = {}) {
   return `<div class="chartwrap"><svg class="bars" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(label)}">${refLine}${rects}</svg></div>`;
 }
 
+let _cal = { key: null, val: null };
 function renderStats() {
   const box = $('#statsbody');
+  if (!$('#statsbox').open) return;   // worked out only when someone opens it
   if (!model) { box.innerHTML = '<div class="empty">Load a clan to see stats</div>'; return; }
   const r = rules(), parts = [];
   // 1. Clan medals and pass rate per war (from the war log, all members who took part)
   const byWeek = {};
   for (const x of data.log || []) { const k = x.season_key; (byWeek[k] ||= []).push({ fame: +x.player_fame || 0, decks: +x.player_decks_used || 0 }); }
-  const weeks = Object.keys(byWeek).sort((a, b) => { const [a1, a2] = a.split('-').map(Number), [b1, b2] = b.split('-').map(Number); return a1 - b1 || a2 - b2; });
+  const weeks = Object.keys(byWeek).sort(weekCmp);
   const wars = Object.fromEntries((hist?.wars || []).map(w => [w.week, w]));
   const place = n => n > 0 ? ['1st', '2nd', '3rd', '4th', '5th'][n - 1] || n + 'th' : '';
   const ser = weeks.map(k => { const ps = byWeek[k].filter(p => p.decks > 0); return { week: k, medals: ps.reduce((s, p) => s + p.fame, 0), played: ps.length, passed: ps.filter(p => p.fame >= r.target).length, w: wars[k] }; });
@@ -535,11 +537,14 @@ function renderStats() {
       + `<div class="hint">Busiest 4 hours: ${String(pt.window.from).padStart(2, '0')}:00–${String(pt.window.to).padStart(2, '0')}:00 (${Math.round(pt.window.share * 100)}% of ${pt.total} decks). Remind people just before.</div>`
     : '<div class="empty">Collecting on battle days (timed to within 15 minutes)</div>'));
   // Forecast accuracy, rerun on past battle days with only what was known then
-  const cal = calibrate(hist, r.target, r.lookback);
+  const ck = [hist && hist.lastRun, (hist?.days || []).length, (hist?.notes || []).length, r.target, r.lookback, r.perDay].join('|');
+  if (_cal.key !== ck) _cal = { key: ck, val: calibrate(hist, r.target, r.lookback, r.perDay) };
+  const cal = _cal.val;
   parts.push(`<h3>How accurate the forecasts are</h3>` + (cal
     ? `<table class="tbl">${Object.entries(cal.bands).filter(([, b]) => b.n).map(([k, b]) => `<tr><td>Rated “${k}”</td><td class="num">${Math.round(100 * b.hit / b.n)}%</td><td class="muted">actually reached ${r.target} (${b.hit} of ${b.n})</td></tr>`).join('')}</table>
-       <div class="hint">Forecasts rerun at the start of each battle day using only what was known then, over ${cal.wars} war${cal.wars === 1 ? '' : 's'}. Overall score ${cal.brier.toFixed(2)} (0 is perfect, 0.25 is guessing).</div>`
-    : `<div class="empty">First check after the current war ends (needs a war with battle-day data)</div>`));
+       <div class="hint">Forecasts rerun at the start of each battle day using only what was known then, over ${cal.wars} war${cal.wars === 1 ? '' : 's'} (${cal.n} forecasts).
+       Error score ${cal.brier.toFixed(3)} (lower is better; 0 is perfect). Simply guessing the usual pass rate (${Math.round(cal.base * 100)}%) would score ${cal.baseline.toFixed(3)}, so the forecasts are ${cal.brier < cal.baseline ? 'better' : 'not better'} than that.</div>`
+    : `<div class="empty">${hist ? 'First check after the current war ends (needs a war with battle-day data)' : 'Needs the hosted site with history'}</div>`));
   // 5. Donations this week
   const don = model.players.filter(p => !p.gone && p.donations != null).sort((a, b) => b.donations - a.donations);
   if (don.length) parts.push(`<h3>Top donors this week</h3><table class="tbl">${don.slice(0, 5).map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.donations}</td><td class="muted">received ${p.received ?? 0}</td></tr>`).join('')}</table>`);
@@ -795,6 +800,7 @@ async function checkPlayer() {
   } catch (e) { out.textContent = e === 404 ? 'Player not found' : viaSite || settings.key ? "Couldn't load that player" : 'Needs the hosted site or your own key'; }
 }
 $('#pcheck').onclick = checkPlayer;
+$('#statsbox').addEventListener('toggle', () => renderStats());
 $('#ptag').addEventListener('keydown', e => { if (e.key === 'Enter') checkPlayer(); });
 
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };

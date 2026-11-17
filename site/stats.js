@@ -10,6 +10,11 @@ function rng(seed) {
   for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+// Forecast bands, shared by the page and the accuracy check.
+const BANDS = [['Likely', 0.8], ['At risk', 0.2], ['Unlikely', 0]];
+const band = prob => BANDS.find(([, min]) => prob >= min)[0];
+// War week order, e.g. "138-2" < "138-3" < "139-1".
+const weekCmp = (a, b) => { const [a1, a2] = String(a).split('-').map(Number), [b1, b2] = String(b).split('-').map(Number); return a1 - b1 || a2 - b2; };
 const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
@@ -41,7 +46,7 @@ function clanHabits(players, lookback) {
 function forecast(p, ctx) {
   const { target, day, leftToday, fame, clan } = ctx;
   if (fame >= target) return { prob: 1, expected: fame, low: fame, high: fame, basis: 'already reached' };
-  const h = habits(p, ctx.lookback) || clan;
+  const own = ctx.habits !== undefined ? ctx.habits : habits(p, ctx.lookback), h = own || clan;
   const daysAfter = Math.max(0, 4 - day);
   const r = rng(p.tag + ':' + day + ':' + leftToday), runs = 2000, finals = [];
   const sd = Math.max(15, h.sd || 25);
@@ -61,7 +66,7 @@ function forecast(p, ctx) {
   finals.sort((a, b) => a - b);
   const prob = finals.filter(x => x >= target).length / runs;
   return { prob, expected: Math.round(finals[runs >> 1]), low: Math.round(finals[Math.floor(runs * 0.1)]), high: Math.round(finals[Math.floor(runs * 0.9)]),
-    basis: habits(p, ctx.lookback) ? `their last ${h.wars} wars: plays ${Math.round(h.use * 100)}% of decks, ~${Math.round(h.perDeck)} medals each` : 'clan typical (new player)' };
+    basis: own ? `their last ${h.wars} wars: plays ${Math.round(h.use * 100)}% of decks, ~${Math.round(h.perDeck)} medals each` : 'clan typical (new player)' };
 }
 
 // Reliability score 0–100 from recent wars (needs 2+):
@@ -139,35 +144,50 @@ function clanSeries(wars, players, target) {
 }
 
 // How accurate the forecasts were, rerun after the fact using only what was known at the time.
-// For each finished war with stored battle-day data, at the start of battle days 1–4:
-//   medals so far = their total at the end of the previous battle day (0 on day 1),
-//   habits = their wars *before* this one, then compare with whether they actually reached the target.
-// Returns hit rates per forecast band and a Brier score (0 = perfect, 0.25 = coin toss).
-function calibrate(h, target, lookback = 10) {
+// For each of the last `lookback` finished wars with stored battle-day data, at the start of each battle day:
+//   who: players seen in the race that day (late joiners from their first day; players who then played
+//        nothing still count, as misses); excused players are skipped,
+//   medals so far: their total in the last snapshot of the previous battle day (0 on their first day;
+//        snapshots are up to 15 minutes before the reset, so this can be slightly low),
+//   target: the clan target, or per battle day left for late joiners (as the page does),
+//   habits: only their wars before this one.
+// Scored per band and with a Brier score, next to the score of simply guessing the clan's usual pass rate.
+function calibrate(h, target, lookback = 10, perDay = 450) {
   if (!h) return null;
-  const key = k => k.split('-').map(Number), cmp = (a, b) => { const [a1, a2] = key(a), [b1, b2] = key(b); return a1 - b1 || a2 - b2; };
-  const weeksBy = {};
-  for (const r of h.players || []) (weeksBy[r.tag] ||= []).push({ key: r.week, fame: r.fame, decks: r.decks });
-  for (const t in weeksBy) weeksBy[t].sort((a, b) => cmp(b.key, a.key));
+  const weeksBy = {}, resultsBy = {};
+  for (const r of h.players || []) {
+    (weeksBy[r.tag] ||= []).push({ key: r.week, fame: r.fame, decks: r.decks });
+    (resultsBy[r.week] ||= {})[r.tag] = r.fame;
+  }
+  for (const t in weeksBy) weeksBy[t].sort((a, b) => weekCmp(b.key, a.key));
   const dayRows = {};
   for (const d of h.days || []) ((dayRows[d.week] ||= {})[d.tag] ||= {})[d.day] = d.fame;
-  const bands = { Likely: { n: 0, hit: 0 }, 'At risk': { n: 0, hit: 0 }, Unlikely: { n: 0, hit: 0 } };
-  let brier = 0, n = 0;
-  const wars = (h.wars || []).map(w => w.week).filter(w => dayRows[w]);
+  const excused = new Set((h.notes || []).filter(n => n.kind === 'join' && (n.value === 'excused' || n.value === '4')).map(n => n.week + '|' + n.tag));
+  const bands = Object.fromEntries(BANDS.map(([k]) => [k, { n: 0, hit: 0 }]));
+  const samples = [];
+  const wars = (h.wars || []).map(w => w.week).filter(w => dayRows[w] && resultsBy[w]).sort(weekCmp).slice(-lookback);
   for (const week of wars) {
-    const finals = Object.fromEntries((h.players || []).filter(r => r.week === week && r.decks > 0).map(r => [r.tag, r.fame]));
-    const ps = Object.keys(finals).map(tag => ({ tag, weeks: (weeksBy[tag] || []).filter(w => cmp(w.key, week) < 0) }));
+    const tags = Object.keys(dayRows[week]).filter(t => resultsBy[week][t] != null && !excused.has(week + '|' + t));
+    const ps = tags.map(tag => ({ tag, weeks: (weeksBy[tag] || []).filter(w => weekCmp(w.key, week) < 0) }));
     const clan = clanHabits(ps, lookback);
-    for (const p of ps) for (let day = 1; day <= 4; day++) {
-      const so = day === 1 ? 0 : dayRows[week][p.tag]?.[day - 1];
-      if (so == null || so >= target) continue;
-      const f = forecast(p, { target, day, leftToday: 4, fame: so, lookback, clan });
-      const hit = finals[p.tag] >= target ? 1 : 0;
-      const b = f.prob >= 0.8 ? 'Likely' : f.prob >= 0.2 ? 'At risk' : 'Unlikely';
-      bands[b].n++; bands[b].hit += hit; brier += (f.prob - hit) ** 2; n++;
+    for (const p of ps) {
+      const seen = dayRows[week][p.tag], first = Math.min(...Object.keys(seen).map(Number));
+      const goal = first > 1 ? (4 - first + 1) * perDay : target;   // joined during battle day `first`: that day and later count
+      const own = habits(p, lookback);
+      for (let day = first; day <= 4; day++) {
+        const so = day === first ? 0 : seen[day - 1];
+        if (so == null || so >= goal) continue;
+        const f = forecast(p, { target: goal, day, leftToday: 4, fame: so, lookback, clan, habits: own });
+        samples.push({ prob: f.prob, hit: resultsBy[week][p.tag] >= goal ? 1 : 0 });
+      }
     }
   }
-  return n ? { n, wars: wars.length, brier: brier / n, bands } : null;
+  if (!samples.length) return null;
+  for (const x of samples) { const b = bands[band(x.prob)]; b.n++; b.hit += x.hit; }
+  const base = samples.reduce((t, x) => t + x.hit, 0) / samples.length;
+  const brier = samples.reduce((t, x) => t + (x.prob - x.hit) ** 2, 0) / samples.length;
+  const baseline = samples.reduce((t, x) => t + (base - x.hit) ** 2, 0) / samples.length;
+  return { n: samples.length, wars: wars.length, brier, baseline, base, bands };
 }
 
-if (typeof module !== 'undefined') module.exports = { calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
+if (typeof module !== 'undefined') module.exports = { band, BANDS, weekCmp, calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
