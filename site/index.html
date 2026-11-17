@@ -5,12 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clan War Audit</title>
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<meta name="theme-color" content="#1a7f37">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="War Audit">
 </head>
 <body>
 
 <h1>Clan War Audit</h1>
 <div id="sub"></div>
-<div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button><span id="freshmsg" class="freshmsg" role="status"></span></div>
+<div class="fresh hidden" id="fresh"><span id="lastpull"></span><button class="btn small" id="refresh">Request updated data</button><span id="freshmsg" class="freshmsg" role="status"></span>
+  <div class="notify hidden" id="notify"><span id="notifytext"></span><button class="btn small" id="notifybtn"></button></div></div>
 
 <section class="step">
   <h2><span class="n">1</span>Clan</h2>

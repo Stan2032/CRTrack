@@ -13,7 +13,7 @@ function fakeD1() {
     bind: (...a) => stmt(sql, a),
     all: async () => { queries++; return { results: db.prepare(sql).all(...args) }; },
     first: async () => { queries++; return db.prepare(sql).get(...args) ?? null; },
-    run: async () => { queries++; db.prepare(sql).run(...args); return {}; },
+    run: async () => { queries++; const x = db.prepare(sql).run(...args); return { meta: { changes: Number(x.changes) } }; },
   });
   return {
     prepare: sql => stmt(sql),
@@ -43,7 +43,7 @@ const env = { DB, CR_API_KEY: 'K', ALLOWED_CLANS: 'PPCCR8VU', EDIT_KEY: 'secret'
 
 // first run: baseline, imports 10 weeks
 let r = await snapshot(env, 'PPCCR8VU', '2026-11-17T10:00:00.000Z');
-assert.equal(r.newWars, 10); assert.equal(r.week, '138-3'); assert.equal(r.day, 0);
+assert.equal(r.newWars.length, 10); assert.equal(r.week, '138-3'); assert.equal(r.day, 0);
 assert.ok(DB.count() <= 50, 'queries ' + DB.count());
 assert.equal(DB.raw.prepare("SELECT count(*) c FROM member_events WHERE kind='seen'").get().c, 48);
 
@@ -55,7 +55,7 @@ state.members.items.push({ tag: '#NEWGUY', name: 'New Guy', role: 'member', last
 state.race = { ...state.race, periodIndex: 17, periodType: 'warDay',
   clan: { ...state.race.clan, participants: [{ tag: '#9R2UUCVY', name: 'Ninja', fame: 800, decksUsed: 4, decksUsedToday: 4, boatAttacks: 0 }] } };
 r = await snapshot(env, 'PPCCR8VU', '2026-11-19T10:00:00.000Z');
-assert.equal(r.newWars, 0); assert.equal(r.day, 1); assert.equal(r.events, 3);
+assert.equal(r.newWars.length, 0); assert.deepEqual(r.joined, ['New Guy']); assert.deepEqual(r.left, ['Manny1']); assert.equal(r.day, 1); assert.equal(r.events, 3);
 assert.ok(DB.count() <= 50, 'queries ' + DB.count());
 
 const h = await readHistory(env, 'PPCCR8VU');
@@ -114,4 +114,33 @@ console.log('History checks passed');
   assert.equal(shouldRun({ lastType: 'training', lastRun: at(17, 10, 0), resetAt: reset }, at(17, 22, 0)), true);
   assert.equal(shouldRun({ lastType: null }, at(17, 15, 0)), true);
   console.log('Schedule checks passed');
+}
+
+// notifications: subscribe, alerts recorded once, push sent with a VAPID header
+{
+  const { subscribe, sendAlert, latestAlerts, publicKey } = await import('../worker/push.js');
+  const pushes = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opt) => {
+    if (String(url).startsWith('https://push.example/')) { pushes.push({ url, auth: opt.headers.Authorization }); return new Response('', { status: url.endsWith('/gone') ? 410 : 201 }); }
+    return realFetch(url, opt);
+  };
+  const key = await publicKey(env);
+  assert.ok(key.length > 80, 'public key');
+  assert.equal(await subscribe(env, 'PPCCR8VU', { endpoint: 'https://push.example/a' }, 'Stan', 'https://site.example'), true);
+  assert.equal(await subscribe(env, 'PPCCR8VU', { endpoint: 'https://push.example/gone' }, 'Baki', 'https://site.example'), true);
+  assert.equal(await subscribe(env, 'PPCCR8VU', { endpoint: 'javascript:alert(1)' }, 'x', ''), false);
+  assert.equal(await sendAlert(env, 'PPCCR8VU', 'k1', 'Hello', 'World'), 1);
+  assert.equal(await sendAlert(env, 'PPCCR8VU', 'k1', 'Hello', 'World'), 0, 'same key sends once');
+  assert.match(pushes[0].auth, /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/);
+  assert.equal(DB.raw.prepare('SELECT count(*) c FROM push_subs').get().c, 1, 'gone endpoint removed');
+  assert.equal((await latestAlerts(env, ['PPCCR8VU']))[0].title, 'Hello');
+  // a pull that sees someone leave raises an alert
+  const { snapshotAll } = await import('../worker/history.js');
+  state.members.items = state.members.items.filter(m => m.name !== 'Bob');
+  await snapshotAll(env, { force: true, only: 'PPCCR8VU', now: Date.parse('2026-11-19T11:00:00.000Z') });
+  const a = await latestAlerts(env, ['PPCCR8VU']);
+  assert.ok(a.some(x => x.title === 'Clan members changed' && /Bob/.test(x.body)), JSON.stringify(a));
+  globalThis.fetch = realFetch;
+  console.log('Notification checks passed');
 }

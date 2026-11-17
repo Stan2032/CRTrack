@@ -1,6 +1,6 @@
 :root {
-  --bg: #f4f5f7; --card: #ffffff; --line: #dfe3e8; --text: #1b1f24; --muted: #6a7380; --soft: #eef1f4;
-  --green: #1a7f37; --red: #cf222e; --orange: #bc4c00; --yellow: #9a6700; --blue: #0969da; --cyan: #1b7c83;
+  --bg: #f4f5f7; --card: #ffffff; --line: #dfe3e8; --text: #1b1f24; --muted: #5c6570; --soft: #eef1f4;
+  --green: #157033; --red: #cf222e; --orange: #a84300; --yellow: #855a00; --blue: #0969da; --cyan: #146a70;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -125,7 +125,7 @@ span.tick { cursor: default; }
 .steps li:last-child { margin-bottom: 4px; }
 .steps li > .step-text { min-width: 0; }
 .steps ul { list-style: none; padding: 0; margin: 4px 0 8px; }
-.steps li { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); margin: 0; font-size: 14px; line-height: 1.45; }
+.steps li { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); margin: 0; font-size: 14px; line-height: 1.45; }
 .steps li:first-child { border-top: 0; }
 .steps li.is-done .step-text { opacity: .5; }
 .tickbox { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); background: var(--card); padding: 0; cursor: pointer; display: grid; place-items: center; margin-top: -1px; }
@@ -145,3 +145,11 @@ span.tick { cursor: default; }
 .pout th { text-align: left; color: var(--muted); font-weight: 400; padding: 5px 10px 5px 0; white-space: nowrap; vertical-align: top; }
 .pout td { padding: 5px 0; }
 .pout tr + tr th, .pout tr + tr td { border-top: 1px solid var(--line); }
+.notify { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 8px; color: var(--text); }
+/* Accessibility: visible keyboard focus, comfortable tap targets */
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tickbox { width: 28px; height: 28px; position: relative; }
+.tickbox::before { content: ""; position: absolute; inset: -8px; }
+.copybtn, .btn.small, .tick, select { min-height: 36px; }
+.name { min-height: 32px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }

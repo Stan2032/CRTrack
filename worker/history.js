@@ -2,6 +2,8 @@
 // Free plan limits: 50 D1 queries and 10 ms CPU per run, so rows are written with one
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
+import { sendAlert } from './push.js';
+
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
 CREATE TABLE IF NOT EXISTS member_events (clan TEXT, tag TEXT, name TEXT, kind TEXT, detail TEXT, at TEXT);
@@ -119,7 +121,16 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   if (battles.length) sql.push(`INSERT OR IGNORE INTO war_battles (clan,tag,at,type,won,lost) VALUES ${rows(battles)}`);
 
   if (sql.length) await db.batch(sql.map(s => db.prepare(s)));
-  return { clan, members: upserts.length, events: events.length, newWars: wars.length, week, day, battlesFrom: pick, battles: battles.length };
+  // For alerts: who joined/left this run, finished wars, and (on battle day 4) who can no longer reach the target.
+  const TODAY_MAX = [0, 200, 400, 700, 900];
+  let target = 1800;
+  try { const n = await db.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first(); if (n) target = JSON.parse(n.value).target || target; } catch (e) {}
+  const out = day === 4 ? live.filter(p => here.has(clean(p.tag)) && p.fame + TODAY_MAX[Math.max(0, 4 - p.decksUsedToday)] < target).map(p => p.name) : [];
+  return {
+    clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
+    joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
+    out, target, firstRun, wars: wars.map(w => ({ week: w[1], rank: w[3], trophies: w[5] })),
+  };
 }
 
 // A war battle from a battle log entry: duel (wins/losses counted per game), 1v1 / special mode, or boat attack.
@@ -155,6 +166,29 @@ export function shouldRun({ lastType, lastRun, resetAt }, now) {
 
 const ms = s => { const m = String(s || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s); };
 
+const ukDay = t => new Date(t).toISOString().slice(0, 10);
+const list = (a, n = 6) => a.slice(0, n).map(x => String(x).replace(/<\/?c\d*>/gi, '')).join(', ') + (a.length > n ? ` +${a.length - n} more` : '');
+
+async function alertsFor(env, r, now) {
+  if (!env.DB || r.firstRun) return;
+  if (r.joined.length || r.left.length) {
+    const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`].filter(Boolean);
+    await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
+  }
+  for (const w of r.wars) {
+    const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
+    await sendAlert(env, r.clan, `war:${r.clan}:${w.week}`, `War ${w.week} finished${place}`, 'Open the app to see who to act on.');
+  }
+  if (r.day === 4 && r.out.length) {
+    const st = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
+    const reset = st ? ms(st.ended_at) : null, dayMs = 864e5;
+    const left = reset == null ? dayMs : (((reset - now) % dayMs) + dayMs) % dayMs;
+    const when = left < 4 * 3600e3 ? 'late' : 'start';
+    await sendAlert(env, r.clan, `d4:${r.clan}:${r.week}:${when}`, `Battle day 4: ${r.out.length} can't reach ${r.target}`,
+      `${list(r.out)}${when === 'late' ? ' · under 4 hours left' : ''}`);
+  }
+}
+
 export async function snapshotAll(env, { force = false, now = Date.now(), only = null } = {}) {
   const out = [];
   for (const clan of only ? [only] : trackedClans(env)) {
@@ -168,8 +202,14 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         const state = { lastType: st?.lastType, lastRun: st?.lastRun ? Date.parse(st.lastRun) : null, resetAt: st?.lastEnd ? ms(st.lastEnd) : null };
         if (!shouldRun(state, now)) { out.push({ clan, skipped: 'training day' }); continue; }
       }
-      out.push(await snapshot(env, clan, new Date(now).toISOString()));
-    } catch (e) { out.push({ clan, error: String(e.message || e) }); }
+      const res = await snapshot(env, clan, new Date(now).toISOString());
+      out.push(res);
+      await alertsFor(env, res, now).catch(() => {});
+    } catch (e) {
+      out.push({ clan, error: String(e.message || e) });
+      // Tell leaders once every 6 hours while pulls keep failing.
+      await sendAlert(env, clan, `err:${clan}:${Math.floor(now / (6 * 3600e3))}`, 'Data pull failing', `Couldn't update ${clan}: ${String(e.message || e).slice(0, 80)}. Check the Clash Royale key.`).catch(() => {});
+    }
   }
   return out;
 }

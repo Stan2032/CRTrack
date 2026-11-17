@@ -289,6 +289,7 @@ function render() {
   renderSteps(all, msgs);
   renderLog();
   renderFresh();
+  renderNotify();
   autoSave(all);
 }
 // Weekly recap: placing, trophies, top scorers, most improved.
@@ -478,7 +479,7 @@ $('#savecode').onclick = async () => {
   const c = $('#code').value.trim();
   codeOk = await checkCode(c);
   settings.code = codeOk ? c : ''; put('cr-war-audit:settings', settings);
-  say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render();
+  say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render(); renderNotify();
 };
 $('#saverules').onclick = async () => {
   // Save only what differs from the defaults, so future default changes still apply.
@@ -531,6 +532,51 @@ $('#backup').onclick = async () => {
   } catch (e) { say('Backup needs the hosted site with history', true); }
 };
 
+// ---- Installable app + notifications (leaders only) ----
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let swReg = null;
+async function pushState() {
+  if (!swReg || !('PushManager' in window)) return null;
+  return swReg.pushManager.getSubscription();
+}
+async function renderNotify() {
+  const box = $('#notify');
+  const show = site.history && codeOk && 'serviceWorker' in navigator;
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const btn = $('#notifybtn'), text = $('#notifytext');
+  if (isIOS && !installed()) { text.textContent = '🔔 For alerts on iPhone: Share → Add to Home Screen, then open it from there.'; btn.classList.add('hidden'); return; }
+  if (!('PushManager' in window) || !('Notification' in window)) { text.textContent = '🔔 This browser can’t show notifications.'; btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+  const sub = await pushState();
+  text.textContent = sub ? '🔔 Alerts on for this device' : '🔔 Get alerts: joins/leaves, war ended, day 4 at risk';
+  btn.textContent = sub ? 'Turn off' : 'Turn on';
+}
+async function toggleNotify() {
+  const btn = $('#notifybtn'); btn.disabled = true;
+  try {
+    const sub = await pushState();
+    if (sub) {
+      await fetch('api/push/unsubscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+    } else {
+      if (await Notification.requestPermission() !== 'granted') { $('#notifytext').textContent = '🔔 Notifications are blocked. Allow them in your browser settings.'; return; }
+      const { key } = await (await fetch('api/push/key')).json();
+      const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((key.length + 3) % 4)), c => c.charCodeAt(0));
+      const s2 = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+      const r = await fetch('api/push/subscribe', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ clan: model?.clan.tag || settings.tag, subscription: s2.toJSON() }) });
+      if (!r.ok) throw new Error('subscribe');
+      await fetch('api/push/test', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ clan: model?.clan.tag || settings.tag }) });
+    }
+  } catch (e) { $('#notifytext').textContent = '🔔 Couldn’t turn on alerts. Try again.'; btn.disabled = false; return; }
+  btn.disabled = false; renderNotify();
+}
+$('#notifybtn').onclick = toggleNotify;
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; renderNotify(); }).catch(() => {});
+}
+
 // ---- Check a player (recruits) ----
 async function checkPlayer() {
   const t = $('#ptag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'), out = $('#pout');
@@ -551,8 +597,8 @@ async function checkPlayer() {
     }
     const last = log && log[0] ? parseTime(log[0].battleTime) : null;
     const rows = [
-      ['Name', `${pl.name} (level ${pl.expLevel})`],
-      ['Clan', pl.clan ? `${pl.clan.name} (${ROLE[pl.role] || 'Member'})` : 'No clan'],
+      ['Name', `${cleanName(pl.name)} (level ${pl.expLevel})`],
+      ['Clan', pl.clan ? `${cleanName(pl.clan.name)} (${ROLE[pl.role] || 'Member'})` : 'No clan'],
       ['Trophies', `${pl.trophies} (best ${pl.bestTrophies})`],
       ['War day wins, all time', pl.warDayWins ?? '–'],
       ['Clan cards collected', pl.clanCardsCollected ?? '–'],
