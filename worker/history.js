@@ -140,10 +140,33 @@ export function warBattle(b) {
   return { type: 'pvp', won: me.crowns > op.crowns ? 1 : 0, lost: me.crowns > op.crowns ? 0 : 1 };
 }
 
-export async function snapshotAll(env) {
+// Battle days: every run (15 min), so each day's last snapshot is close to the reset.
+// Training days: only in the hour after the daily reset (catches battle day 1 starting) and every 12 hours.
+export function shouldRun({ lastType, lastRun, resetAt }, now) {
+  if (!lastType || lastType !== 'training' || !lastRun) return true;
+  if (now - lastRun >= 12 * 3600e3 - 60e3) return true;
+  if (resetAt == null) return true;
+  const day = 864e5, sinceReset = ((now - resetAt) % day + day) % day;
+  return sinceReset < 3600e3;
+}
+
+const ms = s => { const m = String(s || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s); };
+
+export async function snapshotAll(env, { force = false, now = Date.now() } = {}) {
   const out = [];
   for (const clan of trackedClans(env)) {
-    try { out.push(await snapshot(env, clan)); } catch (e) { out.push({ clan, error: String(e.message || e) }); }
+    try {
+      if (!force) {
+        await env.DB.exec(SCHEMA);
+        const st = await env.DB.prepare(`SELECT
+          (SELECT type FROM periods WHERE clan = ?1 ORDER BY first_seen DESC LIMIT 1) AS lastType,
+          (SELECT max(updated_at) FROM members WHERE clan = ?1) AS lastRun,
+          (SELECT ended_at FROM wars WHERE clan = ?1 ORDER BY ended_at DESC LIMIT 1) AS lastEnd`).bind(clan).first();
+        const state = { lastType: st?.lastType, lastRun: st?.lastRun ? Date.parse(st.lastRun) : null, resetAt: st?.lastEnd ? ms(st.lastEnd) : null };
+        if (!shouldRun(state, now)) { out.push({ clan, skipped: 'training day' }); continue; }
+      }
+      out.push(await snapshot(env, clan, new Date(now).toISOString()));
+    } catch (e) { out.push({ clan, error: String(e.message || e) }); }
   }
   return out;
 }

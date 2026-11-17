@@ -11,7 +11,7 @@ Open the hosted link (or `site/index.html`), and it loads the clan. Then work do
    - **Last war**: who to kick, demote, warn, check on, or promote.
    - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
    - Each player: name, then medals and decks, then the reason. Dots show their recent wars (green = reached 1800).
-   - **Mark done** when you've acted. Kicks, demotions and promotions tick themselves once the game shows them.
+   - Kicks, demotions and promotions tick themselves once the game shows them. Final warnings and check-ins have **Mark done**.
    - Tap a name for their history and to change the suggestion or join day.
    - Pick an earlier war to see what was decided and done. Results are remembered automatically.
 3. **Clan chat messages**: copy and paste.
@@ -23,7 +23,7 @@ or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
 ## History (hosted link only)
 
-Every 15 minutes the site saves the clan's members and this war's progress. Over time that gives:
+Every 15 minutes on battle days (twice a day on training days) the site saves the clan's members, donations, every clan's medals in the race, and players' war battles. Over time that gives:
 
 - **Join dates**, so a late joiner's battle day is filled in automatically
 - **Who left, joined, was promoted or demoted, and when** (Clan log)

@@ -112,6 +112,7 @@ textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px s
 .tick { border: 1px solid var(--line); background: var(--soft); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .tick.done { background: transparent; border-color: var(--green); color: var(--green); }
 span.tick { cursor: default; }
+.tick.wait { background: transparent; color: var(--muted); font-weight: 400; }
 .is-done .facts, .is-done .why, .is-done .name { opacity: .55; }
 .ask { margin-top: 6px; font-size: 13px; color: var(--blue); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .more .row { margin-top: 6px; }
@@ -621,6 +622,7 @@ const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'Final warning', Check: 'C
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
 const GROUPS_END = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote', 'OK', 'Excused', 'Left'];
 const ACTIONS = ['Kick', 'Demote', 'Warn', 'Check', 'Review', 'Promote'];
+const AUTO_CHECKED = ['Kick', 'Demote', 'Promote'];   // the game shows these; no manual tick
 const VERB = { Kick: 'kick', Demote: 'demotion', Warn: 'final warning', Check: 'check-in', Review: 'decision', Promote: 'promotion' };
 const GROUPS_LIVE = ['Out', 'Need', 'Safe', 'Excused'];
 const FOLDED = ['OK', 'Excused', 'Safe', 'Left'];
@@ -749,7 +751,7 @@ function evaluate() {
     const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
     if (mode === 'end' && p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmtDate(p.leftAt) : 'Left during or before this war'; }
     const done = mode === 'end' && ACTIONS.includes(res.status)
-      ? { auto: autoDone(p, res.status, model.endedAt), manual: note('done', p) === '1' } : null;
+      ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p) === '1' } : null;
     return { ...p, join, joinAuto: !manual && !!auto, res, done };
   });
 }
@@ -801,6 +803,7 @@ function row(p) {
     facts = w ? `<span>${w.fame} medals</span><span>${w.decks}/16 decks${w.boats ? `, ${w.boats} on boats` : ''}</span>` : '<span>Not in this war</span>';
     if (ws.length) facts += `<span class="dots" title="${ws.length - miss} of last ${ws.length} wars at ${r.target}+">${dots}</span>`;
     if (p.done) right = p.done.auto ? '<span class="tick done">✓ Done</span>'
+      : AUTO_CHECKED.includes(p.res.status) ? (p.gone || model.season !== model.latest ? '' : '<span class="tick wait">Waiting for game</span>')
       : `<button class="tick ${p.done.manual ? 'done' : ''}" data-done="${esc(p.tag)}" aria-pressed="${p.done.manual}">${p.done.manual ? '✓ Done' : 'Mark done'}</button>`;
   } else {
     facts = `<span>${p.res.fame} medals</span><span>${p.res.today}/4 decks today</span>`;

@@ -43,7 +43,7 @@ Live at `https://crtrack.stane203.workers.dev` (Workers Builds from this repo; `
 ## History (D1)
 
 Database `crtrack-history` (id `513fad6e-908f-4a83-b3c4-b142df48b364`, Western Europe), bound as `DB`.
-A cron every 15 minutes (`worker/history.js`, `snapshot()`) saves, for each clan in `TRACK_CLANS` or `ALLOWED_CLANS`:
+A cron fires every 15 minutes. On battle days every run snapshots; on training days only runs in the hour after the daily reset, or 12 hours after the last one, do (`shouldRun()`). Each snapshot (`worker/history.js`, `snapshot()`) saves, for each clan in `TRACK_CLANS` or `ALLOWED_CLANS`:
 
 | Table | What |
 |---|---|
@@ -55,6 +55,7 @@ A cron every 15 minutes (`worker/history.js`, `snapshot()`) saves, for each clan
 | `notes` | shared choices: `join`, `over` (manual change), `result` (saved results), `done` (action ticked), `rules` |
 | `member_stats` | donations given/received, trophies, level, per war week |
 | `race_standings` | every clan in the race and its medals, per battle day |
+| `war_battles` | (checked: iccyman2511 138-2 rebuilt to exactly 2,850 medals / 16 decks) |
 | `war_battles` | war battles from players' battle logs (duel / 1v1 / boat, games won and lost). 3 players per run in rotation, so each player's log is read about every 4 hours (the log holds their last 25 battles) |
 
 ## How long data lasts

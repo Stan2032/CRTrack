@@ -24,7 +24,7 @@ export async function handleApi(request, env) {
     if (url.pathname === '/api/snapshot') {
       if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
       if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);
-      return json(await snapshotAll(env), 200);
+      return json(await snapshotAll(env, { force: true }), 200);
     }
     const clan = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
     if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);

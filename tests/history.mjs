@@ -88,3 +88,16 @@ assert.equal(warBattle({ type: 'PvP' }), null);
 assert.equal(warBattle({ type: 'boatBattle', boatBattleSide: 'defender' }), null);
 assert.ok(h.stats.length >= 48);
 console.log('History checks passed');
+
+// schedule: training days run just after the daily reset and every 12 h; battle days always
+{
+  const { shouldRun } = await import('../worker/history.js');
+  const reset = Date.UTC(2026, 10, 16, 9, 43), H = 3600e3;
+  const at = (d, h, m) => Date.UTC(2026, 10, d, h, m);
+  assert.equal(shouldRun({ lastType: 'warDay', lastRun: at(19, 9, 0), resetAt: reset }, at(19, 9, 15)), true);
+  assert.equal(shouldRun({ lastType: 'training', lastRun: at(17, 10, 0), resetAt: reset }, at(17, 15, 0)), false);
+  assert.equal(shouldRun({ lastType: 'training', lastRun: at(17, 10, 0), resetAt: reset }, at(18, 9, 45)), true);
+  assert.equal(shouldRun({ lastType: 'training', lastRun: at(17, 10, 0), resetAt: reset }, at(17, 22, 0)), true);
+  assert.equal(shouldRun({ lastType: null }, at(17, 15, 0)), true);
+  console.log('Schedule checks passed');
+}
