@@ -63,13 +63,15 @@ Every clan sets its own under **Rules** (saved for all leaders with the leader c
 | Elder, second miss in a row or after a warning | Demote |
 | Mostly boat attacks (50%+ of decks, 8+ decks), including new members | First & only warning, with the boat attack tip |
 | Still on boats and under again after that | Kick *(switch: Boat attackers still under after a warning are kicked)* |
-| Passed the target 5+ wars in a row, now offline 3+ days | Check on them |
+| Passed the target 3+ wars in a row, now offline 3+ days | Check on them |
+| Back after leaving the clan | Leaders decide |
+| New, join day unknown | Leaders decide |
 | Leader or co-leader | Leaders decide |
 
 | Otherwise | Suggestion |
 |---|---|
 | Joined mid-war | Target is 450 per battle day left after joining, or passes if every deck was used |
-| Member, 6+ wars in clan, at most 1 miss, average 2300+ | Promote to Elder |
+| Member, 6+ wars in clan, at most 1 miss, average 2200+ | Promote to Elder |
 
 All numbers and switches can be changed.
 
@@ -77,7 +79,6 @@ All numbers and switches can be changed.
 
 - `site/index.html`: the app
 - `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
-- `functions/api/`: the same for Cloudflare Pages, if used instead
 - `samples/`: real exports from #WINNING, week 138-2
 - `tests/`: `node tests/check.mjs`, `node tests/function.mjs`, `node tests/history.mjs`
 

@@ -229,11 +229,11 @@ const DEFAULT_RULES = {
   boatRepeatKick: true,  // boat attackers still under after a warning are kicked
   spareBoats: true,  // active boat users get a warning, not a kick
   boatShare: 50,     // % of decks on boats to count as a boat user
-  holdWeeks: 5,      // passed this many weeks in a row before...
+  holdWeeks: 3,      // passed this many wars in a row before...
   holdOffline: 3,    // ...and offline this many days -> check in
   promoWeeks: 6,     // weeks in clan
   promoMisses: 1,    // max misses in that time
-  promoAvg: 2300,    // average medals
+  promoAvg: 2200,    // average medals
   chatLimit: 256,    // measured in game with a numbered ruler: clan chat keeps 256 characters
   lookback: 10,      // weeks used for history stats
 };
@@ -417,7 +417,7 @@ function judgeEnd(p, r, join, override) {
     else if (p.isNew && join === 'unknown') res = out('Review', `New member, under ${r.target}: set when they joined`);
     else if (p.isNew) res = out('Kick', `New member, under ${r.target}`);
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
-    else if (!p.prev) res = out('Kick', `Under ${r.target}, wasn't in the war before`);
+    else if (!p.prev) res = out('Review', `Back after leaving, under ${r.target}`);
     else res = out('Warn', 'First miss');
   }
   if (w && p.days) {
@@ -759,7 +759,10 @@ async function pull() {
     if (raceInfo.day) day = raceInfo.day;
     pickWeek = null;
     load(rows, 'api');
-    setMode(raceInfo.day ? 'live' : 'end');
+    // Battle days open on This war, unless last war still has things to do.
+    mode = 'end';
+    const todo = model.season === model.latest && evaluate().some(p => !p.gone && ACTIONS.includes(p.res.status) && !(p.done && (p.done.auto || p.done.manual)));
+    setMode(raceInfo.day && !todo ? 'live' : 'end');
     say('Updated ' + fmtTime(Date.now()) + (hist?.events?.length ? ' · history since ' + fmtDate(model.history.since) : ''));
   } catch (e) {
     const msg = viaSite && e === 501 ? 'This site has no key. Add your own below.'

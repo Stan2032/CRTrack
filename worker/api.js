@@ -1,4 +1,4 @@
-// Shared by the Worker (worker/index.js) and the Pages Function (functions/api/).
+// API handler for the Cloudflare Worker (worker/index.js).
 //   GET  /api/status                       what this site offers
 //   GET  /api/v1/clans/%23TAG[/members|/currentriverrace|/riverracelog]  -> RoyaleAPI proxy with CR_API_KEY
 //   GET  /api/history?clan=TAG             stored history (needs D1 binding DB)
