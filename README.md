@@ -24,7 +24,7 @@ or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
 ## Members' page
 
-`/me.html`: each member enters their own player tag and sees only their own numbers: this war's medals and decks
+`/me`: each member enters their own player tag and sees only their own numbers: this war's medals and decks
 left today, their forecast, their war history and consistency, how they play, and the rules explained.
 
 ## Discord

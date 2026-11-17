@@ -10,7 +10,7 @@ check on or promote, with clan chat messages ready to paste, and during battle d
 still needs to play.
 
 - **Leaders' page:** https://crtrack.stane203.workers.dev (opens and loads the clan by itself)
-- **Members' page:** https://crtrack.stane203.workers.dev/me.html (each member enters their own tag; own numbers only)
+- **Members' page:** https://crtrack.stane203.workers.dev/me (each member enters their own tag; own numbers only)
 - **Discord bot:** slash commands and pings, run by the same Worker (set up per the steps below)
 
 Style Stan asked for: **short, plain words**, no self-explaining text; UI follows Nielsen &
