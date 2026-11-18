@@ -639,7 +639,7 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
 
 // /setup remove: Leader only (not Co-Leader), asks first, then deletes the layout's channels/categories/roles and the saved settings.
 { const { removeAll, COMMANDS } = await import('../worker/discord.js');
-  const rows = new Map([['discord:GR', '{"clan":"PPCCR8VU","channels":{"war":"C2"},"roles":{"leader":"RL","coLeader":"RC"}}'], ['discord:rules:GR', '{}'], ['discord:intro:GR:C2', '{}'], ['discord:rules:GR2', '{}']]);
+  const rows = new Map([['discord:GR', '{"clan":"PPCCR8VU","channels":{"war":"C2"},"roles":{"leader":"RL","coLeader":"RC"},"layout":{"general":"G1","cats":[]}}'], ['discord:rules:GR', '{}'], ['discord:intro:GR:C2', '{}'], ['discord:rules:GR2', '{}']]);
   const deleted = [], links = [];
   const envR = { DISCORD_APP_ID: 'A', DISCORD_BOT_TOKEN: 't', DB: { prepare: sql => ({ bind: (...a) => ({
     run: async () => { if (/DELETE FROM kv/.test(sql)) for (const k of [...rows.keys()]) if (a.some(p => new RegExp('^' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*') + '$').test(k))) rows.delete(k);
@@ -647,11 +647,11 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
     first: async () => null, all: async () => ({ results: [] }) }) }) } };
   globalThis.fetch = async (url, opt = {}) => { const u = String(url);
     if (opt.method === 'DELETE') { deleted.push(u.split('/').slice(-2).join('/')); return new Response(null, { status: 204 }); }
-    if (u.endsWith('/channels')) return Response.json([{ id: 'C1', name: '📜-rules', type: 0 }, { id: 'C2', name: '⚔️-war', type: 0 }, { id: 'K1', name: '👋 Start here', type: 4 }, { id: 'U1', name: 'my-own-channel', type: 0 }]);
+    if (u.endsWith('/channels')) return Response.json([{ id: 'C1', name: '📜-rules', type: 0 }, { id: 'C2', name: '⚔️-war', type: 0 }, { id: 'K1', name: '👋 Start here', type: 4 }, { id: 'U1', name: 'my-own-channel', type: 0 }, { id: 'V1', name: 'Clan-voice', type: 2 }, { id: 'G1', name: 'chat', type: 0 }]);
     if (u.endsWith('/roles')) return Response.json([{ id: 'GR', name: '@everyone' }, { id: 'RL', name: 'Leader' }, { id: 'RC', name: 'Co-Leader' }, { id: 'RX', name: 'Friends' }, { id: 'RB', name: 'War Audit', managed: true }]);
     return Response.json({}); };
   const msg = await removeAll(envR, 'GR', JSON.parse(rows.get('discord:GR')));
-  assert.deepEqual(deleted, ['channels/C1', 'channels/C2', 'channels/K1', 'roles/RL', 'roles/RC'], 'channels, then categories, then roles; nothing else: ' + deleted);
+  assert.deepEqual(deleted, ['channels/C1', 'channels/C2', 'channels/V1', 'channels/G1', 'channels/K1', 'roles/RL', 'roles/RC'], 'channels, then categories, then roles; nothing else: ' + deleted);
   assert.deepEqual([...rows.keys()], ['discord:rules:GR2'], 'only this server\'s settings are forgotten');
   assert.equal(links.length, 0, 'links kept by default'); assert.match(msg, /5 channels|3 channels/); assert.match(msg, /linked accounts kept/);
   await removeAll(envR, 'GR', null, true); assert.equal(links[0], 'GR', 'links:True deletes links too');

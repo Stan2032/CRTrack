@@ -1222,9 +1222,11 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
   if (everyone && (BigInt(everyone.permissions) & inv)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${guild}`, { permissions: String(BigInt(everyone.permissions) & ~inv) }).then(() => done.push(`✅ Invites: only Leader and Co-Leader${invitesOk ? '' : ' (see below)'}`), () => done.push('⚠️ Couldn\'t limit invites'));
   const ids = {};
   let pos = 0;
+  const catIds = [];
   for (const cat of LAYOUT) {
     const existing = !fresh && st.channels.find(c => c.type === 4 && plain(c.name) === plain(cat.cat));
     const catRes = existing || await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: cat.cat, type: 4, position: pos++, permission_overwrites: overwritesFor(cat.access, guild, roleIds, st.botId) }).catch(() => null);
+    if (catRes?.id) catIds.push(catRes.id);
     for (const [n2, spec] of cat.channels.entries()) {
       const permission_overwrites = overwritesFor(spec.access, guild, roleIds, st.botId, spec.type === 2);
       const body = { permission_overwrites, parent_id: catRes?.id || null, position: n2, ...(spec.type === 2 ? {} : { topic: spec.topic }) };
@@ -1242,7 +1244,7 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     if (await dapi(env, 'DELETE', `/channels/${c.id}`).then(() => true, () => false)) dupes++;
   if (dupes) done.push(`🧹 Removed ${dupes} duplicate channel${dupes === 1 ? '' : 's'} from earlier runs`);
   done.unshift(`✅ ${Object.keys(ids).length} channels in ${LAYOUT.length} categories, with permissions`);
-  const next = { clan, channels: {}, roles: roleIds };
+  const next = { clan, channels: {}, roles: roleIds, layout: { ...ids, cats: catIds } };   // layout: what /setup remove deletes
   for (const spec of SPECS) for (const j of spec.jobs) if (ids[spec.key] && JOBS[j]) next.channels[j] = ids[spec.key];
   await setConfig(env, guild, next);
   for (const [job, key] of [['rules', 'rules'], ['stats', 'stats'], ['welcome', 'link']]) if (ids[key]) {
@@ -1259,9 +1261,11 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
 // About 25 requests (12 channels, 4 categories, 5 roles, 2 reads): one go fits the Worker's limit.
 export async function removeAll(env, guild, cfg, links = false) {
   const [channels, roles] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/channels`), dapi(env, 'GET', `/guilds/${guild}/roles`)]);
-  const names = new Set([...SPECS.map(x => x.name), ...LAYOUT.map(c => c.cat)]);
-  const saved = new Set(Object.values(cfg?.channels || {}));
-  const ours = channels.filter(c => names.has(c.name) || (saved.has(c.id) && SPECS.some(x => x.name === c.name)));
+  // Ours: the ids setup saved (it keeps a reused channel's own name, e.g. "Clan-voice"), and the layout's names
+  // ignoring emoji, spaces and dashes ("🔊 Clan voice" = "clan-voice"). Other channels are left alone.
+  const names = new Set([...SPECS.map(x => plain(x.name)), ...LAYOUT.map(c => plain(c.cat))]);
+  const lay = cfg?.layout || {}, saved = new Set([...Object.entries(lay).filter(([k]) => k !== 'cats').map(([, v]) => v), ...(lay.cats || [])]);
+  const ours = channels.filter(c => saved.has(c.id) || names.has(plain(c.name)));
   let ch = 0, rl = 0, failed = [];
   for (const c of [...ours.filter(c => c.type !== 4), ...ours.filter(c => c.type === 4)])   // channels first, then their categories
     if (await dapi(env, 'DELETE', `/channels/${c.id}`).then(() => true, () => false)) ch++; else failed.push(c.name);
