@@ -44,7 +44,7 @@ export const COMMANDS = [
     sub('check', 'Check someone who wants to join', [tagOpt('Their player tag, e.g. #ABC123')]),
     sub('links', 'Who is linked, and who isn\'t yet'),
     sub('link', 'Link someone else', [{ type: 6, name: 'user', description: 'Discord member', required: true }, tagOpt('Their player tag')]),
-    sub('digest', 'Weekly digest by DM before battle days', [bool('on', 'On or off', true)]),
+    sub('digest', 'Also get the weekly digest by DM', [bool('on', 'On or off', true)]),
     sub('backup', 'Post a backup file of the full history now')] },
   { name: 'setup', description: 'Leaders: server setup', default_member_permissions: '1', options: [
     sub('auto', 'Set up the whole server (roles, channels, permissions, posts)', [bool('apply', 'False: show the plan. True: do it.'), bool('fresh', 'Build everything new and delete the old channels')]),
@@ -313,12 +313,12 @@ export async function handleDiscord(request, env, ctx) {
     }
     case 'digest': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
-      if (!opt.on) { await env.DB.prepare('DELETE FROM discord_digest WHERE guild = ? AND user_id = ?').bind(guild, user).run(); return Response.json(reply('Weekly digest off.')); }
+      if (!opt.on) { await env.DB.prepare('DELETE FROM discord_digest WHERE guild = ? AND user_id = ?').bind(guild, user).run(); return Response.json(reply('Private copy off. The digest still posts in the leaders\' channel.')); }
       const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
-      const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: '🗞️ Weekly digest on: you\'ll get it here on the last training day, before battle days start. Stop with `/leader digest on:False`.' }).then(() => true, () => false);
+      const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: '🗞️ Private copy of the weekly digest on: you\'ll also get it here on the last training day, before battle days. Stop with `/leader digest on:False`.' }).then(() => true, () => false);
       if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then try again.'));
       await env.DB.prepare('INSERT OR REPLACE INTO discord_digest (guild, user_id, dm) VALUES (?, ?, ?)').bind(guild, user, dm).run();
-      return Response.json(reply('Done: the weekly digest will come to you privately on the last training day each week. I\'ve sent a test message.'));
+      return Response.json(reply('Done: the digest still posts in the leaders\' channel, and you\'ll also get a private copy. I\'ve sent a test message.'));
     }
     case 'backup': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
@@ -650,7 +650,7 @@ export async function postToJob(env, clan, job, content, fallback = null) {
   return sent;
 }
 
-// The weekly digest: privately to leaders who asked (/digest); to the leaders' channel if nobody has.
+// The weekly digest: always in the leaders' channel, plus a private copy to leaders who asked (/leader digest).
 export async function sendDigest(env, clan) {
   if (!discordReady(env)) return 0;
   await setupDB(env);
@@ -659,8 +659,8 @@ export async function sendDigest(env, clan) {
     const to = (await env.DB.prepare('SELECT dm FROM discord_digest WHERE guild = ?').bind(cfg.guild).all()).results;
     if (!to.length && !chan(cfg, 'leaders')) continue;
     const text = await leaderDigest(env, clan, cfg.guild);
-    if (to.length) { for (const x of to.slice(0, 10)) if (await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content: text, allowed_mentions: { parse: [] } }).then(() => true, () => false)) sent++; }
-    else if (await postJob(env, cfg.guild, cfg, 'leaders', text).catch(() => null)) sent++;
+    if (chan(cfg, 'leaders') && await postJob(env, cfg.guild, cfg, 'leaders', text).catch(() => null)) sent++;
+    for (const x of to.slice(0, 10)) if (await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content: text, allowed_mentions: { parse: [] } }).then(() => true, () => false)) sent++;
   }
   return sent;
 }
@@ -737,7 +737,7 @@ const INTROS = {
   joins: `💬 **Clan chat.** War Audit posts a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war.`,
   results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
-  leaders: `🛡️ **Leaders only. War Audit posts here:** **absences** from \`/away\`, the **weekly digest** before battle days (or privately with \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
+  leaders: `🛡️ **Leaders only. War Audit posts here:** **absences** from \`/away\`, the **weekly digest** before battle days (a private copy too: \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
   guests: `🚪 **Not in the clan right now.** The tag you linked isn't in #WINNING's member list. Join the clan in game, then use \`/link\` here again, or ask a leader below. You're free to leave the server any time.`,
   bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
 };

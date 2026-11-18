@@ -62,8 +62,8 @@ assert.equal(await sendDigest(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => /channels\/LC\/messages$/.test(c.url)).body.content, /Not linked on Discord \(48\)/, 'nobody opted in: leaders channel');
 await DB.exec(`INSERT INTO discord_digest (guild, user_id, dm) VALUES ('G', 'L1', 'DML1')`);
 calls.length = 0;
-assert.equal(await sendDigest(env, 'PPCCR8VU'), 1);
-assert.ok(calls.some(c => /channels\/DML1\/messages$/.test(c.url)) && !calls.some(c => /channels\/LC\/messages$/.test(c.url)), 'opted in: private only');
+assert.equal(await sendDigest(env, 'PPCCR8VU'), 2);
+assert.ok(calls.some(c => /channels\/DML1\/messages$/.test(c.url)) && calls.some(c => /channels\/LC\/messages$/.test(c.url)), 'opted in: leaders channel and a private copy');
 
 // Backup: gzipped full history that unzips to the same data; posted as a file.
 const f = await backupFile(env, 'PPCCR8VU', Date.parse('2026-12-01T10:00:00Z'));
@@ -89,7 +89,7 @@ calls.length = 0;
 out = await snapshotAll(env, { now: Date.parse('2026-11-18T10:30:00Z') });
 assert.equal(out[0].stats, 0, 'the first snapshot saw finished wars: stats boards refresh first (none set up here)');
 out = await snapshotAll(env, { now: Date.parse('2026-11-18T10:45:00Z') });
-assert.equal(out[0].digest, 1, 'then the digest, in a run of its own');
+assert.equal(out[0].digest, 2, 'then the digest (channel + private copy), in a run of its own');
 assert.ok(calls.some(c => /channels\/DML1\/messages$/.test(c.url)));
 out = await snapshotAll(env, { now: Date.parse('2026-11-18T22:30:00Z') });
 assert.ok(!('digest' in out[0]) && !calls.slice(1).some(c => /channels\/W\/messages$/.test(c.url) && c.method === 'POST'), 'each once a week');

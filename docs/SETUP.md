@@ -137,7 +137,7 @@ everything.
 | **Leaders** | |
 | `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join |
 | `/leader links` · `/leader link @who #TAG` | Who's linked · link someone else |
-| `/leader digest on:True` · `/leader backup` | Weekly digest by DM · backup file now |
+| `/leader digest on:True` · `/leader backup` | Also get the weekly digest by DM · backup file now |
 | `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
 | `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
