@@ -24,6 +24,12 @@ async function page(b, path = '') {
     const u = new URL(r.request().url()), j = (o, s = 200) => r.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(o) });
     if (u.pathname === '/api/status') return j({ key: true, clans: ['PPCCR8VU'], history: true, edit: true, discord: false });
     if (u.pathname === '/api/history') return j(hist);
+    if (u.pathname === '/api/import') {
+      if (r.request().headers()['x-edit-key'] !== 'code') return j({}, 401);
+      const rows = JSON.parse(r.request().postData()).rows, weeks = [...new Set(rows.map(x => x.week))].sort();
+      globalThis.imported = rows;
+      return j({ imported: weeks.filter(w => w !== '138-2'), skipped: ['138-2'], rows: rows.length, invalid: 0 });
+    }
     if (u.pathname === '/api/notes') {
       if (r.request().headers()['x-edit-key'] !== 'code') return j({}, 401);
       for (const i of JSON.parse(r.request().postData()).items) notes.push({ ...i, at: 'x' });
@@ -69,6 +75,12 @@ try {
   // Leader code, then a shared tick
   await p.fill('#code', 'code'); await p.click('#savecode'); await p.waitForTimeout(200);
   assert.match(await p.textContent('#status'), /accepted/);
+  // Import older wars: a RoyaleAPI War history export is read in the browser and sent as rows.
+  assert.equal(await p.isVisible('label[for="importfile"]'), true, 'import shows with the leader code');
+  await p.setInputFiles('#importfile', new URL('../samples/war-history.csv', import.meta.url).pathname);
+  await p.waitForFunction(() => /Added/.test(document.querySelector('#importmsg').textContent));
+  assert.match(await p.textContent('#importmsg'), /Added 9 older wars \(136-1 to 138-1\)\. 1 already tracked/);
+  assert.ok(globalThis.imported.length > 300 && globalThis.imported.every(x => /^\d+-\d$/.test(x.week) && x.tag && x.decks <= 16));
   const tick = await p.$('[data-stepdone], [data-markall]');
   if (tick) { await tick.click(); await p.waitForTimeout(200); assert.match(await p.textContent('#status'), /Saved for everyone/); }
   // Clan stats and the rules explainer open without errors

@@ -610,6 +610,7 @@ function renderRules() {
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
   $('#discordrow').classList.toggle('hidden', !(codeOk && site.discord));
+  $('#importrow').classList.toggle('hidden', !(codeOk && site.history));
   $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone. Remembered on this device.` : 'With the leader code, your changes are saved for everyone.';
 }
 
@@ -840,6 +841,28 @@ document.addEventListener('click', e => {
   if (!tip) { tip = document.createElement('div'); tip.className = 'helptip'; tip.innerHTML = HELP[b.dataset.help]; head.after(tip); b.setAttribute('aria-expanded', 'true'); }
   else { tip.remove(); b.setAttribute('aria-expanded', 'false'); }
 }, true);
+
+// ---- Import older wars (RoyaleAPI "War log" or "War history" CSV exports): adds only wars the tracker doesn't have ----
+$('#importfile').addEventListener('change', async e => {
+  const msg = $('#importmsg'), rows = [];
+  for (const f of e.target.files) {
+    const r = parseCSV(await f.text()), kind = detect(r);
+    const log = kind === 'log' ? r : kind === 'history' ? historyToLog(r) : [];
+    for (const x of log) rows.push({ week: x.season_key, tag: cleanTag(x.player_tag), name: cleanName(x.player_name), fame: +x.player_fame || 0, decks: +x.player_decks_used || 0, boats: x.player_boat_attacks === '' ? null : +x.player_boat_attacks || 0 });
+  }
+  e.target.value = '';
+  if (!rows.length) { msg.textContent = 'No war rows found. Use RoyaleAPI\'s War log or War history export.'; return; }
+  msg.textContent = 'Importing…';
+  try {
+    const r = await fetch('api/import?clan=' + (model?.clan.tag || cleanInputTag()), { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ rows }) });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = 'Failed: ' + (j.reason || r.status); return; }
+    msg.textContent = j.imported.length
+      ? `Added ${j.imported.length} older war${j.imported.length === 1 ? '' : 's'} (${j.imported[0]} to ${j.imported[j.imported.length - 1]}).` + (j.skipped.length ? ` ${j.skipped.length} already tracked, left as they were.` : '')
+      : `Nothing new: all ${j.skipped.length} wars in the file are already tracked.`;
+    if (j.imported.length) pull();
+  } catch (err) { msg.textContent = "Couldn't import. Try again."; }
+});
 
 // ---- Check a player (recruits) ----
 async function checkPlayer() {

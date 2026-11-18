@@ -403,6 +403,26 @@ export async function readMember(env, clan, tag) {
   };
 }
 
+// Older wars from RoyaleAPI exports (before tracking started). Only weeks the tracker doesn't already have are added,
+// so nothing tracked is ever overwritten. rows: [{ week: "136-1", tag, name, fame, decks, boats }].
+export async function importWars(env, clan, input, by = null, now = new Date().toISOString()) {
+  await env.DB.exec(SCHEMA);
+  const have = new Set((await env.DB.prepare('SELECT week FROM wars WHERE clan = ?').bind(clan).all()).results.map(r => r.week));
+  const ok = (Array.isArray(input) ? input : []).slice(0, 8000).filter(r => r && /^\d{2,4}-\d$/.test(String(r.week)) && /^[0289PYLQGRJCUV]{3,12}$/.test(clean(r.tag))
+    && Number.isFinite(+r.fame) && +r.fame >= 0 && +r.fame <= 6000 && +r.decks >= 0 && +r.decks <= 16);
+  const fresh = ok.filter(r => !have.has(String(r.week)));
+  const weeks = [...new Set(fresh.map(r => String(r.week)))];
+  const skipped = [...new Set(ok.filter(r => have.has(String(r.week))).map(r => String(r.week)))];
+  const sql = [];
+  for (let k = 0; k < fresh.length; k += 200) sql.push(`INSERT OR IGNORE INTO war_players (clan,week,tag,name,fame,decks,boats) VALUES ${rows(fresh.slice(k, k + 200).map(r =>
+    [clan, String(r.week), clean(r.tag), String(r.name || '').slice(0, 40), Math.trunc(+r.fame), Math.trunc(+r.decks), r.boats === '' || r.boats == null ? null : Math.trunc(+r.boats)]))}`);
+  // ended_at '' marks an imported war: sorts before every tracked one, with no date claimed.
+  if (weeks.length) sql.push(`INSERT OR IGNORE INTO wars (clan,week,ended_at,rank,fame,trophy_change) VALUES ${rows(weeks.map(w => [clan, w, '', null, null, null]))}`);
+  if (weeks.length) sql.push(`INSERT INTO note_log (clan,week,tag,kind,value,by,at) VALUES ${rows([[clan, '*', '*', 'import', `${weeks.length} wars: ${weeks.sort().join(', ')}`, by, now]])}`);
+  if (sql.length) await env.DB.batch(sql.map(x => env.DB.prepare(x)));
+  return { imported: weeks.sort(), rows: fresh.length, skipped: skipped.sort(), invalid: Math.max(0, (Array.isArray(input) ? Math.min(input.length, 8000) : 0) - ok.length) };
+}
+
 const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done', 'away'];
 
 export async function writeNotes(env, clan, items, now = new Date().toISOString(), by = null) {
