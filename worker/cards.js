@@ -7,6 +7,8 @@ const n = x => Number(x).toLocaleString('en-GB');
 const clean = s => String(s ?? '').replace(/<\/?c\d*>/gi, '');
 const wk = k => { const [a, b] = String(k).split('-').map(Number); return a * 1000 + (b || 0); };
 export const bar = (f, w = 10) => { const k = Math.max(0, Math.min(w, Math.round(f * w))); return '█'.repeat(k) + '░'.repeat(w - k); };
+// The game API's compact times ("20261116T094012.000Z") as well as ISO.
+const gameTime = t => { const m = String(t || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(t); };
 const pct = x => `${Math.round(x * 100)}%`;
 const ROLE = { member: 'Member', elder: 'Elder', coLeader: 'Co-leader', leader: 'Leader' };
 const COLOR = { good: 0x2e9e5b, mid: 0xd9a520, bad: 0xc0392b, info: 0x3b7dd8 };
@@ -40,7 +42,7 @@ export async function meCard(env, clan, tag) {
       description: [
         `${bar(Math.min(1, fame / T))} **${n(fame)}** / ${n(T)} medals`,
         need ? `**${n(need)}** more to reach ${n(T)}` : `✅ **Target reached!**`,
-        `🃏 **${left}** deck${left === 1 ? '' : 's'} left today` + (m.resetAt ? ` · resets ${new Date(Date.parse(m.resetAt)).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' })} UK` : ''),
+        `🃏 **${left}** deck${left === 1 ? '' : 's'} left today` + (m.resetAt ? ` · resets ${new Date(gameTime(m.resetAt)).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' })} UK` : ''),
         fc ? `🔮 Forecast: **${S.band(fc.prob)}** (${pct(fc.prob)}) if you play like you usually do${left ? `. Playing all ${left} today helps most.` : '.'}` : '',
         rank ? `🏅 ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} of ${board.length} in the clan so far` : '',
         perDay.length ? perDay.join(' · ') : '',
@@ -95,7 +97,9 @@ export async function statsBoard(env, clan) {
     db.prepare('SELECT type, sum(won) AS won, sum(lost) AS lost FROM war_battles WHERE clan = ? GROUP BY type').bind(clan).all(),
     db.prepare("SELECT CAST(strftime('%H', at) AS INTEGER) AS h, count(*) AS c FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-35 days') GROUP BY h").bind(clan).all(),
     db.prepare("SELECT kind, count(*) AS c FROM member_events WHERE clan = ? AND kind IN ('join','leave') AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days') GROUP BY kind").bind(clan).all(),
-    db.prepare('SELECT tag, donations FROM member_stats WHERE clan = ?1 AND week = (SELECT max(week) FROM member_stats WHERE clan = ?1) ORDER BY donations DESC LIMIT 3').bind(clan).all(),
+    // Latest real war week (numerically: "139-1" after "138-4"; rows with week 'unknown' never count).
+    db.prepare(`SELECT tag, donations FROM member_stats WHERE clan = ?1 AND week = (SELECT week FROM member_stats WHERE clan = ?1 AND week GLOB '[0-9]*-[0-9]*'
+      ORDER BY CAST(substr(week, 1, instr(week, '-') - 1) AS INTEGER) DESC, CAST(substr(week, instr(week, '-') + 1) AS INTEGER) DESC LIMIT 1) ORDER BY donations DESC LIMIT 3`).bind(clan).all(),
   ]);
   const here = new Map(members.results.map(m => [m.tag, clean(m.name)]));
   const ws = wars.results.sort((a, b) => wk(b.week) - wk(a.week));

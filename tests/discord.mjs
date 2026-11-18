@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { fakeD1 } from './fake-d1.mjs';
 import { handleApi } from '../worker/api.js';
-import { registerCommands, discordPost, syncGuild, warBoard, daySummary, rulesText, RULE_DEFAULTS, updateRulesMessages } from '../worker/discord.js';
+import { registerCommands, discordPost, syncGuild, warBoard, daySummary, rulesText, updateRulesMessages } from '../worker/discord.js';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { SCHEMA } from '../worker/history.js';
@@ -24,7 +24,8 @@ globalThis.fetch = async (url, opt = {}) => {
     { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
   if (/\/guilds\/G3\/roles$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEW-' + JSON.parse(opt.body).name });
   if (/\/guilds\/G3\/members\/A$/.test(url)) return Response.json({ roles: ['BOTROLE'] });
-  if (/\/guilds\/G3\/channels$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'CR', type: 0, name: '📜-rules' }, { id: 'CV', type: 2, name: 'voice' }]);
+  if (/\/guilds\/G3\/channels$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'CR', type: 0, name: '📜-rules' }, { id: 'CV', type: 2, name: 'voice' }, { id: 'CLC', type: 0, name: 'leaders-chat' }]);
+  if (/\/channels\/CLC$/.test(url) && opt.method === 'PATCH') return Response.json({ id: 'CLC' });
   if (/\/guilds\/G3\/channels$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEWCH-' + JSON.parse(opt.body).name.replace(/[^a-z]/g, '') });
   if (/\/channels\/(CW|CR)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
@@ -238,13 +239,13 @@ calls.length = 0;
 const ap = await autoSetup(env, 'G3', null, 'PPCCR8VU', true);
 assert.match(ap, /Set up ✅[\s\S]*Role Co-Leader[\s\S]*<#CW>[\s\S]*Still to do:[\s\S]*Drag/);
 const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v);
-assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'NEWCH-leaders' });
+assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'CLC' }, 'a private leaders-chat stays the leaders channel, never general');
 assert.equal(cfg3.roles.leader, 'RL'); assert.equal(cfg3.roles.coLeader, 'NEW-Co-Leader');
 const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body.permission_overwrites;
 assert.ok(war.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
 assert.ok(war.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'members can chat in war');
 assert.ok(war.some(o => o.id === 'A' && o.type === 1), 'bot can post');
-const lead = calls.find(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && /leaders/.test(c.body.name)).body.permission_overwrites;
+const lead = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CLC')).body.permission_overwrites;
 assert.ok(!lead.some(o => o.id === 'RM3'), 'members not in leaders');
 // Someone with the Leader role (no Discord permissions) counts as a leader.
 assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U8' }, permissions: '0', roles: ['RL'] }, data: { name: 'links', options: [] } })), /Linked:/);
@@ -252,8 +253,21 @@ assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { u
 const noPerm = await autoSetup({ ...env, DISCORD_APP_ID: 'NOPE' }, 'G3', null, 'PPCCR8VU', true);
 assert.match(noPerm, /Can't start yet[\s\S]*Manage Channels/);
 
-// The bot's default rules match the site's.
-const ctx = { module: { exports: {} } };
-vm.runInNewContext(readFileSync(new URL('../site/logic.js', import.meta.url), 'utf8'), ctx);
-for (const [k, v] of Object.entries(RULE_DEFAULTS)) assert.equal(v, ctx.module.exports.DEFAULT_RULES[k], 'default for ' + k);
+// Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
+await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
+const { postTodo } = await import('../worker/discord.js');
+calls.length = 0;
+await postTodo(env, 'PPCCR8VU', 'OLD');
+assert.ok(!calls.some(c => /channels\/PUB\//.test(c.url)), 'no to-do list in the public channel');
+await interaction({ type: 2, guild_id: 'OLD', member: leader, data: { name: 'setup', options: [] } });
+assert.deepEqual(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:OLD'").first()).v).channels, { war: 'PUB', results: 'PUB', joins: 'PUB' }, 'migrated, not dropped');
+
+// Donors: rows saved with week 'unknown' never count as "this week".
+await DB.exec(`INSERT INTO member_stats (clan,week,tag,donations) VALUES ('PPCCR8VU','unknown','YVJRGLCC',9999)`);
+assert.match(await statsBoard(env, 'PPCCR8VU'), /Top donors this week:\*\* Luke 320/);
+
+// /mystats: the reset time from the game's compact timestamp.
+await DB.exec(`UPDATE wars SET ended_at = '20261029T094312.000Z' WHERE week = '2-1'`);
+assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets \d\d:\d\d UK/);
+
 console.log('Discord checks passed');

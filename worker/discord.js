@@ -4,6 +4,7 @@
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes, cr } from './history.js';
 import { reliability } from './stats.gen.js';
+import { sanitizeRules, DEFAULT_RULES } from './logic.gen.js';
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
 import { PUSH_SCHEMA } from './push.js';
@@ -114,7 +115,9 @@ async function allConfigs(env) {
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
 export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs',
   leaders: 'Leaders only: to-do list after each war + absences' };
-const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : cfg?.channel;
+const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
+const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
+const channelsOf = cfg => ({ ...(cfg?.channels || (cfg?.channel ? Object.fromEntries(LEGACY_JOBS.map(j => [j, cfg.channel])) : {})) });
 
 async function findRoles(env, guild, opt, cfg) {
   const byName = {};
@@ -247,14 +250,14 @@ export async function handleDiscord(request, env, ctx) {
     }
     case 'setup': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
-      const next = { clan, channels: cfg?.channels || {}, roles: await findRoles(env, guild, opt, cfg) };
+      const next = { clan, channels: channelsOf(cfg), roles: await findRoles(env, guild, opt, cfg) };
       await setConfig(env, guild, next);
       return Response.json(reply((await overview(env, guild, next)) + (Object.values(next.roles).some(Boolean) ? '\n\nRun `/sync` once to update everyone\'s roles now.' : '\n\nNo roles found: name them Member, Elder, Co-Leader, Leader, or pick them in `/setup`.')));
     }
     case 'post-here': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const ch = i.channel_id || i.channel?.id, what = opt.what;
-      const next = { clan, channels: { ...(cfg?.channels || {}) }, roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
+      const next = { clan, channels: channelsOf(cfg), roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
       if (what === 'rules' || what === 'welcome' || what === 'stats') {
         const text = what === 'rules' ? rulesText(await clanRules(env, clan)) : what === 'stats' ? await statsBoard(env, clan) : WELCOME;
         const err = await upsert(env, `discord:${what}:${guild}`, ch, text).then(() => '', e => e.message);
@@ -369,7 +372,7 @@ const ROLE_NAME = { member: 'Member', elder: 'Elder', coLeader: 'Co-leader', lea
 export async function playerCard(env, clan, tag) {
   const m = await readMember(env, clan, tag);
   if (!m) return `#${tag} has never been in the clan while it was tracked.`;
-  const target = Number(m.rules?.target) || RULE_DEFAULTS.target, lookback = Number(m.rules?.lookback) || 10;
+  const target = Number(m.rules?.target) || DEFAULT_RULES.target, lookback = Number(m.rules?.lookback) || 10;
   const weeks = m.weeks.slice().sort((a, b) => wkNum(b.week) - wkNum(a.week));
   const rel = reliability({ weeks }, target, lookback);
   const word = s => s >= 85 ? 'very reliable' : s >= 70 ? 'reliable' : s >= 55 ? 'hit and miss' : 'unreliable';
@@ -493,11 +496,11 @@ export async function dmReminders(env, clan, week, day, msLeft, leftToday, reset
   if (!due.length) return 0;
   const done = new Set((await env.DB.prepare('SELECT k FROM kv WHERE k LIKE ?').bind(`dm:${clan}:${week}:${day}:%`).all()).results.map(x => x.k));
   const h = msLeft / 3600e3, when = h < 1 ? 'in under an hour' : `in about ${Math.round(h)} hour${Math.round(h) === 1 ? '' : 's'}`;
-  let sent = 0;
+  let sent = 0, tried = 0;
   for (const x of due) {
     const key = `dm:${clan}:${week}:${day}:${x.user_id}`;
     if (done.has(key)) continue;
-    if (sent >= 8) break;
+    if (tried++ >= 8) break;   // attempts, not successes: failed DMs still use the run's request budget
     await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, '1').run();   // once, even if it fails
     const n2 = left.get(x.tag);
     const content = `⏰ Battle day ${day} ends ${when}${resetLabel ? ` (${resetLabel} UK)` : ''}. You still have **${n2} deck${n2 === 1 ? '' : 's'}** to play: each one is worth at least 100 medals, win or lose.\n_Stop these with \`/remind 0\`._`;
@@ -516,9 +519,6 @@ export async function discordAfterSnapshot(env, clan, changedTags) {
 // ---------------------------------------------------------------------------
 // Messages the bot keeps up to date by editing them: the live war board, battle-day summaries, and the rules.
 
-// Defaults for the rules (same as DEFAULT_RULES in site/logic.js; tests/discord.mjs checks they match).
-export const RULE_DEFAULTS = { target: 1800, perDay: 450, effortNet: true, demoteElders: true, elderWarnFirst: true, boatRepeatKick: true,
-  warnClear: 3, spareBoats: true, boatShare: 50, holdWeeks: 3, holdOffline: 3, promoWeeks: 6, promoMisses: 1, promoAvg: 2200 };
 const n = x => Number(x).toLocaleString('en-GB');
 const ukClock = t => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
 const ukDate = t => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' });
@@ -535,7 +535,7 @@ const place = i => ['1st', '2nd', '3rd', '4th', '5th'][i] || `${i + 1}th`;
 async function clanRules(env, clan) {
   const row = await env.DB.prepare("SELECT value FROM notes WHERE clan = ? AND kind = 'rules' AND week = '*' AND tag = '*'").bind(clan).first();
   let saved = {}; try { saved = JSON.parse(row?.value || '{}'); } catch (e) {}
-  return { ...RULE_DEFAULTS, ...saved };
+  return sanitizeRules(saved).rules;   // same checks and defaults as the site and the bot's decisions
 }
 
 export function rulesText(r) {
@@ -721,7 +721,7 @@ const CHANNEL_SPEC = [
   { key: 'link', match: /link/, name: '🔗-link-tag', jobs: ['welcome'], topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
   { key: 'rules', match: /rules/, name: '📜-rules', jobs: ['rules', 'stats'], topic: 'Clan rules and stats, kept up to date by War Audit.' },
   { key: 'war', match: /^war$|warboard|clanwar/, name: '⚔️-war', jobs: ['war', 'results'], topic: 'War board, reminders, battle day summaries and results.' },
-  { key: 'general', match: /general|chat/, name: '💬-general', jobs: ['joins'], topic: 'Chat. Welcomes and shout-outs from War Audit.' },
+  { key: 'general', match: /^(?!.*(leader|staff|mod|admin)).*(general|chat)/, name: '💬-general', jobs: ['joins'], topic: 'Chat. Welcomes and shout-outs from War Audit.' },
   { key: 'leaders', match: /leader|staff|mods?$/, name: '🛡️-leaders', jobs: ['leaders'], topic: 'Leaders only: after-war to-do list, absences, digests, backups.' },
 ];
 const plain = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -758,7 +758,10 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
 
   // Channels: existing text channels by name, the rest created.
   const text = channels.filter(c => c.type === 0), found = {};
-  for (const spec of CHANNEL_SPEC) { const c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id)); if (c) found[spec.key] = c.id; }
+  for (const k of ['leaders', 'link', 'rules', 'war', 'general']) {   // private ones first, so they're never taken as public
+    const spec = CHANNEL_SPEC.find(x => x.key === k), c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
+    if (c) found[k] = c.id;
+  }
   const label = { war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
   for (const spec of CHANNEL_SPEC) plan.push(found[spec.key] ? `🔧 <#${found[spec.key]}>: ${spec.jobs.map(j => label[j]).join(', ')}` : `➕ Create #${spec.name}: ${spec.jobs.map(j => label[j]).join(', ')}`);
   plan.push('🔒 Newcomers see only the link and rules channels; linked members see rules (read-only), war and general; only Leader and Co-Leader see leaders.');
@@ -787,7 +790,7 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
   await setConfig(env, guild, next);
   for (const [job, key] of [['rules', 'rules'], ['stats', 'rules'], ['welcome', 'link']]) if (ch[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ch[key], id: null })).run();
   const posts = await refreshAll(env, guild, next, clan, false);
-  return ['**Set up ✅**', ...done, '', ...posts.split('\n').slice(1).filter(x => x && !/pinned\.$/.test(x)),
+  return ['**Set up ✅**', ...done, '', ...posts.split('\n').slice(1).filter(Boolean),
     problems.length ? `\n**Still to do:**\n${problems.filter(x => !/Manage (Roles|Channels)/.test(x)).map(x => '• ' + x).join('\n')}` : '',
     '\nNext: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
 }
@@ -816,17 +819,20 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
       .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`).run();
     done.push(`🧹 Deleted ${removed} old message${removed === 1 ? '' : 's'}${more ? ' (more left: run `/refresh clean:True` again)' : ''}`);
   }
-  const pin = async (ch, id) => id && dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).catch(() => null);
+  let unpinned = 0;
+  const pin = (ch, id) => dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false);
   const post = async (key, ch, text, label) => {
     const id = await upsert(env, key, ch, text).catch(() => null);
-    if (id) { await pin(ch, id); done.push(`✅ ${label} → <#${ch}>`); } else done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
+    if (!id) return done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
+    const ok = await pin(ch, id); if (!ok) unpinned++;
+    done.push(`✅ ${label} → <#${ch}>${ok ? ' (pinned)' : ''}`);
   };
   if (kept.rules) await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
   if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
   if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: couldn\'t make it (try `/todo`)'));
   if (chan(cfg, 'war')) done.push(`➖ War board: posts itself at the next pull on a battle day`);
-  return ['**Refreshed**', ...done, '', 'Rules, how to link and stats are pinned.'].join('\n');
+  return ['**Refreshed**', ...done, unpinned ? `\n📌 ${unpinned} message${unpinned === 1 ? '' : 's'} couldn't be pinned: long-press ${unpinned === 1 ? 'it' : 'them'} → Pin (or give War Audit **Pin Messages**).` : ''].filter(Boolean).join('\n');
 }
 
 // Re-write every posted stats board for this clan (after each war).

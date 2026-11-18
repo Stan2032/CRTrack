@@ -134,7 +134,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   // For alerts: who joined/left this run, finished wars, and (on battle day 4) who can no longer reach the target.
   // For the Discord war board: the daily reset time (UK), and the battle day of the previous snapshot.
   const lastEnd = await db.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(clan).first();
-  const resetLabel = lastEnd ? (() => { const m = String(lastEnd.ended_at).match(/T(\d\d)(\d\d)/); return m ? new Date(Date.UTC(2026, 0, 1, +m[1], +m[2])).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false }) : ''; })() : '';
+  const resetLabel = lastEnd ? (() => { const m = String(lastEnd.ended_at).match(/T(\d\d)(\d\d)/); const d = new Date(now); return m ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), +m[1], +m[2])).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false }) : ''; })() : '';
   const prevDay = await db.prepare("SELECT week, max(day) AS day FROM race_days WHERE clan = ? AND week = ? AND day < ?").bind(clan, week || '', day || 99).first();
   const TODAY_MAX = [0, 200, 400, 700, 900];
   let target = 1800, perDay = 450;
@@ -261,11 +261,11 @@ async function alertsFor(env, r, now) {
 
 export async function snapshotAll(env, { force = false, now = Date.now(), only = null } = {}) {
   const out = [];
+  await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);   // once per run, not per check
   for (const clan of only ? [only] : trackedClans(env)) {
     try {
       // A war ended last run: make the leaders' to-do list now, in a run of its own (it needs the full history).
       if (!force && !only) {
-        await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);
         const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
         if (due) {
           await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
@@ -281,7 +281,6 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         }
       }
       if (!force) {
-        await env.DB.exec(SCHEMA);
         const st = await env.DB.prepare(`SELECT
           (SELECT type FROM periods WHERE clan = ?1 ORDER BY first_seen DESC LIMIT 1) AS lastType,
           (SELECT max(updated_at) FROM members WHERE clan = ?1) AS lastRun,
