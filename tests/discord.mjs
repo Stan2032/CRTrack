@@ -54,6 +54,12 @@ await DB.prepare("INSERT INTO members (clan, tag, name, role, in_clan) VALUES ('
 const leader = { user: { id: 'L' }, permissions: String(1n << 28n) }, member = id => ({ user: { id }, permissions: '0' });
 const cmd = (name, options = [], m = member('U1')) => interaction({ type: 2, guild_id: 'G', member: m, data: { name, options } });
 const text = async r => (await r.json()).data.content;
+const runRefresh = async (guild, cfgx, clean) => {
+  const { refreshAll: ra, refreshNext: rn } = await import('../worker/discord.js');
+  let r = await ra(env, guild, cfgx, 'PPCCR8VU', clean), all = [r.content], n = 0;
+  while (r.components?.length && n++ < 20) { r = await rn(env, guild, 'PPCCR8VU'); all.push(r.content); }
+  return all.join('\n');
+};
 
 assert.equal((await (await interaction({ type: 1 })).json()).type, 1, 'endpoint check');
 assert.equal((await interaction({ type: 1 }, { forge: true })).status, 401, 'forged request refused');
@@ -360,7 +366,7 @@ assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: memb
 const { refreshAll } = await import('../worker/discord.js');
 const cfgG = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G'").first()).v);
 calls.length = 0;
-const rf = await refreshAll(env, 'G', cfgG, 'PPCCR8VU', true);
+const rf = await runRefresh('G', cfgG, true);
 const dels = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').pop());
 assert.ok(dels.includes('OLD1') && dels.includes('OLD2') && !dels.includes('USER1'), 'only the bot\'s messages');
 assert.match(rf, /Deleted \d+ old messages[\s\S]*✅ Rules → <#C>[\s\S]*✅ How to link → <#C>/);
@@ -368,9 +374,9 @@ assert.ok(calls.some(c => c.method === 'PUT' && /\/pins\/M\d+$/.test(c.url)), 'p
 assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)), 'the "pinned a message" notice is removed');
 assert.match(rf, /What appears here → <#C>/, 'a note in the war channel');
 calls.length = 0;
-assert.match(await refreshAll(env, 'G', cfgG, 'PPCCR8VU', false), /Refreshed/);
+assert.match(await runRefresh('G', cfgG, false), /Refreshed/);
 assert.ok(!calls.some(c => c.method === 'DELETE' && !/messages\/NOTE$/.test(c.url)), 'without clean: nothing deleted but pin notices');
-assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set up yet/);
+assert.match(await runRefresh('NONE', null, true), /Nothing set up yet/);
 
 // /autosetup: preview, then step by step (Continue button): roles, categories, channels, posts; fresh deletes old channels last.
 const { autoSetup, autoSetupNext } = await import('../worker/discord.js');
@@ -441,11 +447,12 @@ assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G
   assert.match(ws, /\*\*Leader:\*\* [^\n]*leaderchat[^\n]*· can invite/); assert.doesNotMatch(ws.split('\n').find(l => l.startsWith('**Member')), /leaderchat/);
 }
 calls.length = 0;
+const untilNot = async (envx, re) => { let r; for (let k = 0; k < 6; k++) { r = await autoSetupNext(envx, 'G3', 'PPCCR8VU'); if (!re.test(r.content)) break; } return r; };
 const s2 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
 assert.match(s2.content, /Step 2 of 3 done[\s\S]*Rules → <#CR>[\s\S]*Clan stats → <#NEWCH/);
 assert.match(s2.content, /Server icon: the clan badge/);
 assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)), 'the "pinned a message" notice is removed');
-const s3 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
+const s3 = await untilNot(withIcon, /More notes to go/);
 assert.match(s3.content, /All done ✅[\s\S]*channel notes pinned[\s\S]*Still to do:[\s\S]*Drag/);
 assert.equal(s3.components.length, 0);
 assert.match((await autoSetupNext(env, 'G3', 'PPCCR8VU')).content, /Nothing in progress/);
@@ -455,14 +462,14 @@ assert.match(await text(await interaction({ type: 3, guild_id: 'G3', member: mem
 const pvF = (await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', false, true)).content;
 assert.match(pvF, /Deletes 4 existing channels[\s\S]*in 4 steps/);
 await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true, true);
-await autoSetupNext(env, 'G3', 'PPCCR8VU'); const f3 = await autoSetupNext(env, 'G3', 'PPCCR8VU');
+await autoSetupNext(env, 'G3', 'PPCCR8VU'); const f3 = await untilNot(env, /More notes to go/);
 assert.match(f3.content, /Last step deletes the \*\*4 old channels\*\*/);
 calls.length = 0;
 const f4 = await autoSetupNext(env, 'G3', 'PPCCR8VU');
 assert.match(f4.content, /set up the server ✅[\s\S]*Deleted 4 old channels/);
 assert.deepEqual(calls.filter(c => c.method === 'DELETE' && /\/channels\/\w+$/.test(c.url)).map(c => c.url.split('/').pop()).sort(), ['CLC', 'CR', 'CV', 'CW']);
 // A channel it can't delete is named in the summary.
-await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true, true); await autoSetupNext(env, 'G3', 'PPCCR8VU'); await autoSetupNext(env, 'G3', 'PPCCR8VU');
+await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true, true); await autoSetupNext(env, 'G3', 'PPCCR8VU'); await untilNot(env, /More notes to go/);
 { const realF = globalThis.fetch;
   globalThis.fetch = async (url, opt = {}) => /\/channels\/CLC$/.test(String(url)) && opt.method === 'DELETE' ? new Response('{}', { status: 403 }) : realF(url, opt);
   assert.match((await autoSetupNext(env, 'G3', 'PPCCR8VU')).content, /Deleted 3 old channels[\s\S]*Couldn't delete: #leaders-chat/);
@@ -595,15 +602,39 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   const { refreshAll } = await import('../worker/discord.js');
   await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:rules:G', '{"channel":"C","id":null}')`);
   calls.length = 0;
-  await refreshAll(env, 'G', { clan: 'PPCCR8VU', channels: { war: 'C' }, roles: {} }, 'PPCCR8VU', false);
+  await runRefresh('G', { clan: 'PPCCR8VU', channels: { war: 'C' }, roles: {} }, false);
   assert.ok(calls.some(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url) && /Privacy: what War Audit keeps/.test(c.body?.content)), 'privacy pinned with the rules'); }
 
 // #bot-commands: cleaned and its note re-posted by /setup refresh (it has no posting job, but it's the bot's channel).
 { const { refreshAll } = await import('../worker/discord.js');
   calls.length = 0;
-  const out = await refreshAll(env, 'G', { clan: 'PPCCR8VU', channels: { bot: 'C' }, roles: {} }, 'PPCCR8VU', true);
+  const out = await runRefresh('G', { clan: 'PPCCR8VU', channels: { bot: 'C' }, roles: {} }, true);
   assert.ok(calls.some(c => c.method === 'DELETE' && c.url.endsWith('/channels/C/messages/OLD1')), 'old bot messages deleted there');
   assert.ok(calls.some(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url) && /Use War Audit here/.test(c.body?.content)), 'note re-posted');
   assert.match(out, /What appears here → <#C>/); }
+
+// Every refresh step stays under the Worker's 50-request limit (the reason it's in steps), even with 8 channels
+// full of old bot messages and every kept message already posted.
+{ const { refreshAll, refreshNext } = await import('../worker/discord.js');
+  const chs = ['K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8'];
+  const cfgK = { clan: 'PPCCR8VU', channels: { war: 'K1', results: 'K2', scout: 'K3', joins: 'K4', leaders: 'K5', guests: 'K6', bot: 'K7' }, roles: {} };
+  await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:rules:GK', '{"channel":"K8","id":"R1"}'), ('discord:welcome:GK', '{"channel":"K8","id":"W1"}'), ('discord:stats:GK', '{"channel":"K8","id":"S1"}')`);
+  const realF = globalThis.fetch;
+  let n = 0;
+  const gone = new Set();   // deleted messages stop coming back, as in Discord
+  globalThis.fetch = async (url, opt = {}) => { const u = String(url);
+    if (u.includes('discord.com')) n++;
+    const del = u.match(/channels\/(K\d)\/messages\/(X\d+)$/); if (del && opt.method === 'DELETE') { gone.add(del[1] + del[2]); return new Response(null, { status: 204 }); }
+    const ch = u.match(/channels\/(K\d)\/messages\?limit=50$/);
+    if (ch) return Response.json(Array.from({ length: 20 }, (_, k) => ({ id: 'X' + k, author: { id: 'A' } })).filter(m => !gone.has(ch[1] + m.id)));
+    if (/channels\/K\d\/messages$/.test(u) && opt.method === 'POST') return Response.json({ id: 'N' + Math.random() });
+    return realF(url, opt); };
+  const steps = [];
+  n = 0; let r = await refreshAll(env, 'GK', cfgK, 'PPCCR8VU', true); steps.push(n);
+  while (r.components?.length && steps.length < 30) { n = 0; r = await refreshNext(env, 'GK', 'PPCCR8VU'); steps.push(n); }
+  globalThis.fetch = realF;
+  assert.match(r.content, /Refreshed ✅/);
+  assert.ok(steps.every(x => x <= 45), 'requests per step: ' + steps.join(', '));
+  assert.ok(steps.length >= 6, 'it took several steps: ' + steps.length); }
 
 console.log('Discord checks passed');

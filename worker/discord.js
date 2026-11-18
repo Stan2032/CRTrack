@@ -561,8 +561,8 @@ export async function handleDiscord(request, env, ctx) {
     case 'refresh': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       later((async () => {
-        const msg = await refreshAll(env, guild, cfg, clan, !!opt.clean).catch(e => `Something went wrong: ${String(e.message || e).slice(0, 100)}`);
-        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
+        const msg = await refreshAll(env, guild, cfg, clan, !!opt.clean).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 100)}`, components: [] }));
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
@@ -656,6 +656,17 @@ async function handleButton(i, env, ctx) {
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
   if (kind === 'verify') return checkProof(i, env, ctx);
   if (kind === 'apply') { const [, how, applicant, tag] = String(i.data?.custom_id).split('|'); return decideApplication(i, env, how, applicant, tag); }
+  if (kind === 'refresh') {
+    const cfg0 = await getConfig(env, i.guild_id);
+    if (!isLeader(i.member, cfg0)) return Response.json(reply('Leaders only.'));
+    const clan0 = cfg0?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
+    const work = (async () => {
+      const msg = await refreshNext(env, i.guild_id, clan0).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 150)}`, components: [] }));
+      await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } }).catch(() => null);
+    })();
+    if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+    return Response.json({ type: 6 });
+  }
   if (kind === 'autosetup') {
     const cfg0 = await getConfig(env, i.guild_id);
     if (!isLeader(i.member, cfg0)) return Response.json(reply('Leaders only.'));
@@ -1293,7 +1304,9 @@ export async function autoSetupNext(env, guild, clan) {
     return { content: [`**Step 2 of ${of} done: rules, how to link, stats**`, ...done].join('\n'), components: nextButton(3, of) };
   }
   if (run.step === 3) {
-    for (const key of ['guests', 'war', 'joins', 'results', 'scout', 'leaders', 'bot']) { const c = chan(cfg, key) || (key === 'bot' ? run.ids?.bot : null); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
+    const nb = await postNotes(env, guild, cfg, run.note || 0, 5, run.ids?.bot);
+    done.push(...nb.done.map(x => x.replace(/^✅ What appears here/, '✅ Note')));
+    if (nb.next != null) { await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ ...run, note: nb.next })).run(); return { content: [`**Step 3 of ${of}: channel notes**`, ...done, '', 'More notes to go.'].join('\n'), components: nextButton(3, of) }; }
     if (chan(cfg, 'scout')) {
       const race = await cr(env, `/clans/${encodeURIComponent('#' + clan)}/currentriverrace`).catch(() => null);
       const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
@@ -1321,57 +1334,88 @@ export async function autoSetupNext(env, guild, clan) {
   return { content: 'Nothing to do.', components: [] };
 }
 
-// /refresh: re-post (or edit) every message the bot keeps, optionally deleting its old messages first, and pin them.
-// Stays within the Worker's 50 requests per run: at most 25 deletions per go (run it again to clear more).
+// /refresh in steps (each one Worker run, under its 50-request limit; Continue between them):
+//   clean: delete the bot's old messages (≤30 per step), forget the saved ids;  kept: rules, privacy, how to link, stats;
+//   notes: the "what appears here" note in each channel (≤5 per step).
+const pinMsg = async (env, ch, id) => {
+  if (!(await dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false))) return false;
+  const recent = await dapi(env, 'GET', `/channels/${ch}/messages?limit=5`).catch(() => []);
+  const note = (Array.isArray(recent) ? recent : []).find(m => m.type === 6 && m.message_reference?.message_id === id);   // "War Audit pinned a message"
+  if (note) await dapi(env, 'DELETE', `/channels/${ch}/messages/${note.id}`).catch(() => null);
+  return true;
+};
+async function postKept(env, done, key, ch, text, label) {
+  const id = await upsert(env, key, ch, text).catch(() => null);
+  if (!id) { done.push(`⚠️ ${label}: couldn't post in <#${ch}>`); return false; }
+  const ok = await pinMsg(env, ch, id);
+  done.push(`✅ ${label} → <#${ch}>${ok ? ' (pinned)' : ' (couldn\'t pin: long-press → Pin)'}`);
+  return true;
+}
+// The channels with a note: one note per channel (a channel with several jobs gets each one's line).
+function noteChannels(cfg, extraBot = null) {
+  const introCh = {};
+  for (const job of ['war', 'results', 'scout', 'joins', 'leaders', 'guests', 'bot']) {
+    const c = chan(cfg, job) || (job === 'bot' ? extraBot : null);
+    if (c) (introCh[c] ||= []).push(job);
+  }
+  return Object.entries(introCh);
+}
+async function postNotes(env, guild, cfg, from, max = 5, extraBot = null) {
+  const list = noteChannels(cfg, extraBot), done = [];
+  for (const [c, jobs] of list.slice(from, from + max)) await postKept(env, done, `discord:intro:${guild}:${c}`, c, jobs.map(j => INTROS[j]).join('\n\n'), 'What appears here');
+  return { done, next: from + max < list.length ? from + max : null };
+}
+
+const refreshButton = label => [{ type: 1, components: [{ type: 2, style: 1, label, custom_id: 'refresh|next' }] }];
 export async function refreshAll(env, guild, cfg, clan, clean) {
   await setupDB(env);
   const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
   const kept = { rules: await kv('discord:rules:' + guild), welcome: await kv('discord:welcome:' + guild), stats: await kv('discord:stats:' + guild) };
   const channels = [...new Set([...Object.values(cfg?.channels || {}), ...Object.values(kept).filter(Boolean).map(x => x.channel)])];
-  if (!channels.length) return 'Nothing set up yet: go to a channel and run `/setup channel`.';
-  const done = [];
-  if (clean) {
+  if (!channels.length) return { content: 'Nothing set up yet: run `/setup auto`.', components: [] };
+  // Remember where each kept message lives (so a clean step can forget the ids and still re-post in the same place).
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('refresh:' + guild, JSON.stringify({ stage: clean ? 'clean' : 'kept', channels, kept, note: 0, cfg })).run();
+  return refreshNext(env, guild, clan);
+}
+
+export async function refreshNext(env, guild, clan) {
+  await setupDB(env);
+  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('refresh:' + guild).first();
+  if (!row) return { content: 'Nothing in progress. Start with `/setup refresh`.', components: [] };
+  const run = JSON.parse(row.v), cfg = run.cfg || await getConfig(env, guild), done = [];
+  const save = next => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('refresh:' + guild, JSON.stringify({ ...run, ...next })).run();
+  if (run.stage === 'clean') {
     let removed = 0, more = false;
-    for (const ch of channels) {
+    for (const ch of run.channels) {
+      if (more) break;
       const list = await dapi(env, 'GET', `/channels/${ch}/messages?limit=50`).catch(() => []);
-      const mine = (Array.isArray(list) ? list : []).filter(m => m.author?.id === env.DISCORD_APP_ID);
-      for (const m of mine) {
-        if (removed >= 25) { more = true; break; }
+      for (const m of (Array.isArray(list) ? list : []).filter(m => m.author?.id === env.DISCORD_APP_ID)) {
+        if (removed >= 30) { more = true; break; }
         if (await dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`).then(() => true, () => false)) removed++;
       }
     }
-    // Forget the old message ids, so everything below is posted fresh.
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?")
-      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`, `discord:intro:${guild}:%`).run();
-    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(`discord:privacy:${guild}`).run();
-    done.push(`🧹 Deleted ${removed} old message${removed === 1 ? '' : 's'}${more ? ' (more left: run `/setup refresh clean:True` again)' : ''}`);
+    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k = ?")
+      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`, `discord:intro:${guild}:%`, `discord:privacy:${guild}`).run();
+    run.cleaned = (run.cleaned || 0) + removed;
+    if (more) { await save({ cleaned: run.cleaned }); return { content: `🧹 Deleted ${run.cleaned} old messages so far. More to go.`, components: refreshButton('Continue ▶ (clearing)') }; }
+    await save({ stage: 'kept', cleaned: run.cleaned });
+    return { content: `🧹 Deleted ${run.cleaned} old message${run.cleaned === 1 ? '' : 's'}. Next: re-post the rules, stats and how-to-link.`, components: refreshButton('Continue ▶ (re-post)') };
   }
-  let unpinned = 0;
-  const pin = async (ch, id) => {
-    if (!(await dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false))) return false;
-    const recent = await dapi(env, 'GET', `/channels/${ch}/messages?limit=5`).catch(() => []);
-    const note = (Array.isArray(recent) ? recent : []).find(m => m.type === 6 && m.message_reference?.message_id === id);   // "War Audit pinned a message"
-    if (note) await dapi(env, 'DELETE', `/channels/${ch}/messages/${note.id}`).catch(() => null);
-    return true;
-  };
-  const post = async (key, ch, text, label) => {
-    const id = await upsert(env, key, ch, text).catch(() => null);
-    if (!id) return done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
-    const ok = await pin(ch, id); if (!ok) unpinned++;
-    done.push(`✅ ${label} → <#${ch}>${ok ? ' (pinned)' : ''}`);
-  };
-  if (kept.rules) { await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await post('discord:privacy:' + guild, kept.rules.channel, PRIVACY, 'Privacy'); }
-  if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
-  if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
-  // One note per channel, from the same texts /setup auto uses (a channel with several jobs gets each one's line).
-  const introCh = {};
-  for (const job of ['war', 'results', 'scout', 'joins', 'leaders', 'guests', 'bot']) {
-    const c = chan(cfg, job);
-    if (c) (introCh[c] ||= []).push(job);
+  if (run.stage === 'kept') {
+    const k = run.kept || {};
+    if (k.rules) { await postKept(env, done, 'discord:rules:' + guild, k.rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await postKept(env, done, 'discord:privacy:' + guild, k.rules.channel, PRIVACY, 'Privacy'); }
+    if (k.welcome) await postKept(env, done, 'discord:welcome:' + guild, k.welcome.channel, WELCOME, 'How to link');
+    if (k.stats) await postKept(env, done, 'discord:stats:' + guild, k.stats.channel, await statsBoard(env, clan), 'Clan stats board');
+    await save({ stage: 'notes', note: 0 });
+    return { content: [`**Re-posted**`, ...done, '', 'Next: the note in each channel.'].join('\n'), components: refreshButton('Continue ▶ (channel notes)') };
   }
-  for (const [c, jobs] of Object.entries(introCh)) await post(`discord:intro:${guild}:${c}`, c, jobs.map(j => INTROS[j]).join('\n\n'), 'What appears here');
-  if (chan(cfg, 'war')) done.push(`➖ War board: posts itself at the next pull on a battle day`);
-  return ['**Refreshed**', ...done, unpinned ? `\n📌 ${unpinned} message${unpinned === 1 ? '' : 's'} couldn't be pinned: long-press ${unpinned === 1 ? 'it' : 'them'} → Pin (or give War Audit **Pin Messages**).` : ''].filter(Boolean).join('\n');
+  if (run.stage === 'notes') {
+    const r = await postNotes(env, guild, cfg, run.note || 0);
+    if (r.next != null) { await save({ note: r.next }); return { content: [...r.done, '', 'More notes to go.'].join('\n'), components: refreshButton('Continue ▶ (more notes)') }; }
+    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('refresh:' + guild).run();
+    return { content: ['**Refreshed ✅**', ...r.done, chan(cfg, 'war') ? '➖ War board: posts itself at the next pull on a battle day' : ''].filter(Boolean).join('\n'), components: [] };
+  }
+  return { content: 'Nothing to do.', components: [] };
 }
 
 // Re-write every posted stats board for this clan (after each war).

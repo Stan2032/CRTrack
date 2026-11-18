@@ -122,7 +122,7 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 4. **`/link #YOURTAG`**, then **`/setup sync`**.
 
 Without `fresh`, it reuses channels it recognises (by name, or because they already have a job) and only adds what's
-missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** clears the bot's old posts and re-posts
+missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** (tap **Continue ▶** until it says *Refreshed ✅* — it works in small steps to stay inside Cloudflare's free limits) clears the bot's old posts and re-posts
 everything.
 
 **Commands** (11)
