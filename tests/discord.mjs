@@ -114,7 +114,7 @@ assert.match(await text(await grouped('leader', 'links', [], member('U5'))), /Le
 assert.match(await text(await grouped('setup', 'show')), /What the bot posts where/);
 assert.match(await text(await grouped('clan', 'stats', [], member('U5'))), /Clan stats/);
 { const { COMMANDS } = await import('../worker/discord.js');
-  assert.equal(COMMANDS.length, 8, '8 commands');
+  assert.equal(COMMANDS.length, 9, '9 commands');
   assert.equal(COMMANDS.find(c => c.name === 'leader').default_member_permissions, '1', 'leader commands hidden from members');
   assert.equal(COMMANDS.find(c => c.name === 'setup').default_member_permissions, '1');
   assert.ok(!COMMANDS.find(c => c.name === 'mystats').default_member_permissions, 'member commands visible to all');
@@ -217,6 +217,22 @@ await here('joins', 'J');
 calls.length = 0;
 assert.equal(await shoutOuts(env, 'PPCCR8VU', '2-1', 1800), 1);
 assert.match(calls.find(c => /channels\/J\/messages$/.test(c.url)).body.content, /War 2-1 shout-outs[\s\S]*🥇 Luke 2,600 · 🥈 perc 1,500[\s\S]*🔥 Luke: \*\*5 wars in a row\*\*/);
+
+// War report by DM after each war (/warreport): the member's own result, once per war.
+{ const { sendWarReports, warReportText } = await import('../worker/discord.js');
+  await DB.exec(`INSERT OR REPLACE INTO wars (clan,week,ended_at,rank,fame) VALUES ('PPCCR8VU','2-1','2026-10-29T09:43:00Z',1,0)`);
+  assert.match(await text(await cmd('warreport', [{ name: 'on', value: true }])), /DM after each war/);
+  calls.length = 0;
+  assert.equal(await sendWarReports(env, 'PPCCR8VU'), 0);
+  const dm = calls.find(c => c.method === 'POST' && c.url.endsWith('/channels/DM-U1/messages')).body.content;
+  assert.match(dm, /Your war 2-1: 2,600\*\* medals, 16\/16 battles ✅ \(target 2,000\)[\s\S]*1st of 2 in the clan[\s\S]*5 wars in a row at 2,000\+[\s\S]*Reliability \d+ → \*\*\d+\*\*\/100/);
+  calls.length = 0;
+  await sendWarReports(env, 'PPCCR8VU');
+  assert.ok(!calls.some(c => c.url.endsWith('/channels/DM-U1/messages')), 'once per war');
+  assert.match(warReportText('YVJRGLCC', '2-1', [{ week: '2-1', tag: 'YVJRGLCC', fame: 1500, decks: 16 }], [{ tag: 'YVJRGLCC', fame: 1500 }], 1800), /❌ \(target 1,800: 300 short\)/);
+  assert.match(warReportText('NOPE', '2-1', [], [], 1800), /didn't play this one/);
+  assert.match(await text(await cmd('warreport', [{ name: 'on', value: false }])), /War reports off/);
+  await DB.exec(`DELETE FROM wars WHERE clan = 'PPCCR8VU'`); }
 
 // /player and /check.
 assert.equal(bar(0.7), '███████░░░');

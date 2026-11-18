@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 
 export const SCHEMA = `
@@ -269,6 +269,8 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
         if (due) {
           await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
+          const left = await sendWarReports(env, clan).catch(() => 0);   // members' own results by DM (/warreport)
+          if (left) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('warreport:due:' + clan, '1').run();
           out.push({ clan, stats: await updateStatsBoards(env, clan).catch(() => 0) });
           continue;
         }
@@ -296,7 +298,11 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
           else continue;
         }
         if (!shouldRun(state, now)) {
-          // Quiet training-day runs: once a day, tidy the Discord waiting room.
+          // Quiet training-day runs: any war reports still to send, then (once a day) tidy the Discord waiting room.
+          if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind('warreport:due:' + clan).first()) {
+            const left = await sendWarReports(env, clan).catch(() => 0);
+            if (!left) await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('warreport:due:' + clan).run();
+          }
           const tidy = await tidyGuests(env, clan, now).catch(() => null);
           out.push({ clan, skipped: 'training day', ...(tidy && (tidy.warned || tidy.removed) ? { tidy } : {}) });
           continue;

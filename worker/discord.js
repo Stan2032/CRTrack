@@ -13,6 +13,7 @@ const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
 CREATE TABLE IF NOT EXISTS discord_reminders (guild TEXT, user_id TEXT, hours INTEGER, dm TEXT, PRIMARY KEY (guild, user_id));
 CREATE TABLE IF NOT EXISTS discord_digest (guild TEXT, user_id TEXT, dm TEXT, PRIMARY KEY (guild, user_id));
+CREATE TABLE IF NOT EXISTS discord_warreport (guild TEXT, user_id TEXT, dm TEXT, PRIMARY KEY (guild, user_id));
 CREATE TABLE IF NOT EXISTS discord_guests (guild TEXT, user_id TEXT, since TEXT, warned INTEGER DEFAULT 0, PRIMARY KEY (guild, user_id));`;
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
@@ -31,6 +32,7 @@ export const COMMANDS = [
   { name: 'mystats', description: 'Your war report: this war, past wars, reliability, how you play', options: [bool('share', 'Show it to everyone (default: only you)')] },
   { name: 'remind', description: 'Get a DM before reset if you still have decks to play', options: [
     { type: 4, name: 'hours', description: 'Hours before reset (0 = stop)', required: true, min_value: 0, max_value: 12 }] },
+  { name: 'warreport', description: 'Get your war result by DM after each war', options: [bool('on', 'On or off', true)] },
   { name: 'away', description: 'Tell the leaders you\'re away (no automatic kick)', options: [
     { type: 4, name: 'days', description: 'Days away (0 = I\'m back)', required: true, min_value: 0, max_value: 21 },
     { type: 3, name: 'reason', description: 'Optional, e.g. holiday', max_length: 100 },
@@ -313,6 +315,16 @@ export async function handleDiscord(request, env, ctx) {
       if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then run `/remind` again.'));
       await env.DB.prepare('INSERT OR REPLACE INTO discord_reminders (guild, user_id, hours, dm) VALUES (?, ?, ?, ?)').bind(guild, user, hours, dm).run();
       return Response.json(reply(`Done: you'll get a private message when a battle day has **${hours} hour${hours === 1 ? '' : 's'}** left and you still have decks to play. I've sent one now so you can see it.`));
+    }
+    case 'warreport': {
+      const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
+      if (!link) return Response.json(reply('Link your account first: `/link #YOURTAG`'));
+      if (!opt.on) { await env.DB.prepare('DELETE FROM discord_warreport WHERE guild = ? AND user_id = ?').bind(guild, user).run(); return Response.json(reply('War reports off.')); }
+      const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
+      const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: '📬 War reports on: after each war you\'ll get your result here (medals, place in the clan, streak, reliability). Stop with `/warreport on:False`.' }).then(() => true, () => false);
+      if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then try again.'));
+      await env.DB.prepare('INSERT OR REPLACE INTO discord_warreport (guild, user_id, dm) VALUES (?, ?, ?)').bind(guild, user, dm).run();
+      return Response.json(reply('Done: you\'ll get your result by DM after each war. I\'ve sent a test message.'));
     }
     case 'away': {
       const other = opt.user && opt.user !== user;
@@ -762,6 +774,44 @@ export async function sendDigest(env, clan) {
   return sent;
 }
 
+// After a war: each member who asked (/warreport) gets their own result by DM. At most `max` per run; returns how many are left.
+export async function sendWarReports(env, clan, max = 20) {
+  if (!discordReady(env)) return 0;
+  await setupDB(env);
+  const war = await env.DB.prepare('SELECT week FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(clan).first();
+  if (!war) return 0;
+  const subs = (await env.DB.prepare('SELECT r.guild, r.user_id, r.dm, l.tag FROM discord_warreport r JOIN discord_links l ON l.guild = r.guild AND l.user_id = r.user_id WHERE l.clan = ?').bind(clan).all()).results;
+  const sent = new Set((await env.DB.prepare('SELECT k FROM kv WHERE k LIKE ?').bind(`wr:${clan}:${war.week}:%`).all()).results.map(x => x.k));
+  const todo = subs.filter(x => !sent.has(`wr:${clan}:${war.week}:${x.guild}:${x.user_id}`));
+  if (!todo.length) return 0;
+  const r = await clanRules(env, clan), T = r.target;
+  const all = (await env.DB.prepare('SELECT week, tag, fame, decks FROM war_players WHERE clan = ?').bind(clan).all()).results;
+  const thisWar = all.filter(x => x.week === war.week && (x.decks > 0 || x.fame > 0)).sort((a, b) => b.fame - a.fame);
+  for (const x of todo.slice(0, max)) {
+    await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`wr:${clan}:${war.week}:${x.guild}:${x.user_id}`, '1').run();   // once, even if it fails
+    await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content: warReportText(x.tag, war.week, all, thisWar, T, r.lookback), allowed_mentions: { parse: [] } }).catch(() => null);
+  }
+  return Math.max(0, todo.length - max);
+}
+
+export function warReportText(tag, week, all, thisWar, T, lookback = 10) {
+  const weeks = all.filter(x => x.tag === tag).map(x => ({ key: x.week, fame: x.fame, decks: x.decks })).sort((a, b) => wkNum(b.key) - wkNum(a.key));
+  const me = weeks.find(w => w.key === week);
+  const lines = [];
+  if (!me || (!me.decks && !me.fame)) lines.push(`📬 **War ${week}:** you didn't play this one.`);
+  else {
+    const rank = thisWar.findIndex(x => x.tag === tag) + 1;
+    lines.push(`📬 **Your war ${week}: ${n(me.fame)}** medals, ${me.decks}/16 battles ${me.fame >= T ? `✅ (target ${n(T)})` : `❌ (target ${n(T)}: ${n(T - me.fame)} short)`}`);
+    if (rank) lines.push(`🏅 ${rank}${['st', 'nd', 'rd'][rank - 1] || 'th'} of ${thisWar.length} in the clan`);
+  }
+  let streak = 0; for (const w of weeks) { if (w.fame >= T) streak++; else break; }
+  if (streak >= 2) lines.push(`🔥 ${streak} wars in a row at ${n(T)}+`);
+  const before = weeks.filter(w => wkNum(w.key) < wkNum(week)), now = reliability({ weeks }, T, lookback), was = reliability({ weeks: before }, T, lookback);
+  if (now) lines.push(`📈 Reliability ${was ? `${was.score} → ` : ''}**${now.score}**/100`);
+  lines.push('_Stop these: `/warreport on:False`_');
+  return lines.join('\n');
+}
+
 // Monthly backup: the full history as a file in each leaders' channel (Discord keeps it).
 export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) {
   if (!discordReady(env)) return 0;
@@ -836,7 +886,7 @@ const INTROS = {
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
   leaders: `🛡️ **Leaders only. War Audit posts here:** **absences** from \`/away\`, the **weekly digest** before battle days (a private copy too: \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
   guests: `🚪 **Not in the clan right now.** The tag you linked isn't in #WINNING's member list. Join the clan in game, then use \`/link\` here again, or ask a leader below. You're free to leave the server any time.`,
-  bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
+  bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/warreport on:True\` your result by DM after each war · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
 };
 const LABEL = { guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
   war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'absences, digest, backups' };
