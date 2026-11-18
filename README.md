@@ -100,3 +100,7 @@ The top of the page shows when data was last pulled (UK time). **Request updated
 - `docs/SETUP.md`: setting it up, step by step
 - `docs/HANDOFF.md`: background, maths, and decisions so far
 - `docs/gemini/`: the earlier Gemini work, kept for reference
+
+---
+This material is unofficial and is not endorsed by Supercell. For more information see Supercell's Fan Content Policy:
+https://supercell.com/en/fan-content-policy/

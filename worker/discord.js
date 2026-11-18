@@ -776,7 +776,7 @@ export function rulesText(r) {
     `⚔️ **Duels pay most** (250 a game won), then 1v1 (200), boats least (125).${r.spareBoats ? ` Mostly on boats and under? Warning plus a tip${r.boatRepeatKick ? '; still under on boats next war: kick' : ''}.` : ''}`,
     `💬 **Going away?** Use \`/away\` (or tell a leader). Regulars (${r.holdWeeks}+ wars in a row at target) who go quiet ${r.holdOffline}+ days get a check-in, not a kick.`,
     `⭐ **Elder:** ${r.promoWeeks}+ wars in the clan, at most ${r.promoMisses} miss, average ${n(r.promoAvg)}+.`,
-    `_Kept up to date automatically when the rules change._`,
+    `_Kept up to date automatically when the rules change. War Audit is unofficial and not endorsed by Supercell (Fan Content Policy: supercell.com/en/fan-content-policy)._`,
   ].join('\n\n');
 }
 
