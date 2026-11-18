@@ -172,7 +172,9 @@ screenshots for absence messages, if wanted.
 
 - **Tag proof** (`/link`): the bot picks 2 cards the player owns that aren't in their current deck; they put both in
   their selected deck; **Done: check it** reads `currentDeck` from the game API. (The profile's favourite card can't be
-  set by players, so it isn't used.) `/leader link` skips proof. A proven owner takes over a tag someone else linked.
+  set by players, so it isn't used.) `/leader link` skips proof.
+  **Changed 18 Nov:** the check reads the battle log (one battle with both cards since the proof started), not
+  `currentDeck`, which showed a deck iccyman2511 had not played while his battle log already had the right battle. A proven owner takes over a tag someone else linked.
 - **Waiting room tidy-up**: `discord_guests` records when someone got the Not in clan role; on quiet training-day runs
   (once a day) a heads-up in #not-in-clan at `tidyDays - 1`, removal at `tidyDays` (default 7, `/setup tidy`). Leaders
   and anyone who linked meanwhile are left alone.

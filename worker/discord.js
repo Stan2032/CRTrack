@@ -202,16 +202,29 @@ export async function tidyGuests(env, clan, now = Date.now()) {
   return out;
 }
 
-// ---- Tag proof: the player puts 2 of their own cards (not already there) into their current battle deck; the bot checks the game's data.
-// (Only the account owner can change the deck. The profile's favourite card can't be set: the game picks it.) ----
+// ---- Tag proof: the player plays one battle with 2 of their own cards in their deck; the bot finds it in their battle log.
+// Only the account owner can play their battles. (The API's "currentDeck" isn't reliable: on 18 Nov it showed a deck
+// iccyman2511 hadn't played, while his battle log already had the battle with both cards. The profile's favourite card
+// can't be set: the game picks it.) ----
 const saveLink = (env, guild, target, clan, tag, by) => env.DB.prepare('INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag, at, by) VALUES (?, ?, ?, ?, ?, ?)').bind(guild, target, clan, tag, new Date().toISOString(), by).run();
 const proofKey = (guild, user) => `verify:${guild}:${user}`;
+const PROOF_MS = 60 * 60e3;   // an hour to play the battle
+const battleMs = t => { const x = String(t || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return x ? Date.UTC(+x[1], x[2] - 1, +x[3], +x[4], +x[5], +x[6]) : 0; };
+// A battle since the proof started where this player's deck had both cards (team[] holds both players in 2v2).
+export function provenBy(log, tag, cards, since) {
+  return (Array.isArray(log) ? log : []).some(b => battleMs(b.battleTime) >= since - 2 * 60e3 && (b.team || []).some(t =>
+    String(t.tag || '').replace('#', '').toUpperCase() === tag && cards.every(c => (t.cards || []).some(x => x.name === c))));
+}
 const proofButtons = [{ type: 1, components: [{ type: 2, style: 3, label: '✅ Done: check it', custom_id: 'verify|check' }] }];
-const proofText = (tag, name, cards, extra = '') => `To prove **${name}** (#${tag}) is your account:\n**1.** In Clash Royale, put **${cards[0]}** and **${cards[1]}** into the deck you have selected (swap out any two cards).\n**2.** Tap **Done: check it** below.\n\nSwap them back afterwards. The game's data can take a minute to update.${extra}`;
+const proofText = (tag, name, cards, extra = '') => `To prove **${name}** (#${tag}) is your account:\n**1.** In Clash Royale, put **${cards[0]}** and **${cards[1]}** in your deck.\n**2.** Play **one battle** with that deck (any mode: a friendly battle counts).\n**3.** Tap **Done: check it** below.\n\nSwap the cards back afterwards. A battle can take a minute or two to show up.${extra}`;
 
 async function startProof(env, guild, user, tag, m) {
   const pl = await cr(env, `/players/${encodeURIComponent('#' + tag)}`).catch(() => null);
   if (!pl) return reply('Couldn\'t reach the game\'s data just now. Try `/link` again in a minute.');
+  // Same tag asked again within the time limit: keep the same two cards (don't move the goalposts mid-way).
+  const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(proofKey(guild, user)).first().then(r => r && JSON.parse(r.v));
+  if (prev && prev.tag === tag && Date.now() - prev.at < PROOF_MS && prev.cards?.length === 2)
+    return { type: 4, data: { content: proofText(tag, cleanName(m.name), prev.cards), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
   const inDeck = new Set((pl.currentDeck || []).map(c => c.name)), pool = (pl.cards || []).map(c => c.name).filter(n => n && !inDeck.has(n));
   if (pool.length < 2) return reply('Couldn\'t read that account\'s cards. Ask a leader to link you with `/leader link`.');
   const a = Math.floor(Math.random() * pool.length); let b = Math.floor(Math.random() * (pool.length - 1)); if (b >= a) b++;
@@ -227,12 +240,12 @@ async function checkProof(i, env, ctx) {
   const update = (content, components = []) => Response.json({ type: 7, data: { content, components, allowed_mentions: { parse: [] } } });
   if (!row) return update('Nothing to check. Start with `/link #YOURTAG`.');
   const v = JSON.parse(row.v);
-  if (Date.now() - v.at > 30 * 60e3) { await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run(); return update('That took too long (30 minutes). Run `/link` again for a new card.'); }
+  if (Date.now() - v.at > PROOF_MS) { await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run(); return update('That took over an hour. Run `/link` again for two new cards.'); }
   const cfg = await getConfig(env, guild), clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
   const m = await env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, v.tag).first();
-  const pl = await cr(env, `/players/${encodeURIComponent('#' + v.tag)}`).catch(() => null);
-  const deck = new Set((pl?.currentDeck || []).map(c => c.name)), missing = (v.cards || []).filter(c => !deck.has(c));
-  if (!pl || missing.length) return update(proofText(v.tag, cleanName(m?.name || v.tag), v.cards, `\n\n⏳ **Not yet:** ${pl ? `your deck doesn't show **${missing.join('** or **')}** yet` : 'couldn\'t reach the game\'s data'}. Wait a minute, then tap again.`), proofButtons);
+  const log = await cr(env, `/players/${encodeURIComponent('#' + v.tag)}/battlelog`).catch(() => null);
+  if (!log || !provenBy(log, v.tag, v.cards, v.at))
+    return update(proofText(v.tag, cleanName(m?.name || v.tag), v.cards, `\n\n⏳ **Not yet:** ${log ? `no battle since you started with both **${v.cards[0]}** and **${v.cards[1]}** in your deck` : 'couldn\'t reach the game\'s data'}. Play one (or wait a minute if you just did), then tap again.`), proofButtons);
   const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, v.tag, user).first();
   if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, v.tag).run();   // proven owner wins
   await saveLink(env, guild, user, clan, v.tag, user);
@@ -635,7 +648,7 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 
 **1.** Type \`/link\` and tap the one from **War Audit**.
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
-**3.** It asks you to put 2 of your cards into your deck in game (proof it's your account). Do that, tap **Done: check it**, and your clan role and nickname are set.
+**3.** It asks you to play one battle with 2 of your cards in your deck (proof it's your account; a friendly battle counts). Then tap **Done: check it**, and your clan role and nickname are set.
 
 Not in the clan yet? Join in game first, then link. Stuck? Ask a leader.`;
 

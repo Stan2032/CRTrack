@@ -32,6 +32,7 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/\/channels\/(NEWCH-\w*|CW|CR|CLC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   if (/\/channels\/(CW|CR|CV)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%232VJ9V2PV\/battlelog$/.test(url)) return Response.json(globalThis.battles || []);
   if (/proxy\.royaleapi\.dev\/v1\/players\/%232VJ9V2PV$/.test(url)) return Response.json({ name: 'Luke', currentDeck: (globalThis.deck || ['Knight', 'Zap']).map(name => ({ name })), cards: ['Knight', 'Zap', 'Archers', 'Giant', 'Arrows'].map(name => ({ name })) });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
@@ -64,22 +65,24 @@ assert.match(await text(await here('war', 'C', 'G', member('U5'))), /Leaders onl
 
 // /link: prove the tag is yours by putting 2 of your own cards into your current deck; Check confirms it from the game's data.
 const proof = await (await cmd('link', [{ name: 'tag', value: '#2vj9v2pv' }])).json();
-assert.match(proof.data.content, /To prove \*\*Luke\*\* \(#2VJ9V2PV\)[\s\S]*put \*\*(Archers|Giant|Arrows)\*\* and \*\*(Archers|Giant|Arrows)\*\* into the deck/, 'cards they own, not already in the deck');
+assert.match(proof.data.content, /To prove \*\*Luke\*\* \(#2VJ9V2PV\)[\s\S]*put \*\*(Archers|Giant|Arrows)\*\* and \*\*(Archers|Giant|Arrows)\*\* in your deck[\s\S]*Play \*\*one battle\*\*/, 'cards they own, not already in the deck');
 assert.equal(proof.data.components[0].components[0].custom_id, 'verify|check');
 const check = m => interaction({ type: 3, guild_id: 'G', member: m, data: { custom_id: 'verify|check' } });
 let chk = (await (await check(member('U1'))).json()).data;
-assert.match(chk.content, /Not yet:\*\* your deck doesn't show/); assert.equal(chk.components.length, 1, 'button stays');
+assert.match(chk.content, /Not yet:\*\* no battle since you started/); assert.equal(chk.components.length, 1, 'button stays');
 assert.equal(await DB.prepare("SELECT 1 FROM discord_links WHERE user_id = 'U1'").first(), null, 'not linked yet');
 const want = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'verify:G:U1'").first()).v).cards;
-globalThis.deck = ['Knight', want[0]];   // only one of the two: still not proven
-assert.match((await (await check(member('U1'))).json()).data.content, new RegExp(`doesn't show \\*\\*${want[1]}`));
-globalThis.deck = ['Knight', ...want];
+const bt = (ms, cards, tag = '#2VJ9V2PV') => ({ battleTime: new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '.000Z'), team: [{ tag, cards: cards.map(name => ({ name })) }] });
+globalThis.battles = [bt(Date.now(), ['Knight', want[0]]), bt(Date.now() - 3600e3, ['Knight', ...want]), bt(Date.now(), [...want], '#OTHER')];
+assert.match((await (await check(member('U1'))).json()).data.content, /Not yet/, 'one card only, an old battle, or someone else: not proof');
+assert.match((await (await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }])).json()).data.content, new RegExp(`${want[0]}\\*\\* and \\*\\*${want[1]}`), 'asking again keeps the same two cards');
+globalThis.battles = [bt(Date.now(), ['Knight', 'Zap', ...want])];
 calls.length = 0;
 chk = (await (await check(member('U1'))).json()).data;
 assert.match(chk.content, /Proven and linked\*\* to \*\*Luke\*\*/); assert.equal(chk.components.length, 0);
 await Promise.all(pending);
 assert.match((await (await check(member('U1'))).json()).data.content, /Nothing to check/, 'done once');
-globalThis.deck = null;
+globalThis.battles = null;
 const patch = calls.find(c => c.method === 'PATCH' && /members\/U1$/.test(c.url));
 assert.deepEqual(patch.body, { roles: ['OTHER', 'RE'], nick: 'Luke' }, 'Elder role added, other roles kept, nickname set');
 

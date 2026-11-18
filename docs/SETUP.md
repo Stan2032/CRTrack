@@ -129,7 +129,7 @@ everything.
 
 | Command | What |
 |---|---|
-| `/link #TAG` · `/unlink` | Connect or disconnect your accounts. `/link` asks you to put 2 of your cards into your deck in game, as proof it's yours |
+| `/link #TAG` · `/unlink` | Connect or disconnect your accounts. `/link` asks you to play one battle with 2 of your cards in your deck, as proof it's yours |
 | `/mystats` | Your war report (only you see it; `share:True` to post it) |
 | `/remind 3` | DM 3 hours before reset if you still have decks (`/remind 0` = stop) |
 | `/warreport on:True` | Your result by DM after each war: medals, place, streak, reliability |
