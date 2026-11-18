@@ -125,6 +125,11 @@ Without `fresh`, it reuses channels it recognises (by name, or because they alre
 missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** (tap **Continue ▶** until it says *Refreshed ✅* — it works in small steps to stay inside Cloudflare's free limits) clears the bot's old posts and re-posts
 everything.
 
+**To remove it all:** **`/setup remove`** (clan Leader or server admin only, not Co-Leaders) shows what will go and a red
+**Delete everything** button: War Audit's channels, categories and roles, and its saved settings for the server.
+Linked accounts are kept unless you add `links:True`. War history and the website are not touched. Build it again
+any time with `/setup auto apply:True`.
+
 **Commands** (11)
 
 | Command | What |
@@ -147,6 +152,7 @@ everything.
 | `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours), `last_call:2` (hours before reset; 0 = off) |
 | `/setup tidy 7` | Remove people from the Not in clan waiting room after 7 days (heads-up the day before; 0 = never) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
+| `/setup remove` | Clan Leader only: delete everything War Audit made in the server (asks first) |
 
 "Leaders" means anyone with the Leader or Co-Leader role, or Manage Roles / Administrator in Discord.
 

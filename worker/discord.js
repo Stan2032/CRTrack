@@ -65,12 +65,13 @@ export const COMMANDS = [
     sub('check', 'Check the live server: what each role can see and post in'),
     sub('pings', 'When battle-day pings go out', [{ type: 4, name: 'hour', description: 'Evening ping hour, UK time (0-23)', min_value: 0, max_value: 23 },
       bool('auto', 'Evening ping at the start of the clan\'s busiest hours'), { type: 4, name: 'last_call', description: 'Last call this many hours before reset (0 = off)', min_value: 0, max_value: 6 }]),
-    sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }])] },
+    sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }]),
+    sub('remove', 'Leader only: delete everything War Audit made in this server (asks first)', [bool('links', 'Also delete everyone\'s linked accounts and settings')])] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
 const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
   'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'leader forget': 'forget', 'setup auto': 'autosetup', 'setup show': 'setup',
-  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup tidy': 'tidy', 'setup pings': 'pings', me: 'mystats', whosees: 'whosees' };
+  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup remove': 'remove', 'setup tidy': 'tidy', 'setup pings': 'pings', me: 'mystats', whosees: 'whosees' };
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
 
@@ -150,6 +151,9 @@ const isLeader = (member, cfg) => {
   const lead = [cfg?.roles?.leader, cfg?.roles?.coLeader].filter(Boolean);
   return (member?.roles || []).some(r => lead.includes(r));
 };
+
+// The clan Leader only (not Co-Leaders): the server owner/admins, or whoever has the Leader role.
+const isTopLeader = (member, cfg) => (BigInt(member?.permissions || '0') & ADMIN) === ADMIN || (!!cfg?.roles?.leader && (member?.roles || []).includes(cfg.roles.leader));
 
 // Desired clan role and nickname for a linked user, from their game role.
 async function syncOne(env, guild, cfg, userId, m) {
@@ -566,6 +570,18 @@ export async function handleDiscord(request, env, ctx) {
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
+    case 'remove': {
+      if (!isTopLeader(i.member, cfg)) return Response.json(reply('Only the clan Leader (or a server admin) can do this.'));
+      const links = !!opt.links;
+      return Response.json({ type: 4, data: { flags: EPHEMERAL, allowed_mentions: { parse: [] }, content: [
+        '⚠️ **This deletes everything War Audit made in this server:**',
+        `• its channels and categories (${SPECS.map(x => x.name).join(', ')}), with everything posted in them`,
+        `• its roles (${ROLE_SPEC.map(r => r[1]).join(', ')})`,
+        '• its saved server settings, so it stops posting here',
+        links ? '• **everyone\'s linked accounts, reminders and DM settings**' : '• Linked accounts are **kept** (add `links:True` to delete them too).',
+        '', 'The clan\'s war history and the website are not touched. You can build it all again with `/setup auto apply:True`.'].join('\n'),
+        components: [{ type: 1, components: [{ type: 2, style: 4, label: 'Delete everything', custom_id: 'remove|go|' + (links ? 1 : 0) }] }] } });
+    }
     case 'pings': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const next = { ...(cfg || { clan, channels: {}, roles: {} }) };
@@ -663,6 +679,16 @@ async function handleButton(i, env, ctx) {
     const work = (async () => {
       const msg = await refreshNext(env, i.guild_id, clan0).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 150)}`, components: [] }));
       await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } }).catch(() => null);
+    })();
+    if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+    return Response.json({ type: 6 });
+  }
+  if (kind === 'remove') {
+    const cfg0 = await getConfig(env, i.guild_id);
+    if (!isTopLeader(i.member, cfg0)) return Response.json(reply('Only the clan Leader (or a server admin) can do this.'));
+    const work = (async () => {
+      const msg = await removeAll(env, i.guild_id, cfg0, status === '1').catch(e => `Something went wrong: ${String(e.message || e).slice(0, 150)}. Run it again to finish.`);
+      await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg.slice(0, 1990), components: [], allowed_mentions: { parse: [] } }).catch(() => null);
     })();
     if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
     return Response.json({ type: 6 });
@@ -1226,6 +1252,29 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
   }
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), oldNames: Object.fromEntries(old.map(c => [c.id, c.name])), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
   return { content: [`**Step 1 of ${STEPS(fresh)} done: roles and channels**`, ...done].join('\n').slice(0, 1900), components: nextButton(2, STEPS(fresh)) };
+}
+
+// /setup remove: delete the channels, categories and roles War Audit's layout uses (matched by their exact names,
+// or the ids it saved), and everything it saved about this server. War history is never touched.
+// About 25 requests (12 channels, 4 categories, 5 roles, 2 reads): one go fits the Worker's limit.
+export async function removeAll(env, guild, cfg, links = false) {
+  const [channels, roles] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/channels`), dapi(env, 'GET', `/guilds/${guild}/roles`)]);
+  const names = new Set([...SPECS.map(x => x.name), ...LAYOUT.map(c => c.cat)]);
+  const saved = new Set(Object.values(cfg?.channels || {}));
+  const ours = channels.filter(c => names.has(c.name) || (saved.has(c.id) && SPECS.some(x => x.name === c.name)));
+  let ch = 0, rl = 0, failed = [];
+  for (const c of [...ours.filter(c => c.type !== 4), ...ours.filter(c => c.type === 4)])   // channels first, then their categories
+    if (await dapi(env, 'DELETE', `/channels/${c.id}`).then(() => true, () => false)) ch++; else failed.push(c.name);
+  const roleNames = new Set(ROLE_SPEC.map(r => plain(r[1]))), roleIds = new Set(Object.values(cfg?.roles || {}));
+  for (const r of roles.filter(r => r.id !== guild && !r.managed && (roleIds.has(r.id) || roleNames.has(plain(r.name)))))
+    if (await dapi(env, 'DELETE', `/guilds/${guild}/roles/${r.id}`).then(() => true, () => false)) rl++; else failed.push('@' + r.name);
+  await env.DB.prepare('DELETE FROM kv WHERE k = ? OR k LIKE ? OR k LIKE ? OR k = ? OR k = ? OR k LIKE ? OR k LIKE ?')
+    .bind('discord:' + guild, `discord:%:${guild}`, `discord:%:${guild}:%`, 'autosetup:' + guild, 'refresh:' + guild, `apply:${guild}:%`, `verify:${guild}:%`).run();
+  await env.DB.prepare('DELETE FROM discord_guests WHERE guild = ?').bind(guild).run();
+  if (links) for (const t of ['discord_links', 'discord_reminders', 'discord_digest', 'discord_warreport']) await env.DB.prepare(`DELETE FROM ${t} WHERE guild = ?`).bind(guild).run();
+  return [`🗑️ **Removed:** ${ch} channel${ch === 1 ? '' : 's'}/categor${ch === 1 ? 'y' : 'ies'}, ${rl} role${rl === 1 ? '' : 's'}, and War Audit's saved settings for this server${links ? ', plus everyone\'s linked accounts and settings' : ' (linked accounts kept)'}.`,
+    failed.length ? `⚠️ Couldn't delete: ${failed.join(', ')} (War Audit's role must be above these roles, and it needs to see the channel). Delete them by hand or fix and run again.` : '',
+    'War Audit has stopped posting here. To build it again: `/setup auto apply:True`.'].filter(Boolean).join('\n');
 }
 
 // /whosees: Discord's own permission rules applied to the server's live roles and channels
