@@ -770,15 +770,16 @@ const plain = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
 function overwritesFor(access, guild, roles, botId, voice = false) {
   const ow = (id, allow, deny = '0', type = 0) => id && { id, type, allow, deny };
   const all = ['leader', 'coLeader', 'elder', 'member'].map(k => roles[k]), lead = [roles.leader, roles.coLeader], rest = [roles.elder, roles.member];
-  const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
+  // The bot always keeps View on its channels (without it a hidden channel is invisible to the bot: it can't reuse, fix or delete it).
+  const bot = ow(botId, voice ? bits('VIEW') : BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
   const room = voice ? bits('VIEW') : CHAT;   // voice: connect and speak come from the server's defaults
   if (access === 'public') return [];
   if (access === 'newcomers') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...[...rest, roles.guest].map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
   if (access === 'guests') return [hide, ...[roles.guest, ...lead].map(r => ow(r, CHAT)), bot].filter(Boolean);
   if (access === 'public-read') return [ow(guild, READ, bits('SEND')), bot].filter(Boolean);
   if (access === 'members-read') return [hide, ...all.map(r => ow(r, READ, bits('SEND'))), bot].filter(Boolean);
-  if (access === 'leaders') return [hide, ...lead.map(r => ow(r, room)), voice ? null : bot].filter(Boolean);
-  return [hide, ...all.map(r => ow(r, room)), voice ? null : bot].filter(Boolean);
+  if (access === 'leaders') return [hide, ...lead.map(r => ow(r, room)), bot].filter(Boolean);
+  return [hide, ...all.map(r => ow(r, room)), bot].filter(Boolean);
 }
 
 const INTROS = {

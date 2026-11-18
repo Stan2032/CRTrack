@@ -402,6 +402,9 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G5', '{"clan":"
   assert.match(r5.content, /Removed 2 duplicate channels/);
   const voice = calls.find(c => c.method === 'POST' && c.body?.type === 2).body.permission_overwrites;
   assert.ok(voice.filter(o => o.id !== 'G5' && o.id !== 'G3').every(o => o.allow === String(1n << 10n)), 'voice: only View, nothing the bot might not have');
+  assert.ok(voice.some(o => o.id === 'A' && o.type === 1 && BigInt(o.allow) & (1n << 10n)), 'the bot can still see its voice channel');
+  for (const c of calls.filter(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && c.body.type !== 4))
+    if (c.body.permission_overwrites.some(o => o.deny !== '0' && BigInt(o.deny) & (1n << 10n))) assert.ok(c.body.permission_overwrites.some(o => o.id === 'A'), 'bot sees hidden ' + c.body.name);
   await DB.exec(`DELETE FROM kv WHERE k = 'autosetup:G5'`); }
 
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
