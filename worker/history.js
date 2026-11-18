@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 
 export const SCHEMA = `
@@ -295,7 +295,12 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
           if (b === 0) await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(`backup:${clan}:${month}`).run();   // nowhere to post yet
           else continue;
         }
-        if (!shouldRun(state, now)) { out.push({ clan, skipped: 'training day' }); continue; }
+        if (!shouldRun(state, now)) {
+          // Quiet training-day runs: once a day, tidy the Discord waiting room.
+          const tidy = await tidyGuests(env, clan, now).catch(() => null);
+          out.push({ clan, skipped: 'training day', ...(tidy && (tidy.warned || tidy.removed) ? { tidy } : {}) });
+          continue;
+        }
       }
       const res = await snapshot(env, clan, new Date(now).toISOString());
       out.push(res);

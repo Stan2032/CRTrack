@@ -12,7 +12,8 @@ import { PUSH_SCHEMA } from './push.js';
 const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
 CREATE TABLE IF NOT EXISTS discord_reminders (guild TEXT, user_id TEXT, hours INTEGER, dm TEXT, PRIMARY KEY (guild, user_id));
-CREATE TABLE IF NOT EXISTS discord_digest (guild TEXT, user_id TEXT, dm TEXT, PRIMARY KEY (guild, user_id));`;
+CREATE TABLE IF NOT EXISTS discord_digest (guild TEXT, user_id TEXT, dm TEXT, PRIMARY KEY (guild, user_id));
+CREATE TABLE IF NOT EXISTS discord_guests (guild TEXT, user_id TEXT, since TEXT, warned INTEGER DEFAULT 0, PRIMARY KEY (guild, user_id));`;
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
 const MANAGE_ROLES = 1n << 28n, ADMIN = 1n << 3n;  // who counts as a leader in Discord
@@ -55,12 +56,13 @@ export const COMMANDS = [
       { name: 'Clan stats board', value: 'stats' }, { name: 'Rules', value: 'rules' }, { name: 'How to link', value: 'welcome' }, { name: 'Nothing', value: 'none' }] }]),
     sub('sync', 'Update everyone\'s roles and nicknames from the game'),
     sub('refresh', 'Re-post and pin the rules, stats and other kept messages', [bool('clean', 'First delete the bot\'s old messages')]),
-    sub('check', 'Check the live server: what each role can see and post in')] },
+    sub('check', 'Check the live server: what each role can see and post in'),
+    sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }])] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
 const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
   'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'setup auto': 'autosetup', 'setup show': 'setup',
-  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', me: 'mystats', whosees: 'whosees' };
+  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup tidy': 'tidy', me: 'mystats', whosees: 'whosees' };
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
 
@@ -129,6 +131,7 @@ async function overview(env, guild, cfg) {
     `• How to link → ${at(await saved('discord:welcome:' + guild))}`,
     `• Clan stats board → ${at(await saved('discord:stats:' + guild))}`,
     ``, `**Roles that follow the game:** ${[['Member', r.member], ['Elder', r.elder], ['Co-leader', r.coLeader], ['Leader', r.leader]].map(([k, id]) => `${k} → ${id ? `<@&${id}>` : 'none'}`).join(', ')}`,
+    `Waiting room: removed after **${(cfg?.tidyDays ?? 7) || 'never'}${(cfg?.tidyDays ?? 7) ? ' days' : ''}** (change: \`/setup tidy\`)`,
     ``, `To change a channel: go to it and run \`/setup channel\`.`].join('\n');
 }
 
@@ -145,6 +148,7 @@ async function syncOne(env, guild, cfg, userId, m) {
   if (!cfg?.roles) return;
   const clanRoles = Object.values(cfg.roles).filter(Boolean);   // ranks and "Not in clan"
   const want = m && m.in_clan ? (cfg.roles[m.role] || cfg.roles.member) : m && cfg.roles.guest ? cfg.roles.guest : null;
+  if (cfg.roles.guest) await guestSince(env, guild, userId, want === cfg.roles.guest).catch(() => {});
   const cur = await dapi(env, 'GET', `/guilds/${guild}/members/${userId}`).catch(() => null);
   if (!cur) return;
   const has = Array.isArray(cur.roles) ? cur.roles : [];
@@ -154,6 +158,46 @@ async function syncOne(env, guild, cfg, userId, m) {
   const nick = m && m.in_clan ? cleanName(m.name).slice(0, 32) : null;
   if (nick && cur.nick !== nick) patch.nick = nick;
   if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
+}
+
+// ---- Waiting room: who has had the Not in clan role, since when; tidied after cfg.tidyDays (default 7, 0 = off) ----
+async function guestSince(env, guild, user, on) {
+  if (on) await env.DB.prepare('INSERT OR IGNORE INTO discord_guests (guild, user_id, since, warned) VALUES (?, ?, ?, 0)').bind(guild, user, new Date().toISOString()).run();
+  else await env.DB.prepare('DELETE FROM discord_guests WHERE guild = ? AND user_id = ?').bind(guild, user).run();
+}
+
+// Once a day: a heads-up in the waiting room the day before, then removal from the server. Leaders are never removed.
+export async function tidyGuests(env, clan, now = Date.now()) {
+  if (!discordReady(env)) return { warned: 0, removed: 0 };
+  await setupDB(env);
+  const day = new Date(now).toISOString().slice(0, 10), out = { warned: 0, removed: 0 };
+  if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`tidy:${clan}:${day}`).first()) return out;
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`tidy:${clan}:${day}`, '1').run();
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.roles?.guest)) {
+    const days = cfg.tidyDays ?? 7;
+    if (!days) continue;
+    const rows = (await env.DB.prepare('SELECT user_id, since, warned FROM discord_guests WHERE guild = ?').bind(cfg.guild).all()).results;
+    const lead = [cfg.roles.leader, cfg.roles.coLeader].filter(Boolean);
+    let budget = 15;
+    for (const r of rows) {
+      if (budget <= 0) break;
+      const age = (now - Date.parse(r.since)) / 864e5;
+      if (age < days - 1) continue;
+      budget--;
+      const cur = await dapi(env, 'GET', `/guilds/${cfg.guild}/members/${r.user_id}`).catch(() => null);
+      if (!cur || !(cur.roles || []).includes(cfg.roles.guest) || (cur.roles || []).some(x => lead.includes(x))) { await guestSince(env, cfg.guild, r.user_id, false); continue; }   // left, linked, or a leader
+      if (!r.warned) {
+        const ch = chan(cfg, 'guests');
+        if (ch) await dapi(env, 'POST', `/channels/${ch}/messages`, { content: `<@${r.user_id}> you've been here ${Math.floor(age)} days without joining the clan. If you haven't joined in game and \`/link\`ed by tomorrow, you'll be removed from the server (you can come back any time with a new invite). Questions? Ask a leader here.`, allowed_mentions: { parse: [], users: [r.user_id] } }).catch(() => null);
+        await env.DB.prepare('UPDATE discord_guests SET warned = 1 WHERE guild = ? AND user_id = ?').bind(cfg.guild, r.user_id).run();
+        out.warned++;
+      } else if (age >= days) {
+        const ok = await fetch(`${API}/guilds/${cfg.guild}/members/${r.user_id}`, { method: 'DELETE', headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN, 'X-Audit-Log-Reason': `Not in the clan for ${days}+ days` } }).then(x => x.ok || x.status === 404, () => false);
+        if (ok) { await guestSince(env, cfg.guild, r.user_id, false); out.removed++; }
+      }
+    }
+  }
+  return out;
 }
 
 // ---- Tag proof: the player sets one of their own cards as their favourite in game; the bot checks the game's data ----
@@ -221,7 +265,7 @@ export async function handleDiscord(request, env, ctx) {
       const m = await member(tag);
       if (!m || !m.in_clan) {
         const g = cfg?.roles?.guest, room = chan(cfg, 'guests');
-        if (g && i.data.name === 'link') later(dapi(env, 'PUT', `/guilds/${guild}/members/${target}/roles/${g}`));
+        if (g && i.data.name === 'link') later(dapi(env, 'PUT', `/guilds/${guild}/members/${target}/roles/${g}`).then(() => guestSince(env, guild, target, true)));
         return Response.json(reply(`#${tag} isn't in the clan right now.` + (g && i.data.name === 'link'
           ? ` You can now see${room ? ` <#${room}>` : ' the Not in clan channel'}: ask a leader there, or join the clan in game and \`/link\` again. You're free to leave the server any time.`
           : ' Join in game first, then link.')));
@@ -395,6 +439,13 @@ export async function handleDiscord(request, env, ctx) {
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'tidy': {
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+      const days = Math.max(0, Math.min(60, Number(opt.days) || 0));
+      await setConfig(env, guild, { ...(cfg || { clan, channels: {}, roles: {} }), tidyDays: days });
+      const waiting = (await env.DB.prepare('SELECT count(*) AS n FROM discord_guests WHERE guild = ?').bind(guild).first())?.n || 0;
+      return Response.json(reply(days ? `Done: people in the Not in clan waiting room get a heads-up after ${days - 1} day${days - 1 === 1 ? '' : 's'} and are removed after ${days} (they can rejoin with a new invite). Leaders are never removed. ${waiting} waiting now.` : 'Done: nobody is removed from the waiting room.'));
     }
     case 'sync': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));

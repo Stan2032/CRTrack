@@ -418,6 +418,31 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G5', '{"clan":"
     if (c.body.permission_overwrites.some(o => o.deny !== '0' && BigInt(o.deny) & (1n << 10n))) assert.ok(c.body.permission_overwrites.some(o => o.id === 'A'), 'bot sees hidden ' + c.body.name);
   await DB.exec(`DELETE FROM kv WHERE k = 'autosetup:G5'`); }
 
+// Waiting room tidy-up: heads-up the day before, then removal; people who linked (or leaders) are left alone; once a day.
+{ const { tidyGuests } = await import('../worker/discord.js');
+  const now = Date.parse('2026-11-25T12:00:00Z'), ago = d => new Date(now - d * 864e5).toISOString();
+  await DB.exec(`DELETE FROM discord_guests; INSERT INTO discord_guests (guild, user_id, since, warned) VALUES
+    ('G3','U20','${ago(6.5)}',0),('G3','U21','${ago(8)}',1),('G3','U22','${ago(8)}',1),('G3','U23','${ago(2)}',0),('G3','U24','${ago(9)}',1)`);
+  const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => { const u = String(url), m = u.match(/guilds\/G3\/members\/(U2\d)$/);
+    if (m && (opt.method || 'GET') === 'GET') return Response.json({ roles: { U20: ['NEW-Not in clan'], U21: ['NEW-Not in clan'], U22: ['RM3'], U24: ['NEW-Not in clan', 'RL'] }[m[1]] || [] });
+    return realF(url, opt); };
+  calls.length = 0;
+  const t1 = await tidyGuests(env, 'PPCCR8VU', now);
+  assert.deepEqual(t1, { warned: 1, removed: 1 });
+  assert.match(calls.find(c => c.method === 'POST' && /channels\/NEWCH-notinclan\/messages$/.test(c.url)).body.content, /<@U20> you've been here 6 days[\s\S]*removed from the server/);
+  assert.deepEqual(calls.filter(c => c.method === 'DELETE' && /guilds\/G3\/members\//.test(c.url)).map(c => c.url.split('/').pop()), ['U21'], 'only the warned, still-waiting non-leader');
+  const left = (await DB.prepare("SELECT user_id FROM discord_guests WHERE guild = 'G3' ORDER BY user_id").all()).results.map(r => r.user_id);
+  assert.deepEqual(left, ['U20', 'U23'], 'linked member and leader dropped from the list; removed one gone');
+  assert.deepEqual(await tidyGuests(env, 'PPCCR8VU', now + 3600e3), { warned: 0, removed: 0 }, 'once a day');
+  // /setup tidy 0: nobody removed.
+  assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'tidy', options: [{ name: 'days', value: 0 }] }] } })), /nobody is removed/);
+  calls.length = 0;
+  assert.deepEqual(await tidyGuests(env, 'PPCCR8VU', now + 864e5 * 3), { warned: 0, removed: 0 });
+  assert.ok(!calls.some(c => c.method === 'DELETE'));
+  globalThis.fetch = realF;
+  await interaction({ type: 2, guild_id: 'G3', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'tidy', options: [{ name: 'days', value: 7 }] }] } }); }
+
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
 { const { sendDigest } = await import('../worker/discord.js'); calls.length = 0;
