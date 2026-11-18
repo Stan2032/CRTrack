@@ -200,20 +200,22 @@ export async function tidyGuests(env, clan, now = Date.now()) {
   return out;
 }
 
-// ---- Tag proof: the player sets one of their own cards as their favourite in game; the bot checks the game's data ----
+// ---- Tag proof: the player puts 2 of their own cards (not already there) into their current battle deck; the bot checks the game's data.
+// (Only the account owner can change the deck. The profile's favourite card can't be set: the game picks it.) ----
 const saveLink = (env, guild, target, clan, tag, by) => env.DB.prepare('INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag, at, by) VALUES (?, ?, ?, ?, ?, ?)').bind(guild, target, clan, tag, new Date().toISOString(), by).run();
 const proofKey = (guild, user) => `verify:${guild}:${user}`;
 const proofButtons = [{ type: 1, components: [{ type: 2, style: 3, label: '✅ Done: check it', custom_id: 'verify|check' }] }];
-const proofText = (tag, name, card, extra = '') => `To prove **${name}** (#${tag}) is your account:\n**1.** In Clash Royale, open your profile and tap your favourite card.\n**2.** Change it to **${card}**.\n**3.** Tap **Done: check it** below.\n\nYou can change it back afterwards. The game's data can take a minute to update.${extra}`;
+const proofText = (tag, name, cards, extra = '') => `To prove **${name}** (#${tag}) is your account:\n**1.** In Clash Royale, put **${cards[0]}** and **${cards[1]}** into the deck you have selected (swap out any two cards).\n**2.** Tap **Done: check it** below.\n\nSwap them back afterwards. The game's data can take a minute to update.${extra}`;
 
 async function startProof(env, guild, user, tag, m) {
   const pl = await cr(env, `/players/${encodeURIComponent('#' + tag)}`).catch(() => null);
   if (!pl) return reply('Couldn\'t reach the game\'s data just now. Try `/link` again in a minute.');
-  const fav = pl.currentFavouriteCard?.name, cards = (pl.cards || []).map(c => c.name).filter(n => n && n !== fav);
-  if (!cards.length) return reply('Couldn\'t read that account\'s cards. Ask a leader to link you with `/leader link`.');
-  const card = cards[Math.floor(Math.random() * cards.length)];
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(proofKey(guild, user), JSON.stringify({ tag, card, at: Date.now() })).run();
-  return { type: 4, data: { content: proofText(tag, cleanName(m.name), card), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
+  const inDeck = new Set((pl.currentDeck || []).map(c => c.name)), pool = (pl.cards || []).map(c => c.name).filter(n => n && !inDeck.has(n));
+  if (pool.length < 2) return reply('Couldn\'t read that account\'s cards. Ask a leader to link you with `/leader link`.');
+  const a = Math.floor(Math.random() * pool.length); let b = Math.floor(Math.random() * (pool.length - 1)); if (b >= a) b++;
+  const cards = [pool[a], pool[b]];
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(proofKey(guild, user), JSON.stringify({ tag, cards, at: Date.now() })).run();
+  return { type: 4, data: { content: proofText(tag, cleanName(m.name), cards), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
 }
 
 // The Check button: favourite card matches → linked, roles and nickname set.
@@ -227,15 +229,15 @@ async function checkProof(i, env, ctx) {
   const cfg = await getConfig(env, guild), clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
   const m = await env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, v.tag).first();
   const pl = await cr(env, `/players/${encodeURIComponent('#' + v.tag)}`).catch(() => null);
-  const fav = pl?.currentFavouriteCard?.name;
-  if (fav !== v.card) return update(proofText(v.tag, cleanName(m?.name || v.tag), v.card, `\n\n⏳ **Not yet:** the game still shows **${fav || 'nothing'}**. Wait a minute, then tap again.`), proofButtons);
+  const deck = new Set((pl?.currentDeck || []).map(c => c.name)), missing = (v.cards || []).filter(c => !deck.has(c));
+  if (!pl || missing.length) return update(proofText(v.tag, cleanName(m?.name || v.tag), v.cards, `\n\n⏳ **Not yet:** ${pl ? `your deck doesn't show **${missing.join('** or **')}** yet` : 'couldn\'t reach the game\'s data'}. Wait a minute, then tap again.`), proofButtons);
   const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, v.tag, user).first();
   if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, v.tag).run();   // proven owner wins
   await saveLink(env, guild, user, clan, v.tag, user);
   await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run();
   const work = syncOne(env, guild, cfg, user, m).catch(() => {});
   if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
-  return update(`✅ **Proven and linked** to **${cleanName(m?.name || v.tag)}** (#${v.tag}). Your role and nickname are being set. You can change your favourite card back now.`);
+  return update(`✅ **Proven and linked** to **${cleanName(m?.name || v.tag)}** (#${v.tag}). Your role and nickname are being set. You can swap the cards back now.`);
 }
 
 // ---- Slash command handling ----
@@ -621,7 +623,7 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 
 **1.** Type \`/link\` and tap the one from **War Audit**.
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
-**3.** It asks you to set one of your cards as your favourite in game (proof it's your account). Do that, tap **Done: check it**, and your clan role and nickname are set.
+**3.** It asks you to put 2 of your cards into your deck in game (proof it's your account). Do that, tap **Done: check it**, and your clan role and nickname are set.
 
 Not in the clan yet? Join in game first, then link. Stuck? Ask a leader.`;
 
