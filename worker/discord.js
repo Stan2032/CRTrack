@@ -70,6 +70,7 @@ export const COMMANDS = [
   { name: 'autosetup', description: 'Leaders: set up the whole server (roles, channels, permissions, posts)', options: [
     { type: 5, name: 'apply', description: 'False (default): only show what it would do. True: do it.' },
     { type: 5, name: 'fresh', description: 'True: build everything new and delete all the old channels at the end' }] },
+  { name: 'whosees', description: 'Leaders: check the live server: what each role can see and post in' },
   { name: 'refresh', description: 'Leaders: re-post everything the bot keeps (rules, how to link, stats, to-do list)', options: [
     { type: 5, name: 'clean', description: 'First delete the bot\'s old messages in those channels' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
@@ -354,6 +355,14 @@ export async function handleDiscord(request, env, ctx) {
       later((async () => {
         const msg = await autoSetup(env, guild, cfg, clan, !!opt.apply, !!opt.fresh).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 150)}` }));
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'whosees': {
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+      later((async () => {
+        const msg = await whoSees(env, guild, cfg).catch(e => `Couldn't read the server: ${String(e.message || e).slice(0, 120)}`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg.slice(0, 1990), allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
@@ -894,6 +903,42 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
   }
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), oldNames: Object.fromEntries(old.map(c => [c.id, c.name])), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
   return { content: [`**Step 1 of ${STEPS(fresh)} done: roles and channels**`, ...done].join('\n').slice(0, 1900), components: nextButton(2, STEPS(fresh)) };
+}
+
+// /whosees: Discord's own permission rules applied to the server's live roles and channels
+// (server permissions of @everyone + the role, then the channel's @everyone overwrite, then its role overwrites).
+export function effective(channel, roles, guild, roleIds) {
+  const byId = Object.fromEntries(roles.map(r => [r.id, BigInt(r.permissions || '0')]));
+  let p = byId[guild] || 0n;
+  for (const id of roleIds) p |= byId[id] || 0n;
+  if ((p & P.ADMIN) === P.ADMIN) return { view: true, send: true, admin: true };
+  const ows = channel.permission_overwrites || [], e = ows.find(o => o.id === guild);
+  if (e) p = (p & ~BigInt(e.deny)) | BigInt(e.allow);
+  let a = 0n, d = 0n;
+  for (const o of ows.filter(o => o.type === 0 && roleIds.includes(o.id))) { a |= BigInt(o.allow); d |= BigInt(o.deny); }
+  p = (p & ~d) | a;
+  return { view: (p & P.VIEW) === P.VIEW, send: (p & P.SEND) === P.SEND, invite: (p & P.INVITE) === P.INVITE };
+}
+
+export async function whoSees(env, guild, cfg) {
+  const [roles, channels] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`)]);
+  const r = cfg?.roles || {};
+  const who = [['Newcomer (no role)', []], ['Not in clan', [r.guest]], ['Member', [r.member]], ['Elder', [r.elder]], ['Co-Leader', [r.coLeader]], ['Leader', [r.leader]]].filter(([, ids]) => ids.every(Boolean));
+  const list = channels.filter(c => c.type === 0 || c.type === 2).sort((a, b) => {
+    const pa = channels.find(x => x.id === a.parent_id)?.position ?? -1, pb = channels.find(x => x.id === b.parent_id)?.position ?? -1;
+    return pa - pb || a.position - b.position;
+  });
+  const out = ['**Who sees what** (read live from Discord just now)'];
+  for (const [name, ids] of who) {
+    const res = list.map(c => ({ c, e: effective(c, roles, guild, ids) }));
+    if (res[0]?.e.admin) { out.push(`**${name}:** everything (Administrator)`); continue; }
+    const seen = res.filter(x => x.e.view);
+    const inv = effective({ permission_overwrites: [] }, roles, guild, ids).invite;
+    out.push(`**${name}:** ${seen.length ? seen.map(x => `<#${x.c.id}>${x.e.send || x.c.type === 2 ? '' : ' (read)'}`).join(' ') : 'nothing'}${inv ? ' · can invite' : ''}`);
+  }
+  if (!r.guest) out.push('_No Not in clan role yet: run `/autosetup apply:True`._');
+  out.push('_(read) = can see but not post. Server owner and Administrators always see everything._');
+  return out.join('\n');
 }
 
 // The next step, from the Continue button.

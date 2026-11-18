@@ -113,7 +113,7 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 20 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 21 commands in your server".
 2. In Discord: **`/autosetup`** (or **`/autosetup fresh:True`** to start from nothing). It shows the plan and anything to
    fix first. Nothing changes yet.
 3. **`/autosetup apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
@@ -136,6 +136,7 @@ everything.
 | Anyone | `/scout` | The clans we're racing: their recent results vs ours |
 | Anyone | `/away 3 holiday` | Away for 3 days: leaders see it, no automatic kick (`/away 0` = back) |
 | Anyone | `/remind 3` | Private message 3 hours before reset if you have decks left (`/remind 0` = off) |
+| Leaders | `/whosees` | Reads the live server: what each role can see and post in (proof the permissions are right) |
 | Leaders | `/autosetup` | Roles, channels, permissions and posts, all at once (`apply:True` to do it) |
 | Leaders | `/setup`, `/post-here`, `/sync` | Roles, channel jobs, update everyone's roles and nicknames |
 | Leaders | `/links`, `/linkuser @who #TAG` | Who's linked; link someone else |

@@ -290,6 +290,19 @@ assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G
   assert.ok(!chats(LEADER).includes('📜-rules') && !chats(LEADER).includes('📊-clan-stats'), 'rules and stats read-only even for leaders');
   assert.ok(!can(byName['🔗-link-tag'], NEWCOMER, S) && can(byName['🔗-link-tag'], NEWCOMER, 1n << 31n), 'newcomers can use /link but not chat');
 }
+// /whosees reads the live server and applies Discord's rules: same answer as above, from what's actually there.
+{ const { whoSees } = await import('../worker/discord.js');
+  const made = calls.filter(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && c.body.type !== 4).map((c, k) => ({ id: 'NEWCH-' + c.body.name.replace(/[^a-z]/g, ''), type: c.body.type || 0, position: k, name: c.body.name, permission_overwrites: c.body.permission_overwrites }));
+  const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => /guilds\/G3\/channels$/.test(String(url)) && (opt.method || 'GET') === 'GET' ? Response.json(made) : /guilds\/G3\/roles$/.test(String(url)) && (opt.method || 'GET') === 'GET'
+    ? Response.json([{ id: 'G3', permissions: String(1n << 10n | 1n << 11n) }, { id: 'NEW-Not in clan', permissions: '0' }, { id: 'RM3', permissions: '0' }, { id: 'NEW-Elder', permissions: '0' }, { id: 'NEW-Co-Leader', permissions: '1' }, { id: 'RL', permissions: '1' }]) : realF(url, opt);
+  const ws = await whoSees(env, 'G3', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v));
+  globalThis.fetch = realF;
+  assert.match(ws, /\*\*Newcomer \(no role\):\*\* <#NEWCH-linktag> \(read\)\n/);
+  assert.match(ws, /\*\*Not in clan:\*\* <#NEWCH-notinclan>\n/);
+  assert.match(ws, /\*\*Member:\*\* [^\n]*<#NEWCH-clanstats> \(read\)/); assert.doesNotMatch(ws.split('\n').find(l => l.startsWith('**Member')), /linktag|leaders|notinclan|can invite/);
+  assert.match(ws, /\*\*Leader:\*\* [^\n]*leaderchat[^\n]*· can invite/); assert.doesNotMatch(ws.split('\n').find(l => l.startsWith('**Member')), /leaderchat/);
+}
 calls.length = 0;
 const s2 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
 assert.match(s2.content, /Step 2 of 3 done[\s\S]*Rules → <#CR>[\s\S]*Clan stats → <#NEWCH/);
