@@ -758,7 +758,12 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
 
   // Channels: existing text channels by name, the rest created.
   const text = channels.filter(c => c.type === 0), found = {};
-  for (const k of ['leaders', 'link', 'rules', 'war', 'general']) {   // private ones first, so they're never taken as public
+  // Channels already chosen (with /post-here or an earlier /autosetup) keep their jobs, whatever they're called.
+  const savedCh = async k => (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v).channel)) || null;
+  const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
+  for (const [k, id] of Object.entries(chosen)) if (id && text.some(c => c.id === id) && !Object.values(found).includes(id)) found[k] = id;
+  for (const k of ['leaders', 'link', 'rules', 'war', 'general']) {
+    if (found[k]) continue;   // private ones first, so they're never taken as public
     const spec = CHANNEL_SPEC.find(x => x.key === k), c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
     if (c) found[k] = c.id;
   }

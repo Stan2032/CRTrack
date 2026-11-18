@@ -253,6 +253,16 @@ assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { u
 const noPerm = await autoSetup({ ...env, DISCORD_APP_ID: 'NOPE' }, 'G3', null, 'PPCCR8VU', true);
 assert.match(noPerm, /Can't start yet[\s\S]*Manage Channels/);
 
+// /autosetup keeps channels already chosen, whatever they're called (here: leaders = "bot-talk").
+await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G4', '{"clan":"PPCCR8VU","channels":{"leaders":"BT","war":"CW"},"roles":{}}')`);
+{ const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => { const u = String(url).replace('/guilds/G4/', '/guilds/G3/');
+    if (/\/guilds\/G3\/channels$/.test(u) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'BT', type: 0, name: 'bot-talk' }]);
+    return realF(u, opt); };
+  const pv4 = await autoSetup(env, 'G4', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G4'").first()).v), 'PPCCR8VU', false);
+  assert.match(pv4, /<#BT>: to-do list/); assert.doesNotMatch(pv4, /Create #🛡️-leaders/);
+  globalThis.fetch = realF; }
+
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
 const { postTodo } = await import('../worker/discord.js');
