@@ -387,6 +387,23 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G4', '{"clan":"
   assert.match(pv4, /<#BT>: to-do list/); assert.doesNotMatch(pv4, /➕ #🛡️-leaders/);
   globalThis.fetch = realF; }
 
+// Re-running: the waiting room is reused (not made again), exact-name copies from earlier runs are removed; voice is view-only.
+await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G5', '{"clan":"PPCCR8VU","channels":{},"roles":{}}')`);
+{ const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => { const u = String(url).replace('/guilds/G5', '/guilds/G3');
+    if (/\/guilds\/G3\/channels$/.test(u) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'NIC1', type: 0, name: '🚪-not-in-clan' }, { id: 'NIC2', type: 0, name: '🚪-not-in-clan' }, { id: 'NIC3', type: 0, name: '🚪-not-in-clan' }]);
+    if (/\/channels\/NIC1$/.test(u) && opt.method === 'PATCH') return Response.json({ id: 'NIC1' });
+    return realF(u, opt); };
+  calls.length = 0;
+  const r5 = await autoSetup(env, 'G5', null, 'PPCCR8VU', true);
+  globalThis.fetch = realF;
+  assert.ok(!calls.some(c => c.method === 'POST' && c.body?.name === '🚪-not-in-clan'), 'not made again');
+  assert.deepEqual(calls.filter(c => c.method === 'DELETE' && /channels\/NIC\d$/.test(c.url)).map(c => c.url.split('/').pop()).sort(), ['NIC2', 'NIC3']);
+  assert.match(r5.content, /Removed 2 duplicate channels/);
+  const voice = calls.find(c => c.method === 'POST' && c.body?.type === 2).body.permission_overwrites;
+  assert.ok(voice.filter(o => o.id !== 'G5' && o.id !== 'G3').every(o => o.allow === String(1n << 10n)), 'voice: only View, nothing the bot might not have');
+  await DB.exec(`DELETE FROM kv WHERE k = 'autosetup:G5'`); }
+
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
 const { postTodo } = await import('../worker/discord.js');

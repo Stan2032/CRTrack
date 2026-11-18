@@ -771,7 +771,7 @@ function overwritesFor(access, guild, roles, botId, voice = false) {
   const ow = (id, allow, deny = '0', type = 0) => id && { id, type, allow, deny };
   const all = ['leader', 'coLeader', 'elder', 'member'].map(k => roles[k]), lead = [roles.leader, roles.coLeader], rest = [roles.elder, roles.member];
   const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
-  const room = voice ? bits('VIEW', 'CONNECT', 'SPEAK') : CHAT;
+  const room = voice ? bits('VIEW') : CHAT;   // voice: connect and speak come from the server's defaults
   if (access === 'public') return [];
   if (access === 'newcomers') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...[...rest, roles.guest].map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
   if (access === 'guests') return [hide, ...[roles.guest, ...lead].map(r => ow(r, CHAT)), bot].filter(Boolean);
@@ -813,7 +813,7 @@ async function reuse(env, guild, cfg, channels) {
   const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), stats: await savedCh('discord:stats:' + guild),
     results: cfg?.channels?.results !== cfg?.channels?.war ? chan(cfg, 'results') : null, scout: chan(cfg, 'scout'), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
   for (const [k, id] of Object.entries(chosen)) if (id && text.some(c => c.id === id) && !Object.values(found).includes(id)) found[k] = id;
-  for (const k of ['leaderchat', 'leaders', 'link', 'rules', 'stats', 'results', 'scout', 'war', 'bot', 'general', 'voice']) {
+  for (const k of SPECS.map(x => x.key).sort((a, b) => (a === 'leaderchat' ? -1 : b === 'leaderchat' ? 1 : a === 'leaders' ? -1 : b === 'leaders' ? 1 : 0))) {   // every layout channel; private ones first
     if (found[k]) continue;
     const spec = SPECS.find(x => x.key === k), pool = spec.type === 2 ? voice : text;
     const c = pool.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
@@ -867,7 +867,7 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     const r = st.roles.find(x => x.id === roleIds[k]) || { id: roleIds[k], permissions: '0', position: 0 };
     if (r.id && !(BigInt(r.permissions || '0') & inv)) {
       const ok = r.position < st.top && await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { permissions: String(BigInt(r.permissions || '0') | inv) }).then(() => true, () => false);
-      if (!ok) { invitesOk = false; done.push(`⚠️ Couldn't let ${k === 'leader' ? 'Leader' : 'Co-Leader'} invite: Server Settings → Roles → ${k === 'leader' ? 'Leader' : 'Co-Leader'} → turn on **Create Invite**`); }
+      if (!ok) { invitesOk = false; problems.push(`Let ${k === 'leader' ? 'Leader' : 'Co-Leader'} invite: Server Settings → Roles → ${k === 'leader' ? 'Leader' : 'Co-Leader'} → turn on **Create Invite** (War Audit can't give a permission it doesn't have).`); }
     }
   }
   if (everyone && (BigInt(everyone.permissions) & inv)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${guild}`, { permissions: String(BigInt(everyone.permissions) & ~inv) }).then(() => done.push(`✅ Invites: only Leader and Co-Leader${invitesOk ? '' : ' (see below)'}`), () => done.push('⚠️ Couldn\'t limit invites'));
@@ -887,6 +887,11 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
       else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
     }
   }
+  const kept = new Set(Object.values(ids)), names = new Set(SPECS.map(x => x.name));
+  let dupes = 0;
+  for (const c of st.channels) if (names.has(c.name) && !kept.has(c.id) && !old.some(o => o.id === c.id))
+    if (await dapi(env, 'DELETE', `/channels/${c.id}`).then(() => true, () => false)) dupes++;
+  if (dupes) done.push(`🧹 Removed ${dupes} duplicate channel${dupes === 1 ? '' : 's'} from earlier runs`);
   done.unshift(`✅ ${Object.keys(ids).length} channels in ${LAYOUT.length} categories, with permissions`);
   const next = { clan, channels: {}, roles: roleIds };
   for (const spec of SPECS) for (const j of spec.jobs) if (ids[spec.key] && JOBS[j]) next.channels[j] = ids[spec.key];
