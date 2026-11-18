@@ -742,9 +742,9 @@ const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe
 export const LAYOUT = [
   { cat: '👋 Start here', access: 'public', channels: [
     { key: 'link', name: '🔗-link-tag', access: 'newcomers', jobs: ['welcome'], match: /link/, topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
-    { key: 'rules', name: '📜-rules', access: 'public-read', jobs: ['rules'], match: /rules/, topic: 'Clan rules, kept up to date by War Audit.' }] },
+    { key: 'rules', name: '📜-rules', access: 'members-read', jobs: ['rules'], match: /rules/, topic: 'Clan rules, kept up to date by War Audit.' }] },
   { cat: '📊 Clan info', access: 'public', channels: [
-    { key: 'stats', name: '📊-clan-stats', access: 'public-read', jobs: ['stats'], match: /stats/, topic: 'Clan stats, updated after every war.' },
+    { key: 'stats', name: '📊-clan-stats', access: 'members-read', jobs: ['stats'], match: /stats/, topic: 'Clan stats, updated after every war.' },
     { key: 'results', name: '🏆-results', access: 'members-read', jobs: ['results'], match: /result/, topic: 'Battle day summaries, war results and season recaps.' },
     { key: 'scout', name: '🔭-rival-scouting', access: 'members-read', jobs: ['scout'], match: /scout|rival/, topic: 'Who we are racing each war, and how they usually do.' }] },
   { cat: '⚔️ Clan', access: 'members', channels: [
@@ -829,7 +829,7 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     const missing = ROLE_SPEC.filter(([k]) => !roleIds[k]).map(r => r[1]);
     if (missing.length) lines.push(`➕ Roles: ${missing.join(', ')}`);
     for (const c of LAYOUT) lines.push(`**${c.cat}**`, ...c.channels.map(x => `${found[x.key] ? `🔧 <#${found[x.key]}>` : `➕ ${x.type === 2 ? '' : '#'}${x.name}`}${x.jobs.length ? ': ' + x.jobs.map(j => LABEL[j]).join(', ') : ''}`));
-    lines.push('🔒 Newcomers see only Start here and stats. Rules and stats are read-only for everyone; results and scouting read-only for members. Only Leader and Co-Leader see the Leaders category.');
+    lines.push('🔒 Newcomers see **only** the link channel. Once linked, Members and Elders see rules, stats, results and scouting (read-only) and chat in war, general, bot-commands and voice; the link channel disappears for them. Leader and Co-Leader also see the Leaders category.');
     if (old.length) lines.push(`🗑️ **Deletes ${old.length} existing channel${old.length === 1 ? '' : 's'}** (last step): ${old.filter(c => c.type !== 4).slice(0, 15).map(c => c.name).join(', ')}${old.length > 15 ? '…' : ''}`);
     if (problems.length) lines.push(`\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}`);
     lines.push(`\nRun \`/autosetup apply:True${fresh ? ' fresh:True' : ''}\` to do it, in ${STEPS(fresh)} steps (tap Continue between them).`);

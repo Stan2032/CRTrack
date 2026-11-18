@@ -251,8 +251,6 @@ const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G
 assert.equal(cfg3.channels.war, 'CW'); assert.equal(cfg3.channels.leaders, 'CLC', 'a private leaders-chat is the leaders channel, never general');
 assert.ok(cfg3.channels.results && cfg3.channels.results !== 'CW' && cfg3.channels.scout, 'results and scouting get their own channels');
 assert.equal(cfg3.roles.leader, 'RL'); assert.equal(cfg3.roles.coLeader, 'NEW-Co-Leader');
-const rulesOw = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CR')).body.permission_overwrites;
-assert.ok(rulesOw.every(o => o.type === 1 || !(BigInt(o.allow) & (1n << 11n))), 'rules: nobody but the bot can post');
 const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body;
 assert.ok(war.parent_id, 'moved into a category');
 assert.ok(war.permission_overwrites.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
@@ -263,6 +261,30 @@ const res3 = calls.find(c => c.method === 'POST' && /guilds\/G3\/channels$/.test
 assert.ok(res3.some(o => o.id === 'RM3' && !(BigInt(o.allow) & (1n << 11n))), 'results read-only for members');
 assert.ok(calls.some(c => c.method === 'POST' && c.body?.type === 4 && c.body.name === '🛡️ Leaders'), 'categories made');
 assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
+// Who sees what, worked out like Discord does (server @everyone can view; channel overwrites: @everyone, then roles, then the member).
+{
+  const made = calls.filter(c => /guilds\/G3\/channels$|\/channels\/(CW|CR|CV|CLC)$/.test(c.url) && ['POST', 'PATCH'].includes(c.method) && c.body?.type !== 4);
+  const byName = Object.fromEntries(made.map(c => [c.body.name || { CW: '⚔️-war', CR: '📜-rules', CV: '🔊 Clan voice', CLC: '🛡️-leaders' }[c.url.split('/').pop()], c.body.permission_overwrites]));
+  const V = 1n << 10n, S = 1n << 11n;
+  const can = (ows, roles, bit) => {
+    let p = V | S;   // server default for @everyone
+    const e = ows.find(o => o.id === 'G3'); if (e) p = (p & ~BigInt(e.deny)) | BigInt(e.allow);
+    let a = 0n, d = 0n; for (const o of ows.filter(o => roles.includes(o.id))) { a |= BigInt(o.allow); d |= BigInt(o.deny); }
+    p = (p & ~d) | a;
+    return (p & bit) === bit;
+  };
+  const sees = roles => Object.keys(byName).filter(n => can(byName[n], roles, V)).sort();
+  const NEWCOMER = [], MEMBER = ['RM3'], ELDER = ['NEW-Elder'], LEADER = ['RL'], CO = ['NEW-Co-Leader'];
+  assert.deepEqual(sees(NEWCOMER), ['🔗-link-tag'], 'newcomers see only the link channel');
+  const clanView = ['⚔️-war', '💬-general', '📊-clan-stats', '📜-rules', '🔊 Clan voice', '🔭-rival-scouting', '🤖-bot-commands', '🏆-results'].sort();
+  assert.deepEqual(sees(MEMBER), clanView, 'members: the clan channels, not link or leaders');
+  assert.deepEqual(sees(ELDER), clanView, 'elders: same as members');
+  for (const L of [LEADER, CO]) assert.deepEqual(sees(L), [...clanView, '🔗-link-tag', '🛡️-leaders', '💭-leader-chat'].sort(), 'leaders: everything');
+  const chats = roles => Object.keys(byName).filter(n => can(byName[n], roles, V) && can(byName[n], roles, S)).sort();
+  assert.deepEqual(chats(MEMBER), ['⚔️-war', '💬-general', '🔊 Clan voice', '🤖-bot-commands'].sort(), 'members chat only in war, general, bot-commands, voice');
+  assert.ok(!chats(LEADER).includes('📜-rules') && !chats(LEADER).includes('📊-clan-stats'), 'rules and stats read-only even for leaders');
+  assert.ok(!can(byName['🔗-link-tag'], NEWCOMER, S) && can(byName['🔗-link-tag'], NEWCOMER, 1n << 31n), 'newcomers can use /link but not chat');
+}
 calls.length = 0;
 const s2 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
 assert.match(s2.content, /Step 2 of 3 done[\s\S]*Rules → <#CR>[\s\S]*Clan stats → <#NEWCH/);

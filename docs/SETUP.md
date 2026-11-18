@@ -95,8 +95,8 @@ role list** (Server Settings → Roles → drag → Save). Discord doesn't let a
 | Category | Channel | Who sees it | Bot posts |
 |---|---|---|---|
 | 👋 Start here | `#🔗-link-tag` | Newcomers only (hidden once linked; `/link` only, no chat) | How to link (pinned) |
-| | `#📜-rules` | Everyone, read-only | Rules (pinned, kept up to date) |
-| 📊 Clan info | `#📊-clan-stats` | Everyone, read-only | Stats board (pinned, after every war) |
+| | `#📜-rules` | Members, read-only | Rules (pinned, kept up to date) |
+| 📊 Clan info | `#📊-clan-stats` | Members, read-only | Stats board (pinned, after every war) |
 | | `#🏆-results` | Members, read-only | Battle day summaries, war results, season recaps |
 | | `#🔭-rival-scouting` | Members, read-only | Who we're racing, each new war |
 | ⚔️ Clan | `#⚔️-war` | Members, chat | War board, deck reminders |
