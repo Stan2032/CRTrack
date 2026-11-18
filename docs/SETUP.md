@@ -79,39 +79,44 @@ At **discord.com/developers/applications** → **New Application** (e.g. "War Au
 5. **Server id**: in Discord, Settings → Advanced → **Developer Mode** on; long-press the server → **Copy Server ID** →
    Cloudflare Text variable `DISCORD_GUILD_ID` (commands then appear instantly, only in your server).
 6. **OAuth2 → URL Generator**: scopes **`bot`** and **`applications.commands`**. Bot permissions:
-   - Manage Roles, Manage Nicknames
+   - Manage Roles, Manage Channels, Manage Nicknames
    - View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Pin Messages
 
    Leave off Administrator, Kick/Ban, Manage Messages, Mention Everyone. Open the generated link → pick the server → Authorise.
 
+   *Bot already in the server without Manage Channels?* Server Settings → Roles → **War Audit** → turn on
+   **Manage Channels** → Save. (You can turn it off again after step 7.)
+
 ## 6. Discord server: roles and channels
 
-**Roles** (Server Settings → Roles), named exactly so the bot finds them:
-`Leader`, `Co-Leader`, `Elder`, `Member`. Then drag **War Audit** (the bot's role) **above** Co-Leader, Elder and Member.
-It can only give out roles below its own (it can't change the Leader role or the server owner, which Discord doesn't allow anyway).
+The bot does this itself in step 7 (`/autosetup`). The only thing it can't do: **drag War Audit above Co-Leader,
+Elder and Member** (Server Settings → Roles, drag it up the list, Save). Discord doesn't let a bot move itself.
 
-**Who sees what**: newcomers have no clan role until they link, so only let `@everyone` see the link channel.
+What `/autosetup` makes (it reuses channels and roles that already exist with these names):
 
-| Channel | `@everyone` | Clan roles | War Audit | Bot job (`/post-here`) |
-|---|---|---|---|---|
-| `#link-tag` | View ✅, Use Application Commands ✅, Send Messages ❌ | (nothing needed) | View, Send, Read History | **How to link** (then pin it) |
-| `#📜-rules` | View ❌ | View ✅, Send ❌ | View, Send, Read History | **Rules** + **Clan stats board** (pin both) |
-| `#⚔️-war` | View ❌ | View ✅ | View, Send, Read History | **War board + reminders**, **Summaries + results** |
-| `#💬-general` | View ❌ | View ✅ | View, Send | **Welcomes + shout-outs** |
-| `#leaders` (private) | View ❌ | Leader + Co-Leader only | View, Send, Read History | **Leaders only** (to-do list, absences) |
+| Channel | Who sees it | Bot posts |
+|---|---|---|
+| `#🔗-link-tag` | Newcomers only (hidden once linked; they can't chat, only use `/link`) | How to link (pinned) |
+| `#📜-rules` | Everyone, read-only; leaders can post | Rules + clan stats (pinned) |
+| `#⚔️-war` | Linked members | War board, reminders, battle day summaries, results, rival scouting |
+| `#💬-general` | Linked members | Welcomes, promotion congrats, shout-outs |
+| `#🛡️-leaders` | Leader and Co-Leader only | To-do list, absences, digest, backups |
 
-Any channel can do any job; one channel can hold several. If the bot can't post somewhere it says which permission is missing.
+Roles: `Leader`, `Co-Leader`, `Elder`, `Member` (created if missing). Anyone with the Leader or Co-Leader role can use
+leader commands. Change anything afterwards by hand or with `/post-here`; any channel can do any job.
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 19 commands in your server".
-   (Do this again whenever new commands are added. If Discord shows commands twice, register again and reopen the app.)
-2. In Discord, anywhere: **`/setup`**. It finds the four roles and shows what goes where.
-3. **`/link #YOURTAG`** for yourself, then **`/sync`**.
-4. In each channel from the table: **`/post-here`** → its job. Pin the How to link, Rules and Stats messages.
-5. **`/setup`** again to check every job has a channel.
-6. Optional: **`/todo`** in `#leaders` shows the list for the last war.
-7. Messy channels later? **`/refresh clean:True`** clears the bot's old posts and puts everything back, pinned.
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 20 commands in your server".
+   (Again whenever new commands are added. Commands listed twice: register again and reopen the app.)
+2. In Discord, anywhere: **`/autosetup`**. It shows what it will do and anything you must fix first (Manage Channels,
+   the bot's role position).
+3. **`/autosetup apply:True`**. Roles, channels, permissions, jobs and pinned posts, done. It lists what it did.
+4. **`/link #YOURTAG`**, then **`/sync`** (roles and nicknames for everyone linked).
+5. Optional: Server Settings → Roles → War Audit → turn **Manage Channels** off again.
+
+Later: **`/setup`** shows what goes where; **`/refresh clean:True`** clears the bot's old posts and puts everything
+back, pinned.
 
 **Commands**
 
@@ -124,6 +129,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | Anyone | `/scout` | The clans we're racing: their recent results vs ours |
 | Anyone | `/away 3 holiday` | Away for 3 days: leaders see it, no automatic kick (`/away 0` = back) |
 | Anyone | `/remind 3` | Private message 3 hours before reset if you have decks left (`/remind 0` = off) |
+| Leaders | `/autosetup` | Roles, channels, permissions and posts, all at once (`apply:True` to do it) |
 | Leaders | `/setup`, `/post-here`, `/sync` | Roles, channel jobs, update everyone's roles and nicknames |
 | Leaders | `/links`, `/linkuser @who #TAG` | Who's linked; link someone else |
 | Leaders | `/todo` | Post or refresh the after-war to-do list |
@@ -132,7 +138,7 @@ Any channel can do any job; one channel can hold several. If the bot can't post 
 | Leaders | `/refresh` (`clean:True`) | Re-post everything the bot keeps and pin it; `clean` first deletes the bot's old messages in its channels |
 | Leaders | `/backup` | Post a backup file of the full history in the leaders' channel now |
 
-"Leaders" means anyone with Manage Roles or Administrator in Discord.
+"Leaders" means anyone with the Leader or Co-Leader role, or Manage Roles / Administrator in Discord.
 
 **What the bot does by itself**
 

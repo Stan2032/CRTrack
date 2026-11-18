@@ -20,6 +20,13 @@ let currentRoles = ['OTHER'];
 globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
+  if (/\/guilds\/G3\/roles$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'G3', name: '@everyone', position: 0, permissions: String((1n << 31n) | (1n << 10n)) },
+    { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
+  if (/\/guilds\/G3\/roles$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEW-' + JSON.parse(opt.body).name });
+  if (/\/guilds\/G3\/members\/A$/.test(url)) return Response.json({ roles: ['BOTROLE'] });
+  if (/\/guilds\/G3\/channels$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'CR', type: 0, name: '📜-rules' }, { id: 'CV', type: 2, name: 'voice' }]);
+  if (/\/guilds\/G3\/channels$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEWCH-' + JSON.parse(opt.body).name.replace(/[^a-z]/g, '') });
+  if (/\/channels\/(CW|CR)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
@@ -222,6 +229,28 @@ calls.length = 0;
 assert.match(await refreshAll(env, 'G', cfgG, 'PPCCR8VU', false), /Refreshed/);
 assert.ok(!calls.some(c => c.method === 'DELETE'), 'without clean: nothing deleted');
 assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set up yet/);
+
+// /autosetup: preview first, then roles, channels with permissions, jobs and pinned posts.
+const { autoSetup } = await import('../worker/discord.js');
+const pv = await autoSetup(env, 'G3', null, 'PPCCR8VU', false);
+assert.match(pv, /would do this[\s\S]*Create roles: Co-Leader, Elder[\s\S]*Create #🔗-link-tag: how to link[\s\S]*<#CR>: rules, clan stats[\s\S]*<#CW>: war board \+ reminders, summaries \+ results[\s\S]*Drag \*\*War Audit\*\* above Leader/);
+calls.length = 0;
+const ap = await autoSetup(env, 'G3', null, 'PPCCR8VU', true);
+assert.match(ap, /Set up ✅[\s\S]*Role Co-Leader[\s\S]*<#CW>[\s\S]*Still to do:[\s\S]*Drag/);
+const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v);
+assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'NEWCH-leaders' });
+assert.equal(cfg3.roles.leader, 'RL'); assert.equal(cfg3.roles.coLeader, 'NEW-Co-Leader');
+const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body.permission_overwrites;
+assert.ok(war.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
+assert.ok(war.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'members can chat in war');
+assert.ok(war.some(o => o.id === 'A' && o.type === 1), 'bot can post');
+const lead = calls.find(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && /leaders/.test(c.body.name)).body.permission_overwrites;
+assert.ok(!lead.some(o => o.id === 'RM3'), 'members not in leaders');
+// Someone with the Leader role (no Discord permissions) counts as a leader.
+assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U8' }, permissions: '0', roles: ['RL'] }, data: { name: 'links', options: [] } })), /Linked:/);
+// Without Manage Channels it says so and changes nothing.
+const noPerm = await autoSetup({ ...env, DISCORD_APP_ID: 'NOPE' }, 'G3', null, 'PPCCR8VU', true);
+assert.match(noPerm, /Can't start yet[\s\S]*Manage Channels/);
 
 // The bot's default rules match the site's.
 const ctx = { module: { exports: {} } };

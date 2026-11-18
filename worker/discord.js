@@ -65,6 +65,8 @@ export const COMMANDS = [
   { name: 'digest', description: 'Leaders: a private weekly digest before battle days (warnings, close to Elder, slipping…)', options: [
     { type: 5, name: 'on', description: 'On or off', required: true }] },
   { name: 'backup', description: 'Leaders: post a backup file of the full history in the leaders\' channel now' },
+  { name: 'autosetup', description: 'Leaders: set up roles, channels, permissions and the bot\'s posts for you', options: [
+    { type: 5, name: 'apply', description: 'False (default): only show what it would do. True: do it.' }] },
   { name: 'refresh', description: 'Leaders: re-post everything the bot keeps (rules, how to link, stats, to-do list)', options: [
     { type: 5, name: 'clean', description: 'First delete the bot\'s old messages in those channels' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
@@ -138,7 +140,12 @@ async function overview(env, guild, cfg) {
 }
 
 const reply = (content, ephemeral = true) => ({ type: 4, data: { content, flags: ephemeral ? EPHEMERAL : 0, allowed_mentions: { parse: [] } } });
-const isLeader = member => { const p = BigInt(member?.permissions || '0'); return (p & ADMIN) === ADMIN || (p & MANAGE_ROLES) === MANAGE_ROLES; };
+const isLeader = (member, cfg) => {
+  const p = BigInt(member?.permissions || '0');
+  if ((p & ADMIN) === ADMIN || (p & MANAGE_ROLES) === MANAGE_ROLES) return true;
+  const lead = [cfg?.roles?.leader, cfg?.roles?.coLeader].filter(Boolean);
+  return (member?.roles || []).some(r => lead.includes(r));
+};
 
 // Desired clan role and nickname for a linked user, from their game role.
 async function syncOne(env, guild, cfg, userId, m) {
@@ -174,7 +181,7 @@ export async function handleDiscord(request, env, ctx) {
 
   switch (i.data.name) {
     case 'link': case 'linkuser': {
-      if (i.data.name === 'linkuser' && !isLeader(i.member)) return Response.json(reply('Only leaders (Manage Roles) can link other people.'));
+      if (i.data.name === 'linkuser' && !isLeader(i.member, cfg)) return Response.json(reply('Only leaders (Manage Roles) can link other people.'));
       const target = i.data.name === 'linkuser' ? opt.user : user, tag = cleanTag(opt.tag);
       if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag. It\'s under your name on your profile, e.g. #ABC123.'));
       const m = await member(tag);
@@ -218,7 +225,7 @@ export async function handleDiscord(request, env, ctx) {
     }
     case 'away': {
       const other = opt.user && opt.user !== user;
-      if (other && !isLeader(i.member)) return Response.json(reply('Only leaders can set someone else as away.'));
+      if (other && !isLeader(i.member, cfg)) return Response.json(reply('Only leaders can set someone else as away.'));
       const who = other ? opt.user : user;
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, who).first();
       if (!link) return Response.json(reply(other ? `<@${who}> isn't linked yet: \`/linkuser\` first.` : 'Link your account first: `/link #YOURTAG`'));
@@ -231,7 +238,7 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json(reply(days ? `Got it: ${other ? `**${name}** is` : 'you\'re'} away until **${until}**. The leaders can see it. Missing medals while away won't mean an automatic kick; the leaders decide.` : `Welcome back${other ? `, ${name}` : ''}! Away cleared.`));
     }
     case 'links': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const ms = (await env.DB.prepare('SELECT tag, name FROM members WHERE clan = ? AND in_clan = 1').bind(clan).all()).results;
       const linked = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(guild).all()).results.map(r => [r.tag, r.user_id]));
       const yes = ms.filter(m => linked.has(m.tag)), no = ms.filter(m => !linked.has(m.tag));
@@ -239,13 +246,13 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json(reply(text.slice(0, 1990)));
     }
     case 'setup': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const next = { clan, channels: cfg?.channels || {}, roles: await findRoles(env, guild, opt, cfg) };
       await setConfig(env, guild, next);
       return Response.json(reply((await overview(env, guild, next)) + (Object.values(next.roles).some(Boolean) ? '\n\nRun `/sync` once to update everyone\'s roles now.' : '\n\nNo roles found: name them Member, Elder, Co-Leader, Leader, or pick them in `/setup`.')));
     }
     case 'post-here': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const ch = i.channel_id || i.channel?.id, what = opt.what;
       const next = { clan, channels: { ...(cfg?.channels || {}) }, roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
       if (what === 'rules' || what === 'welcome' || what === 'stats') {
@@ -269,7 +276,7 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json(reply('Done.\n\n' + await overview(env, guild, next)));
     }
     case 'todo': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       if (!chan(cfg, 'leaders')) return Response.json(reply('Choose the leaders\' channel first: go to it and run `/post-here` → **Leaders only**.'));
       // Working it out can take a few seconds: answer "thinking…" now, then edit that reply.
       later((async () => {
@@ -279,14 +286,14 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
     case 'player': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       let tag = cleanTag(opt.tag);
       if (!tag && opt.user) tag = (await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, opt.user).first())?.tag;
       if (!tag || !TAG.test(tag)) return Response.json(reply('Give a player tag (e.g. #ABC123) or a linked member.'));
       return Response.json(reply(await playerCard(env, clan, tag)));
     }
     case 'check': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const tag = cleanTag(opt.tag);
       if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag, e.g. #ABC123.'));
       later((async () => {
@@ -313,7 +320,7 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
     case 'digest': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       if (!opt.on) { await env.DB.prepare('DELETE FROM discord_digest WHERE guild = ? AND user_id = ?').bind(guild, user).run(); return Response.json(reply('Weekly digest off.')); }
       const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
       const ok = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: '🗞️ Weekly digest on: you\'ll get it here on the last training day, before battle days start. Stop with `/digest on:False`.' }).then(() => true, () => false);
@@ -322,7 +329,7 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json(reply('Done: the weekly digest will come to you privately on the last training day each week. I\'ve sent a test message.'));
     }
     case 'backup': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       if (!chan(cfg, 'leaders')) return Response.json(reply('Choose the leaders\' channel first: go to it and run `/post-here` → **Leaders only**.'));
       later((async () => {
         const n2 = await postBackup(env, clan, guild).catch(e => `error: ${String(e.message || e).slice(0, 80)}`);
@@ -330,8 +337,16 @@ export async function handleDiscord(request, env, ctx) {
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
+    case 'autosetup': {
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+      later((async () => {
+        const msg = await autoSetup(env, guild, cfg, clan, !!opt.apply).catch(e => `Something went wrong: ${String(e.message || e).slice(0, 150)}`);
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg.slice(0, 1990), allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
     case 'refresh': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       later((async () => {
         const msg = await refreshAll(env, guild, cfg, clan, !!opt.clean).catch(e => `Something went wrong: ${String(e.message || e).slice(0, 100)}`);
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
@@ -339,7 +354,7 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
     case 'sync': {
-      if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       later(syncGuild(env, guild, cfg, clan, 25));
       return Response.json(reply('Updating roles and nicknames for linked members (up to 25 at a time; run again for more).'));
     }
@@ -402,8 +417,8 @@ async function handleButton(i, env) {
   await setupDB(env);
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
   if (kind !== 'todo') return Response.json(reply('Not supported'));
-  if (!isLeader(i.member)) return Response.json(reply('Leaders only.'));
   const cfg = await getConfig(env, i.guild_id), clan = cfg?.clan;
+  if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
   const by = 'Discord: ' + cleanName(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || 'leader');
   const t = await tickTodo(env, clan, week, status, how === 'undo', by);
   if (!t) return Response.json(reply('That list has gone. Run `/todo` for a fresh one.'));
@@ -692,6 +707,89 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
     if (r.ok) sent++;
   }
   return sent;
+}
+
+// ---- /autosetup: roles, channels and permissions, then the bot's jobs and posts ----
+const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
+  MANAGE_CHANNELS: 1n << 4n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, PIN: 1n << 51n, ADMIN: 1n << 3n };
+const bits = (...k) => String(k.reduce((t, x) => t | P[x], 0n));
+const CHAT = bits('VIEW', 'SEND', 'HISTORY', 'REACT', 'EMBED', 'ATTACH', 'APPS'), READ = bits('VIEW', 'HISTORY', 'REACT', 'APPS');
+const BOT = bits('VIEW', 'SEND', 'HISTORY', 'EMBED', 'ATTACH');
+const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe2af4b], ['elder', 'Elder', 0x3b7dd8], ['member', 'Member', 0x95a5a6]];
+// Channel → which existing channel names count, the name to create, and its jobs.
+const CHANNEL_SPEC = [
+  { key: 'link', match: /link/, name: '🔗-link-tag', jobs: ['welcome'], topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
+  { key: 'rules', match: /rules/, name: '📜-rules', jobs: ['rules', 'stats'], topic: 'Clan rules and stats, kept up to date by War Audit.' },
+  { key: 'war', match: /^war$|warboard|clanwar/, name: '⚔️-war', jobs: ['war', 'results'], topic: 'War board, reminders, battle day summaries and results.' },
+  { key: 'general', match: /general|chat/, name: '💬-general', jobs: ['joins'], topic: 'Chat. Welcomes and shout-outs from War Audit.' },
+  { key: 'leaders', match: /leader|staff|mods?$/, name: '🛡️-leaders', jobs: ['leaders'], topic: 'Leaders only: after-war to-do list, absences, digests, backups.' },
+];
+const plain = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
+
+function overwritesFor(key, guild, roles, botId) {
+  const ow = (id, allow, deny = '0', type = 0) => id && { id, type, allow, deny };
+  const all = ['leader', 'coLeader', 'elder', 'member'].map(k => roles[k]), lead = [roles.leader, roles.coLeader], rest = [roles.elder, roles.member];
+  const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
+  if (key === 'link') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...rest.map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
+  if (key === 'rules') return [ow(guild, READ, bits('SEND')), ...lead.map(r => ow(r, CHAT)), bot].filter(Boolean);
+  if (key === 'leaders') return [hide, ...lead.map(r => ow(r, CHAT)), bot].filter(Boolean);
+  return [hide, ...all.map(r => ow(r, CHAT)), bot].filter(Boolean);
+}
+
+export async function autoSetup(env, guild, cfg, clan, apply) {
+  await setupDB(env);
+  const botId = env.DISCORD_APP_ID;
+  const [roles, channels, me] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`), dapi(env, 'GET', `/guilds/${guild}/members/${botId}`).catch(() => null)]);
+  // What the bot may do (its roles' permissions).
+  const mine = roles.filter(r => (me?.roles || []).includes(r.id) || r.id === guild);
+  const perms = mine.reduce((t, r) => t | BigInt(r.permissions || '0'), 0n), has = k => (perms & P.ADMIN) === P.ADMIN || (perms & P[k]) === P[k];
+  const top = Math.max(0, ...roles.filter(r => (me?.roles || []).includes(r.id)).map(r => r.position));
+  const plan = [], problems = [];
+  if (!has('MANAGE_ROLES')) problems.push('Give **War Audit** the **Manage Roles** permission (Server Settings → Roles → War Audit).');
+  if (!has('MANAGE_CHANNELS')) problems.push('Give **War Audit** the **Manage Channels** permission (Server Settings → Roles → War Audit). You can turn it off again afterwards.');
+
+  // Roles: existing ones by name, the rest created.
+  const roleIds = {};
+  for (const [k, name] of ROLE_SPEC) { const r = roles.find(x => plain(x.name) === plain(name)); if (r) roleIds[k] = r.id; }
+  const missingRoles = ROLE_SPEC.filter(([k]) => !roleIds[k]);
+  if (missingRoles.length) plan.push(`➕ Create roles: ${missingRoles.map(r => r[1]).join(', ')}`);
+  const above = ROLE_SPEC.filter(([k]) => roleIds[k] && roles.find(r => r.id === roleIds[k]).position >= top).map(r => r[1]);
+  if (above.length) problems.push(`Drag **War Audit** above ${above.join(', ')} (Server Settings → Roles); Discord doesn't let a bot move itself.`);
+
+  // Channels: existing text channels by name, the rest created.
+  const text = channels.filter(c => c.type === 0), found = {};
+  for (const spec of CHANNEL_SPEC) { const c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id)); if (c) found[spec.key] = c.id; }
+  const label = { war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
+  for (const spec of CHANNEL_SPEC) plan.push(found[spec.key] ? `🔧 <#${found[spec.key]}>: ${spec.jobs.map(j => label[j]).join(', ')}` : `➕ Create #${spec.name}: ${spec.jobs.map(j => label[j]).join(', ')}`);
+  plan.push('🔒 Newcomers see only the link and rules channels; linked members see rules (read-only), war and general; only Leader and Co-Leader see leaders.');
+  plan.push('📌 Post and pin the rules, clan stats and how-to-link messages; post the to-do list in leaders.');
+
+  if (!apply) return [`**/autosetup would do this:**`, ...plan, problems.length ? `\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}` : '', `\nRun \`/autosetup apply:True\` to do it. Existing permissions on those channels are replaced.`].filter(Boolean).join('\n');
+  const blocking = problems.filter(x => /Manage (Roles|Channels)/.test(x));
+  if (blocking.length) return `**Can't start yet:**\n${blocking.map(x => '• ' + x).join('\n')}`;
+
+  const done = [];
+  for (const [k, name, color] of missingRoles) {
+    const r = await dapi(env, 'POST', `/guilds/${guild}/roles`, { name, color, hoist: true, mentionable: false, permissions: '0' }).catch(() => null);
+    if (r?.id) { roleIds[k] = r.id; done.push(`✅ Role ${name}`); } else done.push(`⚠️ Couldn't create role ${name}`);
+  }
+  const ch = {};
+  for (const spec of CHANNEL_SPEC) {
+    const permission_overwrites = overwritesFor(spec.key, guild, roleIds, botId);
+    const res = found[spec.key]
+      ? await dapi(env, 'PATCH', `/channels/${found[spec.key]}`, { permission_overwrites }).catch(e => ({ error: e.message }))
+      : await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: spec.name, type: 0, topic: spec.topic, permission_overwrites }).catch(e => ({ error: e.message }));
+    if (res?.id) { ch[spec.key] = res.id; done.push(`✅ <#${res.id}>`); } else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
+  }
+  // Jobs, then the kept messages (posted fresh in their channels) via /refresh.
+  const next = { clan, channels: {}, roles: roleIds };
+  for (const spec of CHANNEL_SPEC) for (const j of spec.jobs) if (ch[spec.key] && JOBS[j]) next.channels[j] = ch[spec.key];
+  await setConfig(env, guild, next);
+  for (const [job, key] of [['rules', 'rules'], ['stats', 'rules'], ['welcome', 'link']]) if (ch[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ch[key], id: null })).run();
+  const posts = await refreshAll(env, guild, next, clan, false);
+  return ['**Set up ✅**', ...done, '', ...posts.split('\n').slice(1).filter(x => x && !/pinned\.$/.test(x)),
+    problems.length ? `\n**Still to do:**\n${problems.filter(x => !/Manage (Roles|Channels)/.test(x)).map(x => '• ' + x).join('\n')}` : '',
+    '\nNext: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
 }
 
 // /refresh: re-post (or edit) every message the bot keeps, optionally deleting its old messages first, and pin them.
