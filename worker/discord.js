@@ -571,7 +571,9 @@ function cantPost(channel, err) {
 async function upsert(env, key, channel, content) {
   const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first();
   const body = typeof content === 'string' ? { content: content.slice(0, 1990), allowed_mentions: { parse: [] } } : content;
-  if (saved && JSON.parse(saved.v).channel === channel) {   // same channel: edit; a new channel gets a new message
+  const old = saved ? JSON.parse(saved.v) : null;
+  if (old && old.channel !== channel && old.id) await dapi(env, 'DELETE', `/channels/${old.channel}/messages/${old.id}`).catch(() => null);   // moved: remove the old copy
+  if (saved && old.channel === channel) {   // same channel: edit; a new channel gets a new message
     const { channel: ch, id } = JSON.parse(saved.v);
     const ok = await dapi(env, 'PATCH', `/channels/${ch}/messages/${id}`, body).then(() => true).catch(() => false);
     if (ok) return id;
@@ -719,7 +721,8 @@ const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe
 // Channel → which existing channel names count, the name to create, and its jobs.
 const CHANNEL_SPEC = [
   { key: 'link', match: /link/, name: '🔗-link-tag', jobs: ['welcome'], topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
-  { key: 'rules', match: /rules/, name: '📜-rules', jobs: ['rules', 'stats'], topic: 'Clan rules and stats, kept up to date by War Audit.' },
+  { key: 'rules', match: /rules/, name: '📜-rules', jobs: ['rules'], topic: 'Clan rules, kept up to date by War Audit.' },
+  { key: 'stats', match: /stats/, name: '📊-clan-stats', jobs: ['stats'], topic: 'Clan stats, updated by War Audit after every war.' },
   { key: 'war', match: /^war$|warboard|clanwar/, name: '⚔️-war', jobs: ['war', 'results'], topic: 'War board, reminders, battle day summaries and results.' },
   { key: 'general', match: /^(?!.*(leader|staff|mod|admin)).*(general|chat)/, name: '💬-general', jobs: ['joins'], topic: 'Chat. Welcomes and shout-outs from War Audit.' },
   { key: 'leaders', match: /leader|staff|mods?$/, name: '🛡️-leaders', jobs: ['leaders'], topic: 'Leaders only: after-war to-do list, absences, digests, backups.' },
@@ -731,7 +734,7 @@ function overwritesFor(key, guild, roles, botId) {
   const all = ['leader', 'coLeader', 'elder', 'member'].map(k => roles[k]), lead = [roles.leader, roles.coLeader], rest = [roles.elder, roles.member];
   const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
   if (key === 'link') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...rest.map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
-  if (key === 'rules') return [ow(guild, READ, bits('SEND')), ...lead.map(r => ow(r, CHAT)), bot].filter(Boolean);
+  if (key === 'rules' || key === 'stats') return [ow(guild, READ, bits('SEND')), bot].filter(Boolean);   // read-only for everyone; only the bot posts
   if (key === 'leaders') return [hide, ...lead.map(r => ow(r, CHAT)), bot].filter(Boolean);
   return [hide, ...all.map(r => ow(r, CHAT)), bot].filter(Boolean);
 }
@@ -761,16 +764,16 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
   const text = channels.filter(c => c.type === 0), found = {};
   // Channels already chosen (with /post-here or an earlier /autosetup) keep their jobs, whatever they're called.
   const savedCh = async k => (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v).channel)) || null;
-  const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
+  const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), stats: await savedCh('discord:stats:' + guild), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
   for (const [k, id] of Object.entries(chosen)) if (id && text.some(c => c.id === id) && !Object.values(found).includes(id)) found[k] = id;
-  for (const k of ['leaders', 'link', 'rules', 'war', 'general']) {
+  for (const k of ['leaders', 'link', 'rules', 'stats', 'war', 'general']) {
     if (found[k]) continue;   // private ones first, so they're never taken as public
     const spec = CHANNEL_SPEC.find(x => x.key === k), c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
     if (c) found[k] = c.id;
   }
-  const label = { war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
+  const label = { stats: 'clan stats', war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
   for (const spec of CHANNEL_SPEC) plan.push(found[spec.key] ? `🔧 <#${found[spec.key]}>: ${spec.jobs.map(j => label[j]).join(', ')}` : `➕ Create #${spec.name}: ${spec.jobs.map(j => label[j]).join(', ')}`);
-  plan.push('🔒 Newcomers see only #link and #rules. Linked members chat in war and general; rules is read-only for them. Only Leader and Co-Leader see leaders.');
+  plan.push('🔒 Newcomers see only link, rules and stats. Rules and stats are read-only for everyone (only War Audit posts). Linked members chat in war and general. Only Leader and Co-Leader see leaders.');
   plan.push('🎨 Channels in order with topics; rank roles coloured and listed separately in the member list' + (has('MANAGE_GUILD') && !guildInfo?.icon ? '; the clan badge as the server icon' : '') + '.');
   plan.push('📌 Post and pin the rules, clan stats and how-to-link messages; post the to-do list in leaders.');
 
@@ -818,7 +821,7 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
   const next = { clan, channels: {}, roles: roleIds };
   for (const spec of CHANNEL_SPEC) for (const j of spec.jobs) if (ch[spec.key] && JOBS[j]) next.channels[j] = ch[spec.key];
   await setConfig(env, guild, next);
-  for (const [job, key] of [['rules', 'rules'], ['stats', 'rules'], ['welcome', 'link']]) if (ch[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ch[key], id: null })).run();
+  for (const [job, key] of [['rules', 'rules'], ['stats', 'stats'], ['welcome', 'link']]) if (ch[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ch[key], id: null })).run();
   const posts = await refreshAll(env, guild, next, clan, false);
   return ['**Set up ✅**', ...done, '', ...posts.split('\n').slice(1).filter(Boolean),
     problems.length ? `\n**Still to do:**\n${problems.filter(x => !/Manage (Roles|Channels)/.test(x)).map(x => '• ' + x).join('\n')}` : '',

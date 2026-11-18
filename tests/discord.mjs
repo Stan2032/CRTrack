@@ -240,7 +240,7 @@ assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set
 const { autoSetup } = await import('../worker/discord.js');
 const pv = await autoSetup(env, 'G3', null, 'PPCCR8VU', false);
 assert.match(pv, /Linked members chat in war and general/);
-assert.match(pv, /would do this[\s\S]*Create roles: Co-Leader, Elder[\s\S]*Create #🔗-link-tag: how to link[\s\S]*<#CR>: rules, clan stats[\s\S]*<#CW>: war board \+ reminders, summaries \+ results[\s\S]*Drag \*\*War Audit\*\* above Leader/);
+assert.match(pv, /would do this[\s\S]*Create roles: Co-Leader, Elder[\s\S]*Create #🔗-link-tag: how to link[\s\S]*<#CR>: rules\n➕ Create #📊-clan-stats: clan stats[\s\S]*<#CW>: war board \+ reminders, summaries \+ results[\s\S]*Drag \*\*War Audit\*\* above Leader/);
 calls.length = 0;
 const ap = await autoSetup({ ...env, ASSETS: { fetch: async () => new Response(new Uint8Array([137, 80, 78, 71])) } }, 'G3', null, 'PPCCR8VU', true);
 assert.match(ap, /Channels in order[\s\S]*rank role[\s\S]*Server icon: the clan badge/);
@@ -251,6 +251,9 @@ assert.match(ap, /Set up ✅[\s\S]*Role Co-Leader[\s\S]*<#CW>[\s\S]*Still to do:
 const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v);
 assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'CLC' }, 'a private leaders-chat stays the leaders channel, never general');
 assert.equal(cfg3.roles.leader, 'RL'); assert.equal(cfg3.roles.coLeader, 'NEW-Co-Leader');
+const rulesOw = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CR')).body.permission_overwrites;
+assert.ok(rulesOw.every(o => o.type === 1 || !(BigInt(o.allow) & (1n << 11n))), 'rules: nobody but the bot can post');
+assert.ok(calls.some(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && c.body.name === '📊-clan-stats'), 'stats get their own channel');
 const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body.permission_overwrites;
 assert.ok(war.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
 assert.ok(war.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'members can chat in war');

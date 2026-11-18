@@ -97,7 +97,8 @@ What `/autosetup` makes (it reuses channels and roles that already exist with th
 | Channel | Who sees it | Bot posts |
 |---|---|---|
 | `#🔗-link-tag` | Newcomers only (hidden once linked; they can't chat, only use `/link`) | How to link (pinned) |
-| `#📜-rules` | Everyone, read-only; leaders can post | Rules + clan stats (pinned) |
+| `#📜-rules` | Everyone, read-only (only the bot posts) | Rules (pinned) |
+| `#📊-clan-stats` | Everyone, read-only (only the bot posts) | Clan stats board, updated after every war (pinned) |
 | `#⚔️-war` | Linked members | War board, reminders, battle day summaries, results, rival scouting |
 | `#💬-general` | Linked members | Welcomes, promotion congrats, shout-outs |
 | `#🛡️-leaders` | Leader and Co-Leader only | To-do list, absences, digest, backups |
