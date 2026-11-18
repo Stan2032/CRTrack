@@ -32,6 +32,7 @@ export const COMMANDS = [
   { name: 'mystats', description: 'Your war report: this war, past wars, reliability, how you play', options: [bool('share', 'Show it to everyone (default: only you)')] },
   { name: 'remind', description: 'Get a DM before reset if you still have decks to play', options: [
     { type: 4, name: 'hours', description: 'Hours before reset (0 = stop)', required: true, min_value: 0, max_value: 12 }] },
+  { name: 'apply', description: 'Apply to join the clan: the leaders get your war record and decide', options: [tagOpt('Your player tag, e.g. #ABC123')] },
   { name: 'warreport', description: 'Get your war result by DM after each war', options: [bool('on', 'On or off', true)] },
   { name: 'away', description: 'Tell the leaders you\'re away (no automatic kick)', options: [
     { type: 4, name: 'days', description: 'Days away (0 = I\'m back)', required: true, min_value: 0, max_value: 21 },
@@ -162,6 +163,36 @@ async function syncOne(env, guild, cfg, userId, m) {
   const nick = m && m.in_clan ? cleanName(m.name).slice(0, 32) : null;
   if (nick && cur.nick !== nick) patch.nick = nick;
   if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
+}
+
+// ---- Applications: a card in the leaders' channel with the applicant's record and Accept / Decline buttons ----
+async function postApplication(env, guild, cfg, clan, user, tag) {
+  const [card, info] = await Promise.all([recruitCard(env, clan, tag), cr(env, `/clans/${encodeURIComponent('#' + clan)}`).catch(() => null)]);
+  const pl = await cr(env, `/players/${encodeURIComponent('#' + tag)}`).catch(() => null);
+  const req = info?.requiredTrophies, meets = pl && req ? pl.trophies >= req : null;
+  const content = [`📝 **Application** from <@${user}>`, card, req ? `🏆 Clan requirement ${n(req)} trophies: ${meets ? '✅ meets it' : '❌ below it'}` : ''].filter(Boolean).join('\n').slice(0, 1900);
+  const buttons = [{ type: 1, components: [
+    { type: 2, style: 3, label: 'Accept', custom_id: `apply|yes|${user}|${tag}` },
+    { type: 2, style: 4, label: 'Decline', custom_id: `apply|no|${user}|${tag}` }] }];
+  await dapi(env, 'POST', `/channels/${chan(cfg, 'leaders')}/messages`, { content, components: buttons, allowed_mentions: { parse: [] } });
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`apply:${guild}:${user}`, JSON.stringify({ tag, at: Date.now(), done: false })).run();
+  return `Sent to the leaders ✅ You'll hear back by DM${chan(cfg, 'guests') ? ` (or in <#${chan(cfg, 'guests')}> if your DMs are off)` : ''}.`;
+}
+
+async function decideApplication(i, env, how, applicant, tag) {
+  const cfg = await getConfig(env, i.guild_id), clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
+  if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+  const who = cleanName(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || 'a leader');
+  const yes = how === 'yes';
+  const text = yes
+    ? `✅ **You've been accepted into the clan!** In Clash Royale, search for the clan tag **#${clan}** and request to join (a leader will let you in). Once you're in, use \`/link #${tag}\` in the Discord.`
+    : `Thanks for applying to the clan (#${clan}). The leaders have decided not to take you on right now. You're welcome to apply again another time.`;
+  const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: applicant }).catch(() => null))?.id;
+  const told = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: text }).then(() => true, () => false);
+  if (!told && chan(cfg, 'guests')) await dapi(env, 'POST', `/channels/${chan(cfg, 'guests')}/messages`, { content: `<@${applicant}> ${text}`, allowed_mentions: { parse: [], users: [applicant] } }).catch(() => null);
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`apply:${i.guild_id}:${applicant}`, JSON.stringify({ tag, at: Date.now(), done: true, accepted: yes })).run();
+  const original = String(i.message?.content || '');
+  return Response.json({ type: 7, data: { content: `${original}\n\n${yes ? '✅ **Accepted**' : '❌ **Declined**'} by ${who}${told ? ' (told by DM)' : chan(cfg, 'guests') ? ' (told in the waiting room: DMs closed)' : ' (couldn\'t tell them: DMs closed)'}`.slice(0, 1990), components: [], allowed_mentions: { parse: [] } } });
 }
 
 // ---- Waiting room: who has had the Not in clan role, since when; tidied after cfg.tidyDays (default 7, 0 = off) ----
@@ -330,6 +361,21 @@ export async function handleDiscord(request, env, ctx) {
       if (!ok) return Response.json(reply('I can\'t send you private messages. Long-press the server icon → **Privacy settings** → turn on **Direct Messages**, then run `/remind` again.'));
       await env.DB.prepare('INSERT OR REPLACE INTO discord_reminders (guild, user_id, hours, dm) VALUES (?, ?, ?, ?)').bind(guild, user, hours, dm).run();
       return Response.json(reply(`Done: you'll get a private message when a battle day has **${hours} hour${hours === 1 ? '' : 's'}** left and you still have decks to play. I've sent one now so you can see it.`));
+    }
+    case 'apply': {
+      const tag = cleanTag(opt.tag);
+      if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag. It\'s under your name on your profile, e.g. #ABC123.'));
+      const inClan = await member(tag);
+      if (inClan?.in_clan) return Response.json(reply('You\'re already in the clan: use `/link` to connect your account.'));
+      if (!chan(cfg, 'leaders')) return Response.json(reply('Applications aren\'t set up here yet. Ask a leader.'));
+      const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(`apply:${guild}:${user}`).first().then(r => r && JSON.parse(r.v));
+      if (prev && !prev.done) return Response.json(reply('Your application is with the leaders. You\'ll hear back soon.'));
+      if (prev && Date.now() - prev.at < 864e5) return Response.json(reply('You can apply again tomorrow.'));
+      later((async () => {
+        const msg = await postApplication(env, guild, cfg, clan, user, tag).catch(e => /404/.test(String(e.message)) ? `#${tag}: player not found. Check the tag.` : 'Couldn\'t reach the game\'s data. Try again in a minute.');
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
+      })());
+      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
     case 'warreport': {
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
@@ -517,6 +563,16 @@ export async function playerCard(env, clan, tag) {
   return lines.join('\n').slice(0, 1990);
 }
 
+// War readiness: war uses 4 decks with no card repeated, so what matters is the best 32 cards. Levels shown as in game
+// (the API's level is per rarity: game level = level + 16 - maxLevel, e.g. epic 11/11 = 16).
+export function warReadiness(cards) {
+  const lv = (cards || []).map(c => c.level + (16 - (c.maxLevel || 16))).sort((a, b) => b - a);
+  if (lv.length < 32) return { text: `only ${lv.length} cards: can't make 4 war decks yet`, ok: false, avg: null };
+  const top = lv.slice(0, 32), avg = top.reduce((t, x) => t + x, 0) / 32, at14 = top.filter(x => x >= 14).length;
+  const word = avg >= 15 ? 'war-ready' : avg >= 14 ? 'decent' : avg >= 13 ? 'a bit low' : 'under-levelled';
+  return { avg, at14, ok: avg >= 14, text: `best 32 cards average **level ${avg.toFixed(1)}** (${word}) · ${at14}/32 at level 14+` };
+}
+
 // /check: someone who wants to join. Public player data, their recent war battles, and any time they spent here.
 export async function recruitCard(env, clan, tag) {
   const t = encodeURIComponent('#' + tag);
@@ -537,6 +593,7 @@ export async function recruitCard(env, clan, tag) {
     `Trophies: ${n(pl.trophies)} (best ${n(pl.bestTrophies)})`,
     `War day wins, all time: ${pl.warDayWins ?? '–'} · clan cards collected: ${n(pl.clanCardsCollected ?? 0)}`,
     `Donations, all time: ${n(pl.totalDonations ?? 0)}`,
+    `⚔️ War readiness: ${warReadiness(pl.cards).text}`,
     `Recent war battles: ${wars.length ? `${won}W–${lost}L${boats ? `, ${boats} boat attack${boats === 1 ? '' : 's'}` : ''} (last 25 battles)` : 'none in the last 25 battles'}`,
     `Last battle: ${lastT ? ukDate(lastT) : '–'}`];
   if (ours) lines.push(`📒 **Been in this clan before**${ours.in_clan ? ' (in it now)' : ''}: ${ourWars.length} tracked war${ourWars.length === 1 ? '' : 's'}${ourWars.length ? `, average ${n(Math.round(ourWars.reduce((s2, w) => s2 + w.fame, 0) / ourWars.length))}` : ''}`);
@@ -547,6 +604,7 @@ async function handleButton(i, env, ctx) {
   await setupDB(env);
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
   if (kind === 'verify') return checkProof(i, env, ctx);
+  if (kind === 'apply') { const [, how, applicant, tag] = String(i.data?.custom_id).split('|'); return decideApplication(i, env, how, applicant, tag); }
   if (kind === 'autosetup') {
     const cfg0 = await getConfig(env, i.guild_id);
     if (!isLeader(i.member, cfg0)) return Response.json(reply('Leaders only.'));
@@ -729,7 +787,7 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
 **3.** It asks you to play one battle with 2 of your cards in your deck (proof it's your account; a friendly battle counts). Then tap **Done: check it**, and your clan role and nickname are set.
 
-Not in the clan yet? Join in game first, then link. Stuck? Ask a leader.`;
+Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.`;
 
 // Plain-language reason when Discord refuses a post.
 function cantPost(channel, err) {
@@ -977,7 +1035,7 @@ const INTROS = {
   results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
   leaders: `🛡️ **Leaders only. War Audit posts here:** **absences** from \`/away\`, the **weekly digest** before battle days (a private copy too: \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
-  guests: `🚪 **Not in the clan right now.** The tag you linked isn't in #WINNING's member list. Join the clan in game, then use \`/link\` here again, or ask a leader below. You're free to leave the server any time.`,
+  guests: `🚪 **Not in the clan right now.** The tag you linked isn't in the clan's member list. Want to join? Use \`/apply #YOURTAG\` and the leaders will look at your war record. Already joined in game? Use \`/link\` again. Questions? Ask a leader below. You're free to leave the server any time.`,
   bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/warreport on:True\` your result by DM after each war · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
 };
 const LABEL = { guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',

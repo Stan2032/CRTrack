@@ -32,6 +32,9 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/\/channels\/(NEWCH-\w*|CW|CR|CLC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   if (/\/channels\/(CW|CR|CV)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%23PYLQ2$/.test(url)) return Response.json({ name: 'Newbie', expLevel: 40, trophies: 11000, bestTrophies: 11500, warDayWins: 30, clanCardsCollected: 900, totalDonations: 500, cards: Array.from({ length: 40 }, () => ({ level: 13, maxLevel: 16 })) });
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%23PYLQ2\/battlelog$/.test(url)) return Response.json([]);
+  if (/proxy\.royaleapi\.dev\/v1\/clans\/%23PPCCR8VU$/.test(url)) return Response.json({ name: '#WINNING', requiredTrophies: 12500 });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%232VJ9V2PV\/battlelog$/.test(url)) return Response.json(globalThis.battles || []);
   if (/proxy\.royaleapi\.dev\/v1\/players\/%232VJ9V2PV$/.test(url)) return Response.json({ name: 'Luke', currentDeck: (globalThis.deck || ['Knight', 'Zap']).map(name => ({ name })), cards: ['Knight', 'Zap', 'Archers', 'Giant', 'Arrows'].map(name => ({ name })) });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
@@ -117,7 +120,7 @@ assert.match(await text(await grouped('leader', 'links', [], member('U5'))), /Le
 assert.match(await text(await grouped('setup', 'show')), /What the bot posts where/);
 assert.match(await text(await grouped('clan', 'stats', [], member('U5'))), /Clan stats/);
 { const { COMMANDS } = await import('../worker/discord.js');
-  assert.equal(COMMANDS.length, 9, '9 commands');
+  assert.equal(COMMANDS.length, 10, '10 commands');
   assert.equal(COMMANDS.find(c => c.name === 'leader').default_member_permissions, '1', 'leader commands hidden from members');
   assert.equal(COMMANDS.find(c => c.name === 'setup').default_member_permissions, '1');
   assert.ok(!COMMANDS.find(c => c.name === 'mystats').default_member_permissions, 'member commands visible to all');
@@ -276,6 +279,42 @@ assert.match(calls.find(c => /channels\/J\/messages$/.test(c.url)).body.content,
   assert.match(warReportText('NOPE', '2-1', [], [], 1800), /didn't play this one/);
   assert.match(await text(await cmd('warreport', [{ name: 'on', value: false }])), /War reports off/);
   await DB.exec(`DELETE FROM wars WHERE clan = 'PPCCR8VU'`); }
+
+// /apply: an application card in #leaders (record, readiness, trophy requirement) with Accept / Decline; the applicant is told.
+{ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G', '${JSON.stringify({ ...JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G'").first()).v), channels: { war: 'C', leaders: 'LC', guests: 'GU' } })}')`);
+  const apply = (tag, m = member('U30')) => interaction({ type: 2, guild_id: 'G', member: m, data: { name: 'apply', options: [{ name: 'tag', value: tag }] } });
+  assert.match(await text(await apply('#YVJRGLCC')), /already in the clan/);
+  calls.length = 0;
+  assert.equal((await (await apply('#pylq2')).json()).type, 5);
+  await Promise.all(pending);
+  const card = calls.find(c => c.method === 'POST' && /channels\/LC\/messages$/.test(c.url)).body;
+  assert.match(card.content, /Application\*\* from <@U30>[\s\S]*Newbie[\s\S]*War readiness: best 32 cards average \*\*level 13\.0\*\* \(a bit low\)[\s\S]*Clan requirement 12,500 trophies: ❌ below it/);
+  assert.deepEqual(card.components[0].components.map(b => b.custom_id), ['apply|yes|U30|PYLQ2', 'apply|no|U30|PYLQ2']);
+  assert.match(calls.find(c => /webhooks\/A\/.*@original$/.test(c.url)).body.content, /Sent to the leaders/);
+  assert.match(await text(await apply('#PYLQ2')), /with the leaders/, 'one at a time');
+  // Members can't decide; a leader accepts and the applicant is told by DM.
+  const decide = (how, m) => interaction({ type: 3, guild_id: 'G', member: m, message: { content: card.content }, data: { custom_id: `apply|${how}|U30|PYLQ2` } });
+  assert.match(await text(await decide('yes', member('U31'))), /Leaders only/);
+  calls.length = 0;
+  const done = (await (await decide('yes', leader)).json()).data;
+  assert.match(done.content, /✅ \*\*Accepted\*\* by .*\(told by DM\)/); assert.equal(done.components.length, 0);
+  assert.match(calls.find(c => c.url.endsWith('/channels/DM-U30/messages')).body.content, /accepted into the clan[\s\S]*#PPCCR8VU[\s\S]*\/link #PYLQ2/);
+  assert.match(await text(await apply('#PYLQ2')), /apply again tomorrow/);
+  // Declined with DMs closed: told in the waiting room instead.
+  await DB.exec(`DELETE FROM kv WHERE k = 'apply:G:BLOCKED'`);
+  calls.length = 0;
+  const d2 = (await (await interaction({ type: 3, guild_id: 'G', member: leader, message: { content: 'x' }, data: { custom_id: 'apply|no|BLOCKED|PYLQ2' } })).json()).data;
+  assert.match(d2.content, /Declined\*\* by .*told in the waiting room/);
+  assert.match(calls.find(c => /channels\/GU\/messages$/.test(c.url)).body.content, /<@BLOCKED> Thanks for applying/); }
+
+// War readiness: game levels from per-rarity levels (epic 11/11 = 16); the best 32 cards (4 decks, no repeats).
+{ const { warReadiness } = await import('../worker/discord.js');
+  const card = (level, maxLevel) => ({ level, maxLevel });
+  const maxed = [...Array(20).fill(card(16, 16)), ...Array(12).fill(card(11, 11))];
+  assert.match(warReadiness(maxed).text, /average \*\*level 16\.0\*\* \(war-ready\) · 32\/32 at level 14\+/);
+  const mixed = [...Array(16).fill(card(14, 14)), ...Array(16).fill(card(10, 14)), ...Array(10).fill(card(1, 16))];   // rares 14/14 = 16, 10/14 = 12
+  const w = warReadiness(mixed); assert.equal(w.avg, 14); assert.equal(w.at14, 16); assert.match(w.text, /decent/);
+  assert.match(warReadiness(Array(20).fill(card(16, 16))).text, /only 20 cards/); }
 
 // /player and /check.
 assert.equal(bar(0.7), '███████░░░');
