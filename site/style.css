@@ -243,3 +243,4 @@ details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
 .downloads { margin-top: 12px; } .downloads > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 .fanpolicy { margin: 18px 4px 8px; font-size: 11px; color: var(--muted); text-align: center; line-height: 1.4; }
 .fanpolicy a { color: var(--muted); }
+.step a { color: var(--blue); }

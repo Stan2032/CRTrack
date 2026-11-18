@@ -196,3 +196,11 @@ screenshots for absence messages, if wanted.
 - **War readiness** (RoyaleAPI's recruit advice): game level = API level + 16 − maxLevel; the best 32 cards (4 war decks,
   no repeats): average and how many at 14+. Checked on real members (all maxed at the top; Bob 14.3 with 19/32 at 14+).
 - **Projected finish** on the war board (CWStats' /race): `projectRace` from stats.js, shown from half a battle day in.
+
+## Privacy (18 Nov)
+
+`/privacy` (notice; `delete:True` removes the caller's Discord link, settings and away note), `/leader forget` (by member
+or tag: every Discord link to that tag, their settings, optionally `history:True` deletes their rows in members,
+member_events, war_players, race_days, race_events, war_battles, member_stats, notes, note_log; the deletion itself is
+logged without the data). Notice pinned next to the rules, a line in the how-to-link message, and `site/privacy.html`
+linked from both pages' footers. Supercell's unofficial notice is on both pages, the README and the rules message.

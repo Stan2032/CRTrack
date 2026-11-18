@@ -113,7 +113,7 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 10 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 11 commands in your server".
 2. In Discord: **`/setup auto`** (or **`/setup auto fresh:True`** to start from nothing). It shows the plan and anything to
    fix first. Nothing changes yet.
 3. **`/setup auto apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
@@ -125,7 +125,7 @@ Without `fresh`, it reuses channels it recognises (by name, or because they alre
 missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** clears the bot's old posts and re-posts
 everything.
 
-**Commands** (10)
+**Commands** (11)
 
 | Command | What |
 |---|---|
@@ -133,6 +133,7 @@ everything.
 | `/mystats` | Your war report (only you see it; `share:True` to post it) |
 | `/remind 3` | DM 3 hours before reset if you still have decks (`/remind 0` = stop) |
 | `/apply #TAG` | Apply to join: the leaders get a card with your war record and Accept / Decline |
+| `/privacy` | What's kept and how to delete it; `delete:True` removes your Discord link and settings |
 | `/warreport on:True` | Your result by DM after each war: medals, place, streak, reliability |
 | `/away 3 holiday` | Tell leaders you're away: no automatic kick (`/away 0` = back) |
 | `/clan stats` · `/clan season` · `/clan scout` | Clan stats · season recap · this war's rivals |
@@ -140,6 +141,7 @@ everything.
 | `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join (war record, war readiness: best 32 cards' level) |
 | `/leader links` · `/leader link @who #TAG` | Who's linked · link someone else |
 | `/leader digest on:True` · `/leader backup` | Also get the weekly digest by DM · backup file now |
+| `/leader forget @who` | Delete someone's data on request (`history:True` also removes their stored war history) |
 | `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
 | `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
 | `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours), `last_call:2` (hours before reset; 0 = off) |
