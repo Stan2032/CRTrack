@@ -61,6 +61,9 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   }
   const c = S.calibrate(hist, 1800);
   assert.ok(c && c.n > 0 && c.brier < 0.1 && c.brier <= c.baseline, JSON.stringify(c));
+  assert.ok(c.accuracy > 0.9, 'plain accuracy: right most of the time');
+  assert.equal(JSON.stringify(c.byDay.map(d => d.day)), '[1,2,3,4]'); assert.ok(c.byDay[0].n > 0 && c.byDay[0].right != null);
+  assert.equal(c.byDay.reduce((t, d) => t + d.n, 0), c.n, 'every forecast counted once by day');
   // a forecast-'Likely' player who then plays nothing is counted as a miss
   hist.players.push({ week: '9-1', tag: 'Z', fame: 0, decks: 0 });
   for (const w of ['8-1', '8-2', '8-3']) hist.players.push({ week: w, tag: 'Z', fame: 2500, decks: 16 });

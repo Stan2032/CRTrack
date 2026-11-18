@@ -508,9 +508,9 @@ function renderStats() {
   if (_cal.key !== ck) _cal = { key: ck, val: calibrate(hist, r.target, r.lookback, r.perDay) };
   const cal = _cal.val;
   parts.push(`<h3>How accurate the forecasts are</h3>` + (cal
-    ? `<table class="tbl">${Object.entries(cal.bands).filter(([, b]) => b.n).map(([k, b]) => `<tr><td>Rated “${k}”</td><td class="num">${Math.round(100 * b.hit / b.n)}%</td><td class="muted">actually reached ${r.target} (${b.hit} of ${b.n})</td></tr>`).join('')}</table>
-       <div class="hint">Forecasts rerun at the start of each battle day using only what was known then, over ${cal.wars} war${cal.wars === 1 ? '' : 's'} (${cal.n} forecasts).
-       Error score ${cal.brier.toFixed(3)} (lower is better; 0 is perfect). Simply guessing the usual pass rate (${Math.round(cal.base * 100)}%) would score ${cal.baseline.toFixed(3)}, so the forecasts are ${cal.brier < cal.baseline ? 'better' : 'not better'} than that.</div>`
+    ? `<p class="why">Right <b>${Math.round(cal.accuracy * 100)}%</b> of the time: said “will make it” and they did, or “won't” and they didn't (${cal.n} forecasts over ${cal.wars} war${cal.wars === 1 ? '' : 's'}).</p>
+       <table class="tbl">${Object.entries(cal.bands).filter(([, b]) => b.n).map(([k, b]) => `<tr><td>Said “${k}”</td><td class="num">${Math.round(100 * b.hit / b.n)}%</td><td class="muted">made ${r.target} (${b.hit} of ${b.n})</td></tr>`).join('')}</table>
+       <div class="hint">By battle day: ${cal.byDay.filter(d => d.n).map(d => `day ${d.day} ${Math.round(d.right * 100)}% right`).join(' · ')}. Rerun on past battle days using only what was known at the time. ${cal.brier < cal.baseline ? 'Better than guessing from the usual pass rate.' : 'Not yet better than guessing from the usual pass rate: needs more wars.'}</div>`
     : `<div class="empty">${hist ? 'First check after the current war ends (needs a war with battle-day data)' : 'Needs the hosted site with history'}</div>`));
   // 5. Donations this week
   const don = model.players.filter(p => !p.gone && p.donations != null).sort((a, b) => b.donations - a.donations);

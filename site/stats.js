@@ -179,7 +179,7 @@ function calibrate(h, target, lookback = 10, perDay = 450) {
         const so = day === first ? 0 : seen[day - 1];
         if (so == null || so >= goal) continue;
         const f = forecast(p, { target: goal, day, leftToday: 4, fame: so, lookback, clan, habits: own, runs: 400 });
-        samples.push({ prob: f.prob, hit: resultsBy[week][p.tag] >= goal ? 1 : 0 });
+        samples.push({ prob: f.prob, hit: resultsBy[week][p.tag] >= goal ? 1 : 0, day });
       }
     }
   }
@@ -188,7 +188,11 @@ function calibrate(h, target, lookback = 10, perDay = 450) {
   const base = samples.reduce((t, x) => t + x.hit, 0) / samples.length;
   const brier = samples.reduce((t, x) => t + (x.prob - x.hit) ** 2, 0) / samples.length;
   const baseline = samples.reduce((t, x) => t + (base - x.hit) ** 2, 0) / samples.length;
-  return { n: samples.length, wars: wars.length, brier, baseline, base, bands };
+  // Plain accuracy: a forecast is "right" when it said 50%+ and they made it, or under 50% and they didn't.
+  const right = x => (x.prob >= 0.5) === (x.hit === 1);
+  const accuracy = samples.filter(right).length / samples.length;
+  const byDay = [1, 2, 3, 4].map(d => { const xs = samples.filter(x => x.day === d); return { day: d, n: xs.length, right: xs.length ? xs.filter(right).length / xs.length : null }; });
+  return { n: samples.length, wars: wars.length, brier, baseline, base, bands, accuracy, byDay };
 }
 
 // Season summary (a season is the wars sharing the first number, e.g. 137-1 to 137-4).
