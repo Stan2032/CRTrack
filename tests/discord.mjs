@@ -19,6 +19,7 @@ const pending = [], calls = [];
 let currentRoles = ['OTHER'];
 globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
+  if (/\/channels\/CLC$/.test(url) && opt.method === 'PATCH' && globalThis.lockLeaders) return new Response('{}', { status: 403 });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G3\/roles$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'G3', name: '@everyone', position: 0, permissions: String((1n << 31n) | (1n << 10n)) },
     { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n) | (1n << 5n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
@@ -34,6 +35,7 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC\/battlelog$/.test(url)) return Response.json([{ type: 'riverRacePvP', battleTime: '20261116T120000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] }, { type: 'boatBattle' }]);
   if (/\/users\/@me\/channels$/.test(url)) return JSON.parse(opt.body).recipient_id === 'BLOCKED' ? new Response('{}', { status: 403 }) : Response.json({ id: 'DM-' + JSON.parse(opt.body).recipient_id });
+  if (/\/channels\/\w+\/messages\?limit=5$/.test(url)) return Response.json([{ id: 'NOTE', type: 6, message_reference: { message_id: url.includes('/pins/') ? '' : calls.filter(c => c.method === 'PUT' && /\/pins\//.test(c.url)).pop()?.url.split('/').pop() } }]);
   if (/\/channels\/C\/messages\?limit=50$/.test(url)) return Response.json([{ id: 'OLD1', author: { id: 'A' } }, { id: 'USER1', author: { id: 'U1' } }, { id: 'OLD2', author: { id: 'A' } }]);
   if (/\/channels\/(C|R|LC|J)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
@@ -227,9 +229,11 @@ const dels = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').
 assert.ok(dels.includes('OLD1') && dels.includes('OLD2') && !dels.includes('USER1'), 'only the bot\'s messages');
 assert.match(rf, /Deleted \d+ old messages[\s\S]*✅ Rules → <#C>[\s\S]*✅ How to link → <#C>[\s\S]*✅ To-do list → <#LC>/);
 assert.ok(calls.some(c => c.method === 'PUT' && /\/pins\/M\d+$/.test(c.url)), 'pinned');
+assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)), 'the "pinned a message" notice is removed');
+assert.match(rf, /What appears here → <#C>/, 'a note in the war channel');
 calls.length = 0;
 assert.match(await refreshAll(env, 'G', cfgG, 'PPCCR8VU', false), /Refreshed/);
-assert.ok(!calls.some(c => c.method === 'DELETE'), 'without clean: nothing deleted');
+assert.ok(!calls.some(c => c.method === 'DELETE' && !/messages\/NOTE$/.test(c.url)), 'without clean: nothing deleted but pin notices');
 assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set up yet/);
 
 // /autosetup: preview first, then roles, channels with permissions, jobs and pinned posts.
@@ -253,6 +257,13 @@ assert.ok(war.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'membe
 assert.ok(war.some(o => o.id === 'A' && o.type === 1), 'bot can post');
 const lead = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CLC')).body.permission_overwrites;
 assert.ok(!lead.some(o => o.id === 'RM3'), 'members not in leaders');
+// A private channel the bot can't change keeps its job, with a clear fix.
+globalThis.lockLeaders = true;
+const ap2 = await autoSetup(env, 'G3', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v), 'PPCCR8VU', true);
+globalThis.lockLeaders = false;
+assert.match(ap2, /<#CLC>: couldn't change its permissions[\s\S]*add \*\*War Audit\*\*/);
+assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v).channels.leaders, 'CLC', 'job kept');
+
 // Someone with the Leader role (no Discord permissions) counts as a leader.
 assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U8' }, permissions: '0', roles: ['RL'] }, data: { name: 'links', options: [] } })), /Linked:/);
 // Without Manage Channels it says so and changes nothing.

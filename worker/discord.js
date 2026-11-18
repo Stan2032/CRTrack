@@ -789,7 +789,11 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
     const res = found[spec.key]
       ? await dapi(env, 'PATCH', `/channels/${found[spec.key]}`, { permission_overwrites }).catch(e => ({ error: e.message }))
       : await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: spec.name, type: 0, topic: spec.topic, permission_overwrites }).catch(e => ({ error: e.message }));
-    if (res?.id) { ch[spec.key] = res.id; done.push(`✅ <#${res.id}>`); } else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
+    if (res?.id) { ch[spec.key] = res.id; done.push(`✅ <#${res.id}>`); }
+    else if (found[spec.key]) {
+      ch[spec.key] = found[spec.key];   // keep its jobs; only the permissions are unchanged
+      done.push(`⚠️ <#${found[spec.key]}>: couldn't change its permissions (War Audit isn't in this private channel). Edit Channel → Permissions → add **War Audit** → allow View Channel, then run \`/autosetup apply:True\` again. Its jobs are set anyway.`);
+    } else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
     if (found[spec.key] && res?.id && !text.find(c => c.id === res.id)?.topic) await dapi(env, 'PATCH', `/channels/${res.id}`, { topic: spec.topic }).catch(() => null);
   }
   // Tidy: channels in a sensible order (link, rules, war, general, leaders), above any others.
@@ -841,12 +845,18 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
       }
     }
     // Forget the old message ids, so everything below is posted fresh.
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?")
-      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`).run();
+    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?")
+      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`, `discord:intro:${guild}:%`).run();
     done.push(`🧹 Deleted ${removed} old message${removed === 1 ? '' : 's'}${more ? ' (more left: run `/refresh clean:True` again)' : ''}`);
   }
   let unpinned = 0;
-  const pin = (ch, id) => dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false);
+  const pin = async (ch, id) => {
+    if (!(await dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false))) return false;
+    const recent = await dapi(env, 'GET', `/channels/${ch}/messages?limit=5`).catch(() => []);
+    const note = (Array.isArray(recent) ? recent : []).find(m => m.type === 6 && m.message_reference?.message_id === id);   // "War Audit pinned a message"
+    if (note) await dapi(env, 'DELETE', `/channels/${ch}/messages/${note.id}`).catch(() => null);
+    return true;
+  };
   const post = async (key, ch, text, label) => {
     const id = await upsert(env, key, ch, text).catch(() => null);
     if (!id) return done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
@@ -857,6 +867,19 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
   if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
   if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: couldn\'t make it (try `/todo`)'));
+  const intros = {
+    war: `⚔️ **What appears here**\n• **War board** on battle days (Thu–Sun), updated every 15 minutes\n• **Pings** for anyone with decks left in a battle day's last 4 hours\n• **Battle day summary** after each daily reset\n• **War result** when a war ends\n• **Rival scouting** when a new war starts\n\nYour own numbers: \`/mystats\` · reminder before reset: \`/remind 3\` · going away: \`/away\``,
+    joins: `💬 **War Audit posts here:** a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war (top 3, streaks at the target).`,
+    leaders: `🛡️ **Leaders only. War Audit posts here:**\n• **To-do list** after each war (who to kick, demote, warn, promote), with tick buttons\n• **Absences** from \`/away\`\n• **Weekly digest** before battle days (or privately: \`/digest on:True\`)\n• **Monthly backup** of the full history`,
+  };
+  const introCh = {};
+  for (const job of ['war', 'joins', 'leaders']) {
+    const c = chan(cfg, job);
+    if (!c) continue;
+    if (introCh[c]) { introCh[c].push(job); continue; }
+    introCh[c] = [job];
+  }
+  for (const [c, jobs] of Object.entries(introCh)) await post(`discord:intro:${guild}:${c}`, c, jobs.map(j => intros[j]).join('\n\n'), 'What appears here');
   if (chan(cfg, 'war')) done.push(`➖ War board: posts itself at the next pull on a battle day`);
   return ['**Refreshed**', ...done, unpinned ? `\n📌 ${unpinned} message${unpinned === 1 ? '' : 's'} couldn't be pinned: long-press ${unpinned === 1 ? 'it' : 'them'} → Pin (or give War Audit **Pin Messages**).` : ''].filter(Boolean).join('\n');
 }
