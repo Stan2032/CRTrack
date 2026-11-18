@@ -21,8 +21,9 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
   if (/\/guilds\/G3\/roles$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'G3', name: '@everyone', position: 0, permissions: String((1n << 31n) | (1n << 10n)) },
-    { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
+    { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n) | (1n << 5n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
   if (/\/guilds\/G3\/roles$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEW-' + JSON.parse(opt.body).name });
+  if (/\/guilds\/G3$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json({ id: 'G3', icon: null });
   if (/\/guilds\/G3\/members\/A$/.test(url)) return Response.json({ roles: ['BOTROLE'] });
   if (/\/guilds\/G3\/channels$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'CR', type: 0, name: '📜-rules' }, { id: 'CV', type: 2, name: 'voice' }, { id: 'CLC', type: 0, name: 'leaders-chat' }]);
   if (/\/channels\/CLC$/.test(url) && opt.method === 'PATCH') return Response.json({ id: 'CLC' });
@@ -234,9 +235,14 @@ assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set
 // /autosetup: preview first, then roles, channels with permissions, jobs and pinned posts.
 const { autoSetup } = await import('../worker/discord.js');
 const pv = await autoSetup(env, 'G3', null, 'PPCCR8VU', false);
+assert.match(pv, /Linked members chat in war and general/);
 assert.match(pv, /would do this[\s\S]*Create roles: Co-Leader, Elder[\s\S]*Create #🔗-link-tag: how to link[\s\S]*<#CR>: rules, clan stats[\s\S]*<#CW>: war board \+ reminders, summaries \+ results[\s\S]*Drag \*\*War Audit\*\* above Leader/);
 calls.length = 0;
-const ap = await autoSetup(env, 'G3', null, 'PPCCR8VU', true);
+const ap = await autoSetup({ ...env, ASSETS: { fetch: async () => new Response(new Uint8Array([137, 80, 78, 71])) } }, 'G3', null, 'PPCCR8VU', true);
+assert.match(ap, /Channels in order[\s\S]*rank role[\s\S]*Server icon: the clan badge/);
+assert.match(calls.find(c => c.method === 'PATCH' && /\/guilds\/G3$/.test(c.url)).body.icon, /^data:image\/png;base64,iVBORw==/);
+assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
+assert.ok(!calls.some(c => c.method === 'PATCH' && /roles\/RL$/.test(c.url)), 'roles above the bot left alone');
 assert.match(ap, /Set up ✅[\s\S]*Role Co-Leader[\s\S]*<#CW>[\s\S]*Still to do:[\s\S]*Drag/);
 const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v);
 assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'CLC' }, 'a private leaders-chat stays the leaders channel, never general');

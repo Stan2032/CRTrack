@@ -711,7 +711,7 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
 
 // ---- /autosetup: roles, channels and permissions, then the bot's jobs and posts ----
 const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
-  MANAGE_CHANNELS: 1n << 4n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, PIN: 1n << 51n, ADMIN: 1n << 3n };
+  MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, PIN: 1n << 51n, ADMIN: 1n << 3n };
 const bits = (...k) => String(k.reduce((t, x) => t | P[x], 0n));
 const CHAT = bits('VIEW', 'SEND', 'HISTORY', 'REACT', 'EMBED', 'ATTACH', 'APPS'), READ = bits('VIEW', 'HISTORY', 'REACT', 'APPS');
 const BOT = bits('VIEW', 'SEND', 'HISTORY', 'EMBED', 'ATTACH');
@@ -739,7 +739,8 @@ function overwritesFor(key, guild, roles, botId) {
 export async function autoSetup(env, guild, cfg, clan, apply) {
   await setupDB(env);
   const botId = env.DISCORD_APP_ID;
-  const [roles, channels, me] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`), dapi(env, 'GET', `/guilds/${guild}/members/${botId}`).catch(() => null)]);
+  const [roles, channels, me, guildInfo] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`),
+    dapi(env, 'GET', `/guilds/${guild}/members/${botId}`).catch(() => null), dapi(env, 'GET', `/guilds/${guild}`).catch(() => null)]);
   // What the bot may do (its roles' permissions).
   const mine = roles.filter(r => (me?.roles || []).includes(r.id) || r.id === guild);
   const perms = mine.reduce((t, r) => t | BigInt(r.permissions || '0'), 0n), has = k => (perms & P.ADMIN) === P.ADMIN || (perms & P[k]) === P[k];
@@ -754,7 +755,7 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
   const missingRoles = ROLE_SPEC.filter(([k]) => !roleIds[k]);
   if (missingRoles.length) plan.push(`➕ Create roles: ${missingRoles.map(r => r[1]).join(', ')}`);
   const above = ROLE_SPEC.filter(([k]) => roleIds[k] && roles.find(r => r.id === roleIds[k]).position >= top).map(r => r[1]);
-  if (above.length) problems.push(`Drag **War Audit** above ${above.join(', ')} (Server Settings → Roles); Discord doesn't let a bot move itself.`);
+  if (above.length) problems.push(`Drag **War Audit** above ${above.join(', ')} (Server Settings → Roles), so it can give ${above.length === 1 ? 'that role' : 'those roles'} and set those players' nicknames. Discord doesn't let a bot move itself.`);
 
   // Channels: existing text channels by name, the rest created.
   const text = channels.filter(c => c.type === 0), found = {};
@@ -769,7 +770,8 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
   }
   const label = { war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
   for (const spec of CHANNEL_SPEC) plan.push(found[spec.key] ? `🔧 <#${found[spec.key]}>: ${spec.jobs.map(j => label[j]).join(', ')}` : `➕ Create #${spec.name}: ${spec.jobs.map(j => label[j]).join(', ')}`);
-  plan.push('🔒 Newcomers see only the link and rules channels; linked members see rules (read-only), war and general; only Leader and Co-Leader see leaders.');
+  plan.push('🔒 Newcomers see only #link and #rules. Linked members chat in war and general; rules is read-only for them. Only Leader and Co-Leader see leaders.');
+  plan.push('🎨 Channels in order with topics; rank roles coloured and listed separately in the member list' + (has('MANAGE_GUILD') && !guildInfo?.icon ? '; the clan badge as the server icon' : '') + '.');
   plan.push('📌 Post and pin the rules, clan stats and how-to-link messages; post the to-do list in leaders.');
 
   if (!apply) return [`**/autosetup would do this:**`, ...plan, problems.length ? `\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}` : '', `\nRun \`/autosetup apply:True\` to do it. Existing permissions on those channels are replaced.`].filter(Boolean).join('\n');
@@ -788,6 +790,25 @@ export async function autoSetup(env, guild, cfg, clan, apply) {
       ? await dapi(env, 'PATCH', `/channels/${found[spec.key]}`, { permission_overwrites }).catch(e => ({ error: e.message }))
       : await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: spec.name, type: 0, topic: spec.topic, permission_overwrites }).catch(e => ({ error: e.message }));
     if (res?.id) { ch[spec.key] = res.id; done.push(`✅ <#${res.id}>`); } else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
+    if (found[spec.key] && res?.id && !text.find(c => c.id === res.id)?.topic) await dapi(env, 'PATCH', `/channels/${res.id}`, { topic: spec.topic }).catch(() => null);
+  }
+  // Tidy: channels in a sensible order (link, rules, war, general, leaders), above any others.
+  const order = CHANNEL_SPEC.map(x => ch[x.key]).filter(Boolean);
+  if (order.length) await dapi(env, 'PATCH', `/guilds/${guild}/channels`, order.map((id, k) => ({ id, position: k }))).then(() => done.push('✅ Channels in order'), () => null);
+  // Rank roles: coloured, shown separately in the member list (only those below the bot's own role can be changed).
+  let tidied = 0;
+  for (const [k, , color] of ROLE_SPEC) {
+    const r = roles.find(x => x.id === roleIds[k]);
+    if (r && r.position < top && (!r.hoist || !r.color)) if (await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { color: r.color || color, hoist: true }).then(() => true, () => false)) tidied++;
+  }
+  if (tidied) done.push(`✅ ${tidied} rank role${tidied === 1 ? '' : 's'} coloured and listed separately`);
+  // Server icon: the clan badge, only if the server has none.
+  if (has('MANAGE_GUILD') && guildInfo && !guildInfo.icon && env.ASSETS) {
+    const png = await env.ASSETS.fetch(new Request('https://assets.local/icons/discord-server-icon.png')).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+    if (png) {
+      let bin = ''; const u8 = new Uint8Array(png); for (let k = 0; k < u8.length; k += 0x8000) bin += String.fromCharCode(...u8.subarray(k, k + 0x8000));
+      if (await dapi(env, 'PATCH', `/guilds/${guild}`, { icon: 'data:image/png;base64,' + btoa(bin) }).then(() => true, () => false)) done.push('✅ Server icon: the clan badge');
+    }
   }
   // Jobs, then the kept messages (posted fresh in their channels) via /refresh.
   const next = { clan, channels: {}, roles: roleIds };
