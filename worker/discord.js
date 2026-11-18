@@ -33,6 +33,7 @@ export const COMMANDS = [
   { name: 'remind', description: 'Get a DM before reset if you still have decks to play', options: [
     { type: 4, name: 'hours', description: 'Hours before reset (0 = stop)', required: true, min_value: 0, max_value: 12 }] },
   { name: 'apply', description: 'Apply to join the clan: the leaders get your war record and decide', options: [tagOpt('Your player tag, e.g. #ABC123')] },
+  { name: 'privacy', description: 'What War Audit keeps about you, and how to delete it', options: [bool('delete', 'Delete your Discord link and settings now')] },
   { name: 'warreport', description: 'Get your war result by DM after each war', options: [bool('on', 'On or off', true)] },
   { name: 'away', description: 'Tell the leaders you\'re away (no automatic kick)', options: [
     { type: 4, name: 'days', description: 'Days away (0 = I\'m back)', required: true, min_value: 0, max_value: 21 },
@@ -49,7 +50,9 @@ export const COMMANDS = [
     sub('links', 'Who is linked, and who isn\'t yet'),
     sub('link', 'Link someone else', [{ type: 6, name: 'user', description: 'Discord member', required: true }, tagOpt('Their player tag')]),
     sub('digest', 'Also get the weekly digest by DM', [bool('on', 'On or off', true)]),
-    sub('backup', 'Post a backup file of the full history now')] },
+    sub('backup', 'Post a backup file of the full history now'),
+    sub('forget', 'Delete someone\'s data on request', [{ type: 6, name: 'user', description: 'Their Discord account' }, tagOpt('Or their player tag', false),
+      bool('history', 'Also delete their stored war history (kept otherwise as the clan\'s records)')])] },
   { name: 'setup', description: 'Leaders: server setup', default_member_permissions: '1', options: [
     sub('auto', 'Set up the whole server (roles, channels, permissions, posts)', [bool('apply', 'False: show the plan. True: do it.'), bool('fresh', 'Build everything new and delete the old channels')]),
     sub('show', 'What the bot posts where, and its roles'),
@@ -66,7 +69,7 @@ export const COMMANDS = [
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
 const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
-  'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'setup auto': 'autosetup', 'setup show': 'setup',
+  'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'leader forget': 'forget', 'setup auto': 'autosetup', 'setup show': 'setup',
   'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup tidy': 'tidy', 'setup pings': 'pings', me: 'mystats', whosees: 'whosees' };
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
@@ -163,6 +166,33 @@ async function syncOne(env, guild, cfg, userId, m) {
   const nick = m && m.in_clan ? cleanName(m.name).slice(0, 32) : null;
   if (nick && cur.nick !== nick) patch.nick = nick;
   if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
+}
+
+// ---- Privacy ----
+export const PRIVACY = `🔒 **Privacy: what War Audit keeps**
+
+**From Clash Royale's public data** (anyone can see it in game or on RoyaleAPI): your name, tag, clan role, last online, donations, war medals, decks and war battles. Kept as the clan's war history, so leaders can run the clan fairly.
+**From Discord, only if you use the bot:** your Discord account linked to your tag, and what you turn on (\`/remind\`, \`/warreport\`, \`/away\`, \`/apply\`, the digest).
+**Leaders' notes:** war decisions (e.g. warnings, check-ins) and who changed what.
+
+It's stored with Cloudflare (Western Europe), used only to run the clan, and never sold or shared.
+**Delete it:** \`/privacy delete:True\` removes your Discord link and settings straight away (\`/unlink\` just disconnects). Want your war history removed too? Ask a leader (\`/leader forget\`).
+_Unofficial: not endorsed by Supercell._`;
+
+async function forgetDiscord(env, guild, user) {
+  let n2 = 0;
+  const link = await env.DB.prepare('SELECT clan, tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
+  if (link) n2 += (await env.DB.prepare("DELETE FROM notes WHERE clan = ? AND tag = ? AND kind = 'away'").bind(link.clan, link.tag).run())?.meta?.changes || 0;
+  for (const t of ['discord_links', 'discord_reminders', 'discord_digest', 'discord_warreport', 'discord_guests'])
+    n2 += (await env.DB.prepare(`DELETE FROM ${t} WHERE guild = ? AND user_id = ?`).bind(guild, user).run())?.meta?.changes || 0;
+  n2 += (await env.DB.prepare('DELETE FROM kv WHERE k = ? OR k = ? OR k LIKE ? OR k LIKE ?').bind(`verify:${guild}:${user}`, `apply:${guild}:${user}`, `dm:%:${user}`, `wr:%:${guild}:${user}`).run())?.meta?.changes || 0;
+  return n2;
+}
+
+export async function forgetHistory(env, clan, tag) {
+  const sql = ['members', 'member_events', 'war_players', 'race_days', 'race_events', 'war_battles', 'member_stats', 'notes', 'note_log']
+    .map(t => env.DB.prepare(`DELETE FROM ${t} WHERE clan = ? AND tag = ?`).bind(clan, tag));
+  await env.DB.batch(sql);
 }
 
 // ---- Applications: a card in the leaders' channel with the applicant's record and Accept / Decline buttons ----
@@ -376,6 +406,27 @@ export async function handleDiscord(request, env, ctx) {
         await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg, allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
+    }
+    case 'privacy': {
+      if (!opt.delete) return Response.json(reply(PRIVACY));
+      const n2 = await forgetDiscord(env, guild, user);
+      later(syncOne(env, guild, cfg, user, null));
+      return Response.json(reply(n2 ? '✅ Deleted: your Discord link and all your War Audit settings (reminders, war reports, digest, away, applications). Your clan role is removed; `/link` again any time.' : 'Nothing stored for your Discord account.'));
+    }
+    case 'forget': {
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+      let tag = cleanTag(opt.tag), target = opt.user || null;
+      if (target && !tag) tag = (await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, target).first())?.tag || '';
+      if (!target && !tag) return Response.json(reply('Give a Discord member or a player tag.'));
+      // Every Discord account linked to that tag in this server (normally one), plus the member named.
+      const users = new Set([target, ...(tag ? (await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, tag).all()).results.map(r => r.user_id) : [])].filter(Boolean));
+      const done = [];
+      let gone = 0;
+      for (const u of users) { gone += await forgetDiscord(env, guild, u); later(syncOne(env, guild, cfg, u, null)); }
+      if (gone) done.push('Discord link and settings');
+      if (opt.history && tag && TAG.test(tag)) { await forgetHistory(env, clan, tag); done.push(`stored war history for #${tag}`); }
+      await env.DB.prepare('INSERT INTO note_log (clan,week,tag,kind,value,by,at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(clan, '*', tag || '*', 'forget', done.join(', ') || 'nothing found', 'Discord: ' + cleanName(i.member?.nick || i.member?.user?.username || 'leader'), new Date().toISOString()).run().catch(() => {});
+      return Response.json(reply(done.length ? `✅ Deleted: ${done.join(' and ')}.${opt.history && tag ? ' If they\'re still in the clan, the game\'s current data (members list, this war) comes back at the next pull: that part is public game data.' : ''}` : 'Nothing stored for them.'));
     }
     case 'warreport': {
       const link = await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ? AND user_id = ?').bind(guild, user).first();
@@ -787,7 +838,8 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
 **3.** It asks you to play one battle with 2 of your cards in your deck (proof it's your account; a friendly battle counts). Then tap **Done: check it**, and your clan role and nickname are set.
 
-Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.`;
+Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.
+_What we keep and how to delete it: \`/privacy\`_`;
 
 // Plain-language reason when Discord refuses a post.
 function cantPost(channel, err) {
@@ -1226,7 +1278,7 @@ export async function autoSetupNext(env, guild, clan) {
   if (run.step === 2) {
     const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
     const [rules, welcome, stats] = await Promise.all([kv('discord:rules:' + guild), kv('discord:welcome:' + guild), kv('discord:stats:' + guild)]);
-    if (rules) await post('discord:rules:' + guild, rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
+    if (rules) { await post('discord:rules:' + guild, rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await post('discord:privacy:' + guild, rules.channel, PRIVACY, 'Privacy'); }
     if (welcome) await post('discord:welcome:' + guild, welcome.channel, WELCOME, 'How to link');
     if (stats) await post('discord:stats:' + guild, stats.channel, await statsBoard(env, clan), 'Clan stats');
     const info = await dapi(env, 'GET', `/guilds/${guild}`).catch(() => null);
@@ -1292,6 +1344,7 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
     // Forget the old message ids, so everything below is posted fresh.
     await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?")
       .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`, `discord:intro:${guild}:%`).run();
+    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(`discord:privacy:${guild}`).run();
     done.push(`🧹 Deleted ${removed} old message${removed === 1 ? '' : 's'}${more ? ' (more left: run `/setup refresh clean:True` again)' : ''}`);
   }
   let unpinned = 0;
@@ -1308,7 +1361,7 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
     const ok = await pin(ch, id); if (!ok) unpinned++;
     done.push(`✅ ${label} → <#${ch}>${ok ? ' (pinned)' : ''}`);
   };
-  if (kept.rules) await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
+  if (kept.rules) { await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await post('discord:privacy:' + guild, kept.rules.channel, PRIVACY, 'Privacy'); }
   if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
   // One note per channel, from the same texts /setup auto uses (a channel with several jobs gets each one's line).

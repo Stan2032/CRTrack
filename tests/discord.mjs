@@ -120,7 +120,7 @@ assert.match(await text(await grouped('leader', 'links', [], member('U5'))), /Le
 assert.match(await text(await grouped('setup', 'show')), /What the bot posts where/);
 assert.match(await text(await grouped('clan', 'stats', [], member('U5'))), /Clan stats/);
 { const { COMMANDS } = await import('../worker/discord.js');
-  assert.equal(COMMANDS.length, 10, '10 commands');
+  assert.equal(COMMANDS.length, 11, '11 commands');
   assert.equal(COMMANDS.find(c => c.name === 'leader').default_member_permissions, '1', 'leader commands hidden from members');
   assert.equal(COMMANDS.find(c => c.name === 'setup').default_member_permissions, '1');
   assert.ok(!COMMANDS.find(c => c.name === 'mystats').default_member_permissions, 'member commands visible to all');
@@ -570,5 +570,32 @@ assert.match(await statsBoard(env, 'PPCCR8VU'), /Top donors this week:\*\* Luke 
 // /mystats: the reset time from the game's compact timestamp.
 await DB.exec(`UPDATE wars SET ended_at = '20261029T094312.000Z' WHERE week = '2-1'`);
 assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets \d\d:\d\d UK/);
+
+// Privacy: /privacy explains; delete:True removes your Discord link, settings and away note; leaders can forget someone,
+// optionally with their stored war history; the notice is pinned next to the rules.
+{ assert.match(await text(await cmd('privacy')), /Privacy: what War Audit keeps[\s\S]*public data[\s\S]*\/privacy delete:True[\s\S]*\/leader forget/);
+  await DB.exec(`INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag) VALUES ('G', 'U40', 'PPCCR8VU', 'YVJRGLCC');
+    INSERT OR REPLACE INTO discord_reminders (guild, user_id, hours, dm) VALUES ('G', 'U40', 3, 'D');
+    INSERT OR REPLACE INTO discord_warreport (guild, user_id, dm) VALUES ('G', 'U40', 'D');
+    INSERT OR REPLACE INTO notes (clan, week, tag, kind, value, at) VALUES ('PPCCR8VU', '*', 'YVJRGLCC', 'away', '{}', 'x');`);
+  assert.match(await text(await cmd('privacy', [{ name: 'delete', value: true }], member('U40'))), /Deleted: your Discord link and all your War Audit settings/);
+  for (const t of ['discord_links', 'discord_reminders', 'discord_warreport']) assert.equal(await DB.prepare(`SELECT 1 FROM ${t} WHERE user_id = 'U40'`).first(), null, t);
+  assert.equal(await DB.prepare("SELECT 1 FROM notes WHERE tag = 'YVJRGLCC' AND kind = 'away'").first(), null, 'away note gone');
+  assert.match(await text(await cmd('privacy', [{ name: 'delete', value: true }], member('U40'))), /Nothing stored/);
+  // Leader: forget by tag, with history.
+  await DB.exec(`INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag) VALUES ('G', 'U41', 'PPCCR8VU', 'YVJRGLCC')`);
+  const forget = (opts, m = leader) => interaction({ type: 2, guild_id: 'G', member: m, data: { name: 'leader', options: [{ type: 1, name: 'forget', options: opts }] } });
+  assert.match(await text(await forget([{ name: 'tag', value: '#YVJRGLCC' }], member('U42'))), /Leaders only/);
+  assert.ok(await DB.prepare("SELECT 1 FROM war_players WHERE tag = 'YVJRGLCC'").first(), 'has history before');
+  assert.match(await text(await forget([{ name: 'tag', value: '#YVJRGLCC' }, { name: 'history', value: true }])), /Deleted: Discord link and settings and stored war history for #YVJRGLCC/);
+  for (const t of ['war_players', 'members', 'race_days', 'member_stats']) assert.equal(await DB.prepare(`SELECT 1 FROM ${t} WHERE tag = 'YVJRGLCC'`).first(), null, t);
+  assert.equal(await DB.prepare("SELECT 1 FROM discord_links WHERE user_id = 'U41'").first(), null);
+  assert.equal((await DB.prepare("SELECT kind FROM note_log WHERE kind = 'forget'").first()).kind, 'forget', 'logged (without the data)');
+  // Pinned next to the rules on refresh.
+  const { refreshAll } = await import('../worker/discord.js');
+  await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:rules:G', '{"channel":"C","id":null}')`);
+  calls.length = 0;
+  await refreshAll(env, 'G', { clan: 'PPCCR8VU', channels: { war: 'C' }, roles: {} }, 'PPCCR8VU', false);
+  assert.ok(calls.some(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url) && /Privacy: what War Audit keeps/.test(c.body?.content)), 'privacy pinned with the rules'); }
 
 console.log('Discord checks passed');
