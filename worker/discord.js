@@ -40,7 +40,7 @@ export const COMMANDS = [
     sub('season', 'Season recap: placings, top 5, most improved', [{ type: 4, name: 'number', description: 'Season number (default: latest)' }, bool('share', 'Show it to everyone (default: only you)')]),
     sub('scout', 'The clans we\'re racing and how they usually do')] },
   // Leaders
-  { name: 'leader', description: 'Leader tools', options: [
+  { name: 'leader', description: 'Leader tools', default_member_permissions: '1', options: [
     sub('todo', 'Post the after-war to-do list again'),
     sub('player', 'A member\'s record', [tagOpt('Player tag, e.g. #ABC123', false), { type: 6, name: 'user', description: 'Or a linked Discord member' }]),
     sub('check', 'Check someone who wants to join', [tagOpt('Their player tag, e.g. #ABC123')]),
@@ -48,7 +48,7 @@ export const COMMANDS = [
     sub('link', 'Link someone else', [{ type: 6, name: 'user', description: 'Discord member', required: true }, tagOpt('Their player tag')]),
     sub('digest', 'Weekly digest by DM before battle days', [bool('on', 'On or off', true)]),
     sub('backup', 'Post a backup file of the full history now')] },
-  { name: 'setup', description: 'Leaders: server setup', options: [
+  { name: 'setup', description: 'Leaders: server setup', default_member_permissions: '1', options: [
     sub('auto', 'Set up the whole server (roles, channels, permissions, posts)', [bool('apply', 'False: show the plan. True: do it.'), bool('fresh', 'Build everything new and delete the old channels')]),
     sub('show', 'What the bot posts where, and its roles'),
     sub('channel', 'Choose what the bot posts in THIS channel', [{ type: 3, name: 'what', description: 'What this channel is for', required: true, choices: [
@@ -862,11 +862,15 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
   }
   // Invites: only Leader and Co-Leader (taken off @everyone, given to those two roles).
   const everyone = st.roles.find(r => r.id === guild), inv = P.INVITE;
-  if (everyone && (BigInt(everyone.permissions) & inv)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${guild}`, { permissions: String(BigInt(everyone.permissions) & ~inv) }).then(() => done.push('✅ Invites: only Leader and Co-Leader'), () => done.push('⚠️ Couldn\'t limit invites'));
-  for (const k of ['leader', 'coLeader']) {
+  let invitesOk = true;
+  for (const k of ['leader', 'coLeader']) {   // first: the bot still has invite rights through @everyone
     const r = st.roles.find(x => x.id === roleIds[k]) || { id: roleIds[k], permissions: '0', position: 0 };
-    if (r.id && !(BigInt(r.permissions || '0') & inv) && r.position < st.top) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { permissions: String(BigInt(r.permissions || '0') | inv) }).catch(() => null);
+    if (r.id && !(BigInt(r.permissions || '0') & inv)) {
+      const ok = r.position < st.top && await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { permissions: String(BigInt(r.permissions || '0') | inv) }).then(() => true, () => false);
+      if (!ok) { invitesOk = false; done.push(`⚠️ Couldn't let ${k === 'leader' ? 'Leader' : 'Co-Leader'} invite: Server Settings → Roles → ${k === 'leader' ? 'Leader' : 'Co-Leader'} → turn on **Create Invite**`); }
+    }
   }
+  if (everyone && (BigInt(everyone.permissions) & inv)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${guild}`, { permissions: String(BigInt(everyone.permissions) & ~inv) }).then(() => done.push(`✅ Invites: only Leader and Co-Leader${invitesOk ? '' : ' (see below)'}`), () => done.push('⚠️ Couldn\'t limit invites'));
   const ids = {};
   let pos = 0;
   for (const cat of LAYOUT) {
@@ -927,6 +931,9 @@ export async function whoSees(env, guild, cfg) {
     const inv = effective({ permission_overwrites: [] }, roles, guild, ids).invite;
     out.push(`**${name}:** ${seen.length ? seen.map(x => `<#${x.c.id}>${x.e.send || x.c.type === 2 ? '' : ' (read)'}`).join(' ') : 'nothing'}${inv ? ' · can invite' : ''}`);
   }
+  const nobody = list.filter(c => !who.some(([, ids]) => effective(c, roles, guild, ids).view));
+  if (nobody.length) out.push(`**Hidden from every role:** ${nobody.map(c => `<#${c.id}>`).join(' ')}`);
+  for (const spec of SPECS) if (!list.some(c => spec.match.test(plain(c.name)) && c.type === (spec.type || 0))) out.push(`⚠️ Missing: ${spec.name}. Run \`/setup auto apply:True\` to add it.`);
   if (!r.guest) out.push('_No Not in clan role yet: run `/setup auto apply:True`._');
   out.push('_(read) = can see but not post. Server owner and Administrators always see everything._');
   return out.join('\n');

@@ -101,6 +101,9 @@ assert.match(await text(await grouped('setup', 'show')), /What the bot posts whe
 assert.match(await text(await grouped('clan', 'stats', [], member('U5'))), /Clan stats/);
 { const { COMMANDS } = await import('../worker/discord.js');
   assert.equal(COMMANDS.length, 8, '8 commands');
+  assert.equal(COMMANDS.find(c => c.name === 'leader').default_member_permissions, '1', 'leader commands hidden from members');
+  assert.equal(COMMANDS.find(c => c.name === 'setup').default_member_permissions, '1');
+  assert.ok(!COMMANDS.find(c => c.name === 'mystats').default_member_permissions, 'member commands visible to all');
   for (const c of COMMANDS) { assert.ok(c.description.length <= 100, c.name); for (const o of c.options || []) assert.ok(o.description.length <= 100, c.name + ' ' + o.name); } }
 
 // Battle-day reminder pings linked members by mention, names otherwise, and only those users.
@@ -273,6 +276,8 @@ assert.ok(calls.some(c => c.method === 'POST' && c.body?.type === 4 && c.body.na
 assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
 assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/G3$/.test(c.url) && !(BigInt(c.body.permissions) & 1n)), 'invites taken off @everyone');
 assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/NEW-Co-Leader$/.test(c.url) && BigInt(c.body.permissions) & 1n), 'Co-Leader can invite');
+{ const k = calls.findIndex(c => c.method === 'PATCH' && /roles\/NEW-Co-Leader$/.test(c.url) && BigInt(c.body.permissions) & 1n), e = calls.findIndex(c => c.method === 'PATCH' && /roles\/G3$/.test(c.url));
+  assert.ok(k >= 0 && k < e, 'invites given to leaders before they are taken off @everyone (the bot needs them to give them)'); }
 assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v).roles.guest, 'NEW-Not in clan');
 // Who sees what, worked out like Discord does (server @everyone can view; channel overwrites: @everyone, then roles, then the member).
 {
