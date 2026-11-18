@@ -156,6 +156,44 @@ async function syncOne(env, guild, cfg, userId, m) {
   if (Object.keys(patch).length) await dapi(env, 'PATCH', `/guilds/${guild}/members/${userId}`, patch).catch(() => {});   // can't rename the server owner; ignore
 }
 
+// ---- Tag proof: the player sets one of their own cards as their favourite in game; the bot checks the game's data ----
+const saveLink = (env, guild, target, clan, tag, by) => env.DB.prepare('INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag, at, by) VALUES (?, ?, ?, ?, ?, ?)').bind(guild, target, clan, tag, new Date().toISOString(), by).run();
+const proofKey = (guild, user) => `verify:${guild}:${user}`;
+const proofButtons = [{ type: 1, components: [{ type: 2, style: 3, label: '✅ Done: check it', custom_id: 'verify|check' }] }];
+const proofText = (tag, name, card, extra = '') => `To prove **${name}** (#${tag}) is your account:\n**1.** In Clash Royale, open your profile and tap your favourite card.\n**2.** Change it to **${card}**.\n**3.** Tap **Done: check it** below.\n\nYou can change it back afterwards. The game's data can take a minute to update.${extra}`;
+
+async function startProof(env, guild, user, tag, m) {
+  const pl = await cr(env, `/players/${encodeURIComponent('#' + tag)}`).catch(() => null);
+  if (!pl) return reply('Couldn\'t reach the game\'s data just now. Try `/link` again in a minute.');
+  const fav = pl.currentFavouriteCard?.name, cards = (pl.cards || []).map(c => c.name).filter(n => n && n !== fav);
+  if (!cards.length) return reply('Couldn\'t read that account\'s cards. Ask a leader to link you with `/leader link`.');
+  const card = cards[Math.floor(Math.random() * cards.length)];
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(proofKey(guild, user), JSON.stringify({ tag, card, at: Date.now() })).run();
+  return { type: 4, data: { content: proofText(tag, cleanName(m.name), card), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
+}
+
+// The Check button: favourite card matches → linked, roles and nickname set.
+async function checkProof(i, env, ctx) {
+  const guild = i.guild_id, user = i.member?.user?.id;
+  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(proofKey(guild, user)).first();
+  const update = (content, components = []) => Response.json({ type: 7, data: { content, components, allowed_mentions: { parse: [] } } });
+  if (!row) return update('Nothing to check. Start with `/link #YOURTAG`.');
+  const v = JSON.parse(row.v);
+  if (Date.now() - v.at > 30 * 60e3) { await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run(); return update('That took too long (30 minutes). Run `/link` again for a new card.'); }
+  const cfg = await getConfig(env, guild), clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
+  const m = await env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, v.tag).first();
+  const pl = await cr(env, `/players/${encodeURIComponent('#' + v.tag)}`).catch(() => null);
+  const fav = pl?.currentFavouriteCard?.name;
+  if (fav !== v.card) return update(proofText(v.tag, cleanName(m?.name || v.tag), v.card, `\n\n⏳ **Not yet:** the game still shows **${fav || 'nothing'}**. Wait a minute, then tap again.`), proofButtons);
+  const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, v.tag, user).first();
+  if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, v.tag).run();   // proven owner wins
+  await saveLink(env, guild, user, clan, v.tag, user);
+  await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run();
+  const work = syncOne(env, guild, cfg, user, m).catch(() => {});
+  if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+  return update(`✅ **Proven and linked** to **${cleanName(m?.name || v.tag)}** (#${v.tag}). Your role and nickname are being set. You can change your favourite card back now.`);
+}
+
 // ---- Slash command handling ----
 export async function handleDiscord(request, env, ctx) {
   const body = await request.text();
@@ -189,9 +227,14 @@ export async function handleDiscord(request, env, ctx) {
           : ' Join in game first, then link.')));
       }
       const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, tag, target).first();
-      if (taken && i.data.name === 'link') return Response.json(reply(`#${tag} is already linked to someone else. Ask a leader if that's wrong.`));
+      // Already linked to someone else: proving it (favourite card) takes it over; otherwise ask a leader.
+      // Members prove the tag is theirs (set a favourite card in game); leaders linking someone else vouch for them.
+      if (i.data.name === 'link') {
+        const already = await env.DB.prepare('SELECT 1 FROM discord_links WHERE guild = ? AND user_id = ? AND tag = ?').bind(guild, target, tag).first();
+        if (!already) return Response.json(await startProof(env, guild, target, tag, m));
+      }
       if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, tag).run();
-      await env.DB.prepare('INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag, at, by) VALUES (?, ?, ?, ?, ?, ?)').bind(guild, target, clan, tag, new Date().toISOString(), user).run();
+      await saveLink(env, guild, target, clan, tag, user);
       later(syncOne(env, guild, cfg, target, m));
       return Response.json(reply(`Linked <@${target}> to **${cleanName(m.name)}** (#${tag}).${cfg?.roles ? ' Roles and nickname will update shortly.' : ''}`));
     }
@@ -415,6 +458,7 @@ export async function recruitCard(env, clan, tag) {
 async function handleButton(i, env, ctx) {
   await setupDB(env);
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
+  if (kind === 'verify') return checkProof(i, env, ctx);
   if (kind === 'autosetup') {
     const cfg0 = await getConfig(env, i.guild_id);
     if (!isLeader(i.member, cfg0)) return Response.json(reply('Leaders only.'));
@@ -526,7 +570,7 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 
 **1.** Type \`/link\` and tap the one from **War Audit**.
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
-**3.** Send. Your clan role and nickname are set straight away.
+**3.** It asks you to set one of your cards as your favourite in game (proof it's your account). Do that, tap **Done: check it**, and your clan role and nickname are set.
 
 Not in the clan yet? Join in game first, then link. Stuck? Ask a leader.`;
 

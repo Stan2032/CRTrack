@@ -32,6 +32,7 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/\/channels\/(NEWCH-\w*|CW|CR|CLC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   if (/\/channels\/(CW|CR|CV)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
+  if (/proxy\.royaleapi\.dev\/v1\/players\/%232VJ9V2PV$/.test(url)) return Response.json({ name: 'Luke', currentFavouriteCard: { name: globalThis.fav || 'Knight' }, cards: [{ name: 'Knight' }, { name: 'Archers' }, { name: 'Giant' }] });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC\/battlelog$/.test(url)) return Response.json([{ type: 'riverRacePvP', battleTime: '20261116T120000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] }, { type: 'boatBattle' }]);
@@ -61,13 +62,29 @@ await Promise.all(pending);
 assert.ok(calls.some(c => c.method === 'DELETE' && /channels\/C\/messages\/M\d+$/.test(c.url)), 'test post removed');
 assert.match(await text(await here('war', 'C', 'G', member('U5'))), /Leaders only/);
 
-assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2vj9v2pv' }])), /Linked <@U1> to \*\*Luke\*\*/);
+// /link: prove the tag is yours by setting one of your own cards as favourite in game; Check confirms it from the game's data.
+const proof = await (await cmd('link', [{ name: 'tag', value: '#2vj9v2pv' }])).json();
+assert.match(proof.data.content, /To prove \*\*Luke\*\* \(#2VJ9V2PV\)[\s\S]*Change it to \*\*(Archers|Giant)\*\*/, 'a card they own, not the current favourite');
+assert.equal(proof.data.components[0].components[0].custom_id, 'verify|check');
+const check = m => interaction({ type: 3, guild_id: 'G', member: m, data: { custom_id: 'verify|check' } });
+let chk = (await (await check(member('U1'))).json()).data;
+assert.match(chk.content, /Not yet:\*\* the game still shows \*\*Knight\*\*/); assert.equal(chk.components.length, 1, 'button stays');
+assert.equal(await DB.prepare("SELECT 1 FROM discord_links WHERE user_id = 'U1'").first(), null, 'not linked yet');
+globalThis.fav = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'verify:G:U1'").first()).v).card;
+calls.length = 0;
+chk = (await (await check(member('U1'))).json()).data;
+assert.match(chk.content, /Proven and linked\*\* to \*\*Luke\*\*/); assert.equal(chk.components.length, 0);
 await Promise.all(pending);
+assert.match((await (await check(member('U1'))).json()).data.content, /Nothing to check/, 'done once');
+globalThis.fav = 'Knight';
 const patch = calls.find(c => c.method === 'PATCH' && /members\/U1$/.test(c.url));
 assert.deepEqual(patch.body, { roles: ['OTHER', 'RE'], nick: 'Luke' }, 'Elder role added, other roles kept, nickname set');
 
 assert.match(await text(await cmd('link', [{ name: 'tag', value: '#QQQQQ' }], member('U2'))), /isn't in the clan/);
-assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }], member('U2'))), /already linked/);
+// Someone else typing Luke's tag only gets the proof step; the link stays with the proven owner.
+assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }], member('U2'))), /To prove \*\*Luke\*\*/);
+assert.equal((await DB.prepare("SELECT user_id FROM discord_links WHERE tag = '2VJ9V2PV'").first()).user_id, 'U1');
+assert.match(await text(await cmd('link', [{ name: 'tag', value: '#2VJ9V2PV' }])), /Linked <@U1>/, 'already proven: no second proof');
 { const me = (await (await cmd('me')).json()).data; assert.equal(me.embeds[0].author.name, 'Luke'); assert.equal(me.flags, 64, 'only you'); }
 assert.equal((await (await cmd('me', [{ name: 'share', value: true }])).json()).data.flags, 0, 'shared');
 assert.match(await text(await cmd('links', [], leader)), /Linked: 1 of 2[\s\S]*Not linked yet:\*\* perc/);
