@@ -284,6 +284,12 @@ calls.length = 0;
 const f4 = await autoSetupNext(env, 'G3', 'PPCCR8VU');
 assert.match(f4.content, /set up the server ✅[\s\S]*Deleted 4 old channels/);
 assert.deepEqual(calls.filter(c => c.method === 'DELETE' && /\/channels\/\w+$/.test(c.url)).map(c => c.url.split('/').pop()).sort(), ['CLC', 'CR', 'CV', 'CW']);
+// A channel it can't delete is named in the summary.
+await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true, true); await autoSetupNext(env, 'G3', 'PPCCR8VU'); await autoSetupNext(env, 'G3', 'PPCCR8VU');
+{ const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => /\/channels\/CLC$/.test(String(url)) && opt.method === 'DELETE' ? new Response('{}', { status: 403 }) : realF(url, opt);
+  assert.match((await autoSetupNext(env, 'G3', 'PPCCR8VU')).content, /Deleted 3 old channels[\s\S]*Couldn't delete: #leaders-chat/);
+  globalThis.fetch = realF; }
 // A private channel the bot can't change keeps its job, with a clear fix.
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G3', '${JSON.stringify(cfg3)}')`);
 globalThis.lockLeaders = true;

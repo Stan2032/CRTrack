@@ -873,7 +873,7 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     const p2 = prev ? JSON.parse(prev.v) : null;
     if (!p2 || p2.channel !== ids[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ids[key], id: null })).run();
   }
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), oldNames: Object.fromEntries(old.map(c => [c.id, c.name])), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
   return { content: [`**Step 1 of ${STEPS(fresh)} done: roles and channels**`, ...done].join('\n').slice(0, 1900), components: nextButton(2, STEPS(fresh)) };
 }
 
@@ -929,11 +929,15 @@ export async function autoSetupNext(env, guild, clan) {
     return { content: [`**All done ✅**`, ...shown, notes ? `✅ ${notes} channel notes pinned` : '', run.problems?.length ? `\n**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', '\nNext: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n'), components: [] };
   }
   if (run.step === 4) {
-    let removed = 0; const left = [];
-    for (const id of run.old) { if (removed >= 40) { left.push(id); continue; } if (await dapi(env, 'DELETE', `/channels/${id}`).then(() => true, () => false)) removed++; }
+    let removed = 0, tried = 0; const left = [], stuck = [];
+    for (const id of run.old) {
+      if (tried++ >= 40) { left.push(id); continue; }
+      if (await dapi(env, 'DELETE', `/channels/${id}`).then(() => true, () => false)) removed++; else stuck.push(run.oldNames?.[id] || id);
+    }
     if (left.length) { run.old = left; await save(4); return { content: `Deleted ${removed} old channels; ${left.length} left.`, components: nextButton(4, of) }; }
     await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
-    const summary = [`**War Audit set up the server ✅**`, `Deleted ${removed} old channel${removed === 1 ? '' : 's'}.`, run.problems?.length ? `**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', 'Next: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
+    const summary = [`**War Audit set up the server ✅**`, `Deleted ${removed} old channel${removed === 1 ? '' : 's'}.`,
+      stuck.length ? `⚠️ Couldn't delete: ${stuck.map(x => '#' + x).join(', ')} (War Audit can't see ${stuck.length === 1 ? 'it' : 'them'}, or Discord protects ${stuck.length === 1 ? 'it' : 'them'}). Delete by hand: long-press → Delete Channel.` : '', run.problems?.length ? `**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', 'Next: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
     if (chan(cfg, 'leaders')) await postJob(env, guild, cfg, 'leaders', summary).catch(() => null);   // the channel this ran in may be gone
     return { content: summary, components: [] };
   }
