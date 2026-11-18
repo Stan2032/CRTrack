@@ -102,7 +102,7 @@ role list** (Server Settings → Roles → drag → Save). Discord doesn't let a
 | | `#🔭-rival-scouting` | Members, read-only | Who we're racing, each new war |
 | ⚔️ Clan | `#⚔️-war` | Members, chat | War board, deck reminders |
 | | `#💬-general` | Members, chat | Welcomes, promotion congrats, shout-outs |
-| | `#🤖-bot-commands` | Members, chat | (for `/mystats`, `/stats`, …) |
+| | `#🤖-bot-commands` | Members, chat | (for `/mystats`, `/clan stats`, …) |
 | | `🔊 Clan voice` | Members | |
 | 🛡️ Leaders | `#🛡️-leaders` | Leader + Co-Leader | To-do list, absences, digest, backups |
 | | `#💭-leader-chat` | Leader + Co-Leader | |
@@ -113,38 +113,35 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 21 commands in your server".
-2. In Discord: **`/autosetup`** (or **`/autosetup fresh:True`** to start from nothing). It shows the plan and anything to
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 8 commands in your server".
+2. In Discord: **`/setup auto`** (or **`/setup auto fresh:True`** to start from nothing). It shows the plan and anything to
    fix first. Nothing changes yet.
-3. **`/autosetup apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
+3. **`/setup auto apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
    channels are deleted** in the last step). Then tap **Continue ▶** after each step until it says done (3 steps, or 4
    with fresh).
-4. **`/link #YOURTAG`**, then **`/sync`**.
+4. **`/link #YOURTAG`**, then **`/setup sync`**.
 
 Without `fresh`, it reuses channels it recognises (by name, or because they already have a job) and only adds what's
-missing. Later: **`/setup`** shows what goes where; **`/refresh clean:True`** clears the bot's old posts and re-posts
+missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** clears the bot's old posts and re-posts
 everything.
 
-**Commands**
+**Commands** (8)
 
-| Who | Command | What |
-|---|---|---|
-| Anyone | `/link #TAG`, `/unlink` | Link your Discord to your player; role and nickname follow the game |
-| Anyone | `/mystats` | Your full war report (only you see it; `share` to post it) |
-| Anyone | `/stats` | Clan stats |
-| Anyone | `/season` | Season recap (latest, or `number`) |
-| Anyone | `/scout` | The clans we're racing: their recent results vs ours |
-| Anyone | `/away 3 holiday` | Away for 3 days: leaders see it, no automatic kick (`/away 0` = back) |
-| Anyone | `/remind 3` | Private message 3 hours before reset if you have decks left (`/remind 0` = off) |
-| Leaders | `/whosees` | Reads the live server: what each role can see and post in (proof the permissions are right) |
-| Leaders | `/autosetup` | Roles, channels, permissions and posts, all at once (`apply:True` to do it) |
-| Leaders | `/setup`, `/post-here`, `/sync` | Roles, channel jobs, update everyone's roles and nicknames |
-| Leaders | `/links`, `/linkuser @who #TAG` | Who's linked; link someone else |
-| Leaders | `/todo` | Post or refresh the after-war to-do list |
-| Leaders | `/player #TAG`, `/check #TAG` | A member's record; someone applying to join |
-| Leaders | `/digest on:True` | Weekly digest privately (last training day): warnings, close to Elder, slipping, away, not linked |
-| Leaders | `/refresh` (`clean:True`) | Re-post everything the bot keeps and pin it; `clean` first deletes the bot's old messages in its channels |
-| Leaders | `/backup` | Post a backup file of the full history in the leaders' channel now |
+| Command | What |
+|---|---|
+| `/link #TAG` · `/unlink` | Connect or disconnect your Discord and Clash Royale accounts |
+| `/mystats` | Your war report (only you see it; `share:True` to post it) |
+| `/remind 3` | DM 3 hours before reset if you still have decks (`/remind 0` = stop) |
+| `/away 3 holiday` | Tell leaders you're away: no automatic kick (`/away 0` = back) |
+| `/clan stats` · `/clan season` · `/clan scout` | Clan stats · season recap · this war's rivals |
+| **Leaders** | |
+| `/leader todo` | Post the after-war to-do list again |
+| `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join |
+| `/leader links` · `/leader link @who #TAG` | Who's linked · link someone else |
+| `/leader digest on:True` · `/leader backup` | Weekly digest by DM · backup file now |
+| `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
+| `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
+| `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
 
 "Leaders" means anyone with the Leader or Co-Leader role, or Manage Roles / Administrator in Discord.
 
@@ -184,10 +181,10 @@ Clan description** (add your Discord link there). Copy one into Clan → Edit �
 | Interactions Endpoint URL won't save | Discord secrets missing or wrong in Cloudflare; wait a minute after saving them |
 | Commands missing in Discord | Register Discord commands again; reopen the Discord app |
 | Commands listed twice | Register again with `DISCORD_GUILD_ID` set (clears the old copy) |
-| Roles don't change | Bot role must be above the clan roles; run `/setup` and check the roles listed; then `/sync` |
+| Roles don't change | Bot role must be above the clan roles; run `/setup` and check the roles listed; then `/setup sync` |
 | "I can't post in #channel" | Add War Audit to that channel: View Channel, Send Messages, Read Message History |
 | `/remind` says it can't DM | Long-press the server → Privacy Settings → Direct Messages on |
-| No to-do list after a war | Run `/todo` in the leaders' channel |
+| No to-do list after a war | Run `/leader todo` in the leaders' channel |
 | Old page after an update | Close and reopen the app (it updates itself) |
 
 Developer notes (how it works, the maths, tests) are in [`HANDOFF.md`](HANDOFF.md).

@@ -114,16 +114,16 @@ reached the target, who didn't), battle day 4 can't-reach (per-player targets), 
 
 Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
 - Anyone: `/link #TAG`, `/unlink`, `/mystats` (full report in cards: this war with forecast and place in the clan, last 10 wars
-  as bars, consistency breakdown, streak, battle types, play times; `share` to post publicly), `/stats` (clan stats board),
+  as bars, consistency breakdown, streak, battle types, play times; `share` to post publicly), `/clan stats` (clan stats board),
   `/away days reason` (absence: saved as a shared `away` note; under target while
   away during a war → **Leaders decide** instead of kick/warn, shown on the page), `/remind hours` (private message when a
   battle day has that long left and they still have decks; checked on turn-on; once per day; max 8 per run).
 - Leaders (Manage Roles): `/linkuser`, `/links`, `/setup` (shows what goes where; finds roles named Member / Elder /
-  Co-Leader / Leader), `/sync`, `/post-here` (run **in** a channel to give it a job), `/todo` (redo the to-do list),
+  Co-Leader / Leader), `/setup sync`, `/setup channel` (run **in** a channel to give it a job), `/leader todo` (redo the to-do list),
   `/player #TAG` (reliability, recent wars, away, warning), `/check #TAG` (someone applying: public stats, recent war
   battles, any time already spent in this clan).
 
-Channel jobs (`/post-here`): **war** (live war board with text bars, refreshed every pull; "under 4 hours" pings),
+Channel jobs (`/setup channel`): **war** (live war board with text bars, refreshed every pull; "under 4 hours" pings),
 **results** (battle day summary with +/- % after each reset; war result), **joins** (welcomes, promotion congrats,
 after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (after-war to-do list + absences),
 **rules**, **how to link** and the **clan stats board** (messages kept up to date by editing; stats after every war:
@@ -131,10 +131,10 @@ last 8 wars as bars, pass-rate trend, most reliable, streaks, most improved, bat
 top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
 `{clan, channels: {war, results, joins, leaders}, roles}`.
 
-**Also** (`worker/extras.js`): season recap when a war ends and the race has moved to a new season (and `/season`);
-rival scouting once per race from each rival's last 5 wars (`/scout`); the leaders' weekly digest on the last training
+**Also** (`worker/extras.js`): season recap when a war ends and the race has moved to a new season (and `/clan season`);
+rival scouting once per race from each rival's last 5 wars (`/clan scout`); the leaders' weekly digest on the last training
 day (queued, then sent in a run of its own; DM to `/digest` leaders, else the leaders' channel); a monthly backup file
-(gzipped full history, posted as an attachment, in a run of its own on a training day; `/backup`). Heavy jobs each get
+(gzipped full history, posted as an attachment, in a run of its own on a training day; `/leader backup`). Heavy jobs each get
 their own 15-minute run: to-do list, then digest, then backup.
 
 **Leaders' to-do list**: when a war ends, the next 15-minute run (a run of its own) works out the decisions with the
