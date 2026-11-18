@@ -112,7 +112,7 @@ async function allConfigs(env) {
     .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
 }
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
-export const JOBS = { guests: 'Not in clan (waiting room)', war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
+export const JOBS = { bot: 'Bot commands (note only)', guests: 'Not in clan (waiting room)', war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
   leaders: 'Leaders only: absences, digest, backups' };
 const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
 const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
@@ -1069,7 +1069,7 @@ export const LAYOUT = [
   { cat: '⚔️ Clan', access: 'members', channels: [
     { key: 'war', name: '⚔️-war', access: 'members', jobs: ['war'], match: /^war$|warboard|clanwar/, topic: 'War board, reminders and war chat.' },
     { key: 'general', name: '💬-general', access: 'members', jobs: ['joins'], match: /^(?!.*(leader|staff|mod|admin)).*(general|chat)/, topic: 'Clan chat. Welcomes and shout-outs from War Audit.' },
-    { key: 'bot', name: '🤖-bot-commands', access: 'members', jobs: [], match: /bot|command/, topic: 'Use War Audit here: /mystats, /stats, /remind, /away, /season, /scout.' },
+    { key: 'bot', name: '🤖-bot-commands', access: 'members', jobs: ['bot'], match: /bot|command/, topic: 'Use War Audit here: /mystats, /stats, /remind, /away, /season, /scout.' },
     { key: 'voice', name: '🔊 Clan voice', type: 2, access: 'members', jobs: [], match: /voice/ }] },
   { cat: '🛡️ Leaders', access: 'leaders', channels: [
     { key: 'leaders', name: '🛡️-leaders', access: 'leaders', jobs: ['leaders'], match: /leader|staff|mods?$/, topic: 'Leaders only: absences, digest, backups.' },
@@ -1102,7 +1102,7 @@ const INTROS = {
   guests: `🚪 **Not in the clan right now.** The tag you linked isn't in the clan's member list. Want to join? Use \`/apply #YOURTAG\` and the leaders will look at your war record. Already joined in game? Use \`/link\` again. Questions? Ask a leader below. You're free to leave the server any time.`,
   bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/warreport on:True\` your result by DM after each war · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
 };
-const LABEL = { guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
+const LABEL = { bot: 'note with the commands', guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
   war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'absences, digest, backups' };
 const STEPS = fresh => fresh ? 4 : 3;
 const nextButton = (step, of) => [{ type: 1, components: [{ type: 2, style: 1, label: `Continue ▶ (step ${step} of ${of})`, custom_id: 'autosetup|next' }] }];
@@ -1293,8 +1293,7 @@ export async function autoSetupNext(env, guild, clan) {
     return { content: [`**Step 2 of ${of} done: rules, how to link, stats**`, ...done].join('\n'), components: nextButton(3, of) };
   }
   if (run.step === 3) {
-    for (const key of ['guests', 'war', 'joins', 'results', 'scout', 'leaders']) { const c = chan(cfg, key); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
-    if (run.ids?.bot) await post(`discord:intro:${guild}:${run.ids.bot}`, run.ids.bot, INTROS.bot, 'Note');
+    for (const key of ['guests', 'war', 'joins', 'results', 'scout', 'leaders', 'bot']) { const c = chan(cfg, key) || (key === 'bot' ? run.ids?.bot : null); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
     if (chan(cfg, 'scout')) {
       const race = await cr(env, `/clans/${encodeURIComponent('#' + clan)}/currentriverrace`).catch(() => null);
       const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
@@ -1366,7 +1365,7 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
   // One note per channel, from the same texts /setup auto uses (a channel with several jobs gets each one's line).
   const introCh = {};
-  for (const job of ['war', 'results', 'scout', 'joins', 'leaders', 'guests']) {
+  for (const job of ['war', 'results', 'scout', 'joins', 'leaders', 'guests', 'bot']) {
     const c = chan(cfg, job);
     if (c) (introCh[c] ||= []).push(job);
   }

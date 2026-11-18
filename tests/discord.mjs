@@ -598,4 +598,12 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   await refreshAll(env, 'G', { clan: 'PPCCR8VU', channels: { war: 'C' }, roles: {} }, 'PPCCR8VU', false);
   assert.ok(calls.some(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url) && /Privacy: what War Audit keeps/.test(c.body?.content)), 'privacy pinned with the rules'); }
 
+// #bot-commands: cleaned and its note re-posted by /setup refresh (it has no posting job, but it's the bot's channel).
+{ const { refreshAll } = await import('../worker/discord.js');
+  calls.length = 0;
+  const out = await refreshAll(env, 'G', { clan: 'PPCCR8VU', channels: { bot: 'C' }, roles: {} }, 'PPCCR8VU', true);
+  assert.ok(calls.some(c => c.method === 'DELETE' && c.url.endsWith('/channels/C/messages/OLD1')), 'old bot messages deleted there');
+  assert.ok(calls.some(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url) && /Use War Audit here/.test(c.body?.content)), 'note re-posted');
+  assert.match(out, /What appears here → <#C>/); }
+
 console.log('Discord checks passed');
