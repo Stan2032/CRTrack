@@ -3,7 +3,7 @@
 //   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes, cr } from './history.js';
-import { reliability } from './stats.gen.js';
+import { reliability, projectRace } from './stats.gen.js';
 import { sanitizeRules, DEFAULT_RULES } from './logic.gen.js';
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
@@ -825,10 +825,22 @@ export async function warBoard(env, r, now) {
     if (gy != null && gy !== g) gap += i > 0 ? (g < gy ? ' (closing ▲)' : ' (gap growing ▼)') : (g > gy ? ' (pulling away ▲)' : ' (they\'re closing ▼)');
   }
   const pct = b.decksTotal ? Math.round(100 * b.decksUsed / b.decksTotal) : 0;
+  // Projected finish at the pace so far (the page's projectRace), once half a battle day has passed.
+  let proj = '';
+  const lastEnd = await env.DB.prepare("SELECT ended_at FROM wars WHERE clan = ? AND ended_at != '' ORDER BY ended_at DESC LIMIT 1").bind(r.clan).first();
+  const m0 = String(lastEnd?.ended_at || '').match(/^(\d{4})-?(\d{2})-?(\d{2})T(\d{2}):?(\d{2}):?(\d{2})/);
+  if (m0 && st.length > 1) {
+    const resetMs = Date.UTC(+m0[1], m0[2] - 1, +m0[3], +m0[4], +m0[5], +m0[6]), since = (((now - resetMs) % 864e5) + 864e5) % 864e5;
+    if ((r.day - 1) * 864e5 + since >= 12 * 3600e3) {
+      const pr = projectRace(st, r.day, since), k = pr.findIndex(c => c.tag === r.clan);
+      if (k >= 0) proj = `📈 On pace for **${place(k)}** (~${n(pr[k].projected)})${k > 0 ? ` · ${cleanName(pr[0].name)} on ~${n(pr[0].projected)}` : pr[1] ? ` · next: ${cleanName(pr[1].name)} ~${n(pr[1].projected)}` : ''}`;
+    }
+  }
   const top = st[0]?.fame || 1;
   const content = [
     `⚔️ **War ${r.week} · battle day ${r.day} of 4**`,
     me ? `🏁 ${place(i)} of ${st.length} · ${n(me.fame)} medals${gap}` : '',
+    proj,
     st.length > 1 ? '```\n' + st.map((c, k) => `${k + 1}. ${bar(c.fame / top, 8)} ${n(c.fame).padStart(6)}  ${cleanName(c.name).slice(0, 16)}${c.tag === r.clan ? ' ◀' : ''}`).join('\n') + '\n```' : '',
     `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
     `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,

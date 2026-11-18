@@ -205,6 +205,16 @@ await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
 assert.equal(calls.filter(c => c.method === 'POST' && /channels\/C\/messages/.test(c.url)).length, 1, 'posted once');
 const edit = calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url));
 assert.ok(edit, 'then edited'); assert.match(edit.body.content, /battle day 2 of 4[\s\S]*2nd of 2 · 21,000 medals · 1,500 behind Rival[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
+assert.doesNotMatch(edit.body.content, /On pace/, 'no reset time known: no projection');
+// Projected finish (the page's projectRace): day 2, 4h47m after a 09:43 reset → 1.2 days in; 21,000 → ~70,000.
+await DB.exec(`INSERT OR REPLACE INTO wars (clan,week,ended_at) VALUES ('PPCCR8VU','138-2','2026-11-16T09:43:00Z')`);
+calls.length = 0;
+await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
+assert.match(calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url)).body.content, /📈 On pace for \*\*2nd\*\* \(~70,0\d\d\) · Rival on ~75,0\d\d/);
+calls.length = 0;
+await warBoard(env, { ...r, day: 1 }, Date.parse('2026-11-19T14:30:00Z'));
+assert.doesNotMatch(calls.find(c => /channels\/C\/messages/.test(c.url)).body.content, /On pace/, 'too early on day 1');
+await DB.exec(`DELETE FROM wars WHERE week = '138-2'`);
 
 // Day summary: medals gained with the change vs the day before, posted once.
 await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES

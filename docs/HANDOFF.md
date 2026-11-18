@@ -183,3 +183,16 @@ screenshots for absence messages, if wanted.
   Not on Discord: rerunning thousands of simulations would exceed the Worker's CPU limit.
 - **Import older wars** (`/api/import`, site Rules): RoyaleAPI War log / War history CSVs; only untracked weeks;
   imported wars have `ended_at = ''` (sort before tracked ones, no invented dates).
+
+## Added 18 Nov (from looking at other clan bots: CWStats, Canadian War Bot, ClashBot, TrophyCoach, RoyaleAPI)
+
+- **Ping times**: the one battle-day ping used to go out in the last 4 hours (~05:45 UK for a 09:43 reset). Now an
+  evening ping (cfg.pingHour UK, or `busiestHour`: the start of the clan's busiest 3 hours, 12:00–23:00, from
+  race_events; 19:00 until there's data) and a last call `cfg.lastCall` hours before reset (default 2). `/setup pings`.
+  Leaders' phone alerts follow the same times. `battleDayPings` in discord.js.
+- **`/apply #TAG`** (CWStats-style): card in #leaders with recruitCard, war readiness and the clan's trophy requirement,
+  Accept / Decline buttons (`apply|yes|user|tag`); applicant told by DM, else in #not-in-clan. One open application per
+  person; re-apply after a day.
+- **War readiness** (RoyaleAPI's recruit advice): game level = API level + 16 − maxLevel; the best 32 cards (4 war decks,
+  no repeats): average and how many at 14+. Checked on real members (all maxed at the top; Bob 14.3 with 19/32 at 14+).
+- **Projected finish** on the war board (CWStats' /race): `projectRace` from stats.js, shown from half a battle day in.

@@ -113,7 +113,7 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 9 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 10 commands in your server".
 2. In Discord: **`/setup auto`** (or **`/setup auto fresh:True`** to start from nothing). It shows the plan and anything to
    fix first. Nothing changes yet.
 3. **`/setup auto apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
@@ -125,22 +125,24 @@ Without `fresh`, it reuses channels it recognises (by name, or because they alre
 missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** clears the bot's old posts and re-posts
 everything.
 
-**Commands** (9)
+**Commands** (10)
 
 | Command | What |
 |---|---|
 | `/link #TAG` · `/unlink` | Connect or disconnect your accounts. `/link` asks you to play one battle with 2 of your cards in your deck, as proof it's yours |
 | `/mystats` | Your war report (only you see it; `share:True` to post it) |
 | `/remind 3` | DM 3 hours before reset if you still have decks (`/remind 0` = stop) |
+| `/apply #TAG` | Apply to join: the leaders get a card with your war record and Accept / Decline |
 | `/warreport on:True` | Your result by DM after each war: medals, place, streak, reliability |
 | `/away 3 holiday` | Tell leaders you're away: no automatic kick (`/away 0` = back) |
 | `/clan stats` · `/clan season` · `/clan scout` | Clan stats · season recap · this war's rivals |
 | **Leaders** | |
-| `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join |
+| `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join (war record, war readiness: best 32 cards' level) |
 | `/leader links` · `/leader link @who #TAG` | Who's linked · link someone else |
 | `/leader digest on:True` · `/leader backup` | Also get the weekly digest by DM · backup file now |
 | `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
 | `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
+| `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours), `last_call:2` (hours before reset; 0 = off) |
 | `/setup tidy 7` | Remove people from the Not in clan waiting room after 7 days (heads-up the day before; 0 = never) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
 
@@ -150,8 +152,8 @@ everything.
 
 | When | What | Where |
 |---|---|---|
-| Every 15 min on battle days | War board (edited in place) | War |
-| Last 4 hours of a battle day | Pings linked members with decks left | War |
+| Every 15 min on battle days | War board (edited in place), with the projected finish from half a day in | War |
+| Battle days, evening (busiest hours, or `/setup pings`) and a last call 2 h before reset | Pings linked members with decks left (people with `/remind` get their DM instead) | War |
 | Reset, from each member's `/remind` | Private reminder | DMs |
 | After each daily reset | Battle day summary (+/- % vs the day before) | Results |
 | War ends | Result; shout-outs (top 3, streaks); stats board refresh ~15 min later (who to act on: the website) | Results, Welcomes, Leaders, Rules |
