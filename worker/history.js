@@ -306,7 +306,7 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       // A new race: scout the other clans once.
       if (res.week && res.rivals?.length > 1 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`scout:${clan}:${res.week}`).first())) {
         await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${res.week}`, String(now)).run();
-        await postToJob(env, clan, 'war', await scoutRivals(env, clan, res.week, res.rivals).catch(() => null)).catch(() => {});
+        await postToJob(env, clan, 'scout', await scoutRivals(env, clan, res.week, res.rivals).catch(() => null), 'war').catch(() => {});
       }
       // Last training day: queue the weekly digest for the next run.
       if (!res.day && res.week && res.period % 7 === 2 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`digest:${clan}:${res.week}`).first())) {

@@ -29,7 +29,8 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/\/guilds\/G3\/channels$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'CR', type: 0, name: '📜-rules' }, { id: 'CV', type: 2, name: 'voice' }, { id: 'CLC', type: 0, name: 'leaders-chat' }]);
   if (/\/channels\/CLC$/.test(url) && opt.method === 'PATCH') return Response.json({ id: 'CLC' });
   if (/\/guilds\/G3\/channels$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEWCH-' + JSON.parse(opt.body).name.replace(/[^a-z]/g, '') });
-  if (/\/channels\/(CW|CR)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
+  if (/\/channels\/(NEWCH-\w*|CW|CR|CLC)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
+  if (/\/channels\/(CW|CR|CV)$/.test(url) && opt.method === 'PATCH') return Response.json({ id: url.split('/').pop() });
   if (/\/guilds\/G2\/roles$/.test(url)) return Response.json([{ id: 'R1', name: 'Member' }, { id: 'R2', name: 'Elder' }, { id: 'R3', name: 'Co-Leader' }, { id: 'R4', name: 'Leader' }, { id: 'R5', name: 'War Audit' }]);
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23QQQQQQ$/.test(url)) return new Response('{}', { status: 404 });
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC$/.test(url)) return Response.json({ name: 'perc', expLevel: 50, trophies: 7000, bestTrophies: 7500, warDayWins: 120, clanCardsCollected: 50000, totalDonations: 9000, clan: { name: 'Other' }, role: 'elder' });
@@ -236,42 +237,67 @@ assert.match(await refreshAll(env, 'G', cfgG, 'PPCCR8VU', false), /Refreshed/);
 assert.ok(!calls.some(c => c.method === 'DELETE' && !/messages\/NOTE$/.test(c.url)), 'without clean: nothing deleted but pin notices');
 assert.match(await refreshAll(env, 'NONE', null, 'PPCCR8VU', true), /Nothing set up yet/);
 
-// /autosetup: preview first, then roles, channels with permissions, jobs and pinned posts.
-const { autoSetup } = await import('../worker/discord.js');
-const pv = await autoSetup(env, 'G3', null, 'PPCCR8VU', false);
-assert.match(pv, /Linked members chat in war and general/);
-assert.match(pv, /would do this[\s\S]*Create roles: Co-Leader, Elder[\s\S]*Create #🔗-link-tag: how to link[\s\S]*<#CR>: rules\n➕ Create #📊-clan-stats: clan stats[\s\S]*<#CW>: war board \+ reminders, summaries \+ results[\s\S]*Drag \*\*War Audit\*\* above Leader/);
+// /autosetup: preview, then step by step (Continue button): roles, categories, channels, posts; fresh deletes old channels last.
+const { autoSetup, autoSetupNext } = await import('../worker/discord.js');
+const withIcon = { ...env, ASSETS: { fetch: async () => new Response(new Uint8Array([137, 80, 78, 71])) } };
+const pv = (await autoSetup(env, 'G3', null, 'PPCCR8VU', false)).content;
+assert.match(pv, /would do this[\s\S]*Roles: Co-Leader, Elder[\s\S]*👋 Start here[\s\S]*➕ #🔗-link-tag: how to link[\s\S]*🔧 <#CR>: rules[\s\S]*➕ #📊-clan-stats: clan stats[\s\S]*➕ #🏆-results[\s\S]*➕ #🔭-rival-scouting: rival scouting[\s\S]*🔧 <#CW>: war board[\s\S]*🔧 <#CV>[\s\S]*🛡️ Leaders[\s\S]*🔧 <#CLC>[\s\S]*Drag \*\*War Audit\*\* above Leader[\s\S]*in 3 steps/);
+assert.doesNotMatch(pv, /Deletes/, 'not fresh: nothing deleted');
 calls.length = 0;
-const ap = await autoSetup({ ...env, ASSETS: { fetch: async () => new Response(new Uint8Array([137, 80, 78, 71])) } }, 'G3', null, 'PPCCR8VU', true);
-assert.match(ap, /Channels in order[\s\S]*rank role[\s\S]*Server icon: the clan badge/);
-assert.match(calls.find(c => c.method === 'PATCH' && /\/guilds\/G3$/.test(c.url)).body.icon, /^data:image\/png;base64,iVBORw==/);
-assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
-assert.ok(!calls.some(c => c.method === 'PATCH' && /roles\/RL$/.test(c.url)), 'roles above the bot left alone');
-assert.match(ap, /Set up ✅[\s\S]*Role Co-Leader[\s\S]*<#CW>[\s\S]*Still to do:[\s\S]*Drag/);
+const s1 = await autoSetup(withIcon, 'G3', null, 'PPCCR8VU', true);
+assert.match(s1.content, /Step 1 of 3 done[\s\S]*channels in 4 categories[\s\S]*Role Co-Leader/);
+assert.equal(s1.components[0].components[0].custom_id, 'autosetup|next');
 const cfg3 = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v);
-assert.deepEqual(cfg3.channels, { war: 'CW', results: 'CW', joins: 'NEWCH-general', leaders: 'CLC' }, 'a private leaders-chat stays the leaders channel, never general');
+assert.equal(cfg3.channels.war, 'CW'); assert.equal(cfg3.channels.leaders, 'CLC', 'a private leaders-chat is the leaders channel, never general');
+assert.ok(cfg3.channels.results && cfg3.channels.results !== 'CW' && cfg3.channels.scout, 'results and scouting get their own channels');
 assert.equal(cfg3.roles.leader, 'RL'); assert.equal(cfg3.roles.coLeader, 'NEW-Co-Leader');
 const rulesOw = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CR')).body.permission_overwrites;
 assert.ok(rulesOw.every(o => o.type === 1 || !(BigInt(o.allow) & (1n << 11n))), 'rules: nobody but the bot can post');
-assert.ok(calls.some(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && c.body.name === '📊-clan-stats'), 'stats get their own channel');
-const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body.permission_overwrites;
-assert.ok(war.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
-assert.ok(war.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'members can chat in war');
-assert.ok(war.some(o => o.id === 'A' && o.type === 1), 'bot can post');
+const war = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CW')).body;
+assert.ok(war.parent_id, 'moved into a category');
+assert.ok(war.permission_overwrites.some(o => o.id === 'G3' && o.deny === String(1n << 10n)), 'war hidden from newcomers');
+assert.ok(war.permission_overwrites.some(o => o.id === 'RM3' && BigInt(o.allow) & (1n << 11n)), 'members can chat in war');
 const lead = calls.find(c => c.method === 'PATCH' && c.url.endsWith('/channels/CLC')).body.permission_overwrites;
 assert.ok(!lead.some(o => o.id === 'RM3'), 'members not in leaders');
+const res3 = calls.find(c => c.method === 'POST' && /guilds\/G3\/channels$/.test(c.url) && c.body.name === '🏆-results').body.permission_overwrites;
+assert.ok(res3.some(o => o.id === 'RM3' && !(BigInt(o.allow) & (1n << 11n))), 'results read-only for members');
+assert.ok(calls.some(c => c.method === 'POST' && c.body?.type === 4 && c.body.name === '🛡️ Leaders'), 'categories made');
+assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
+calls.length = 0;
+const s2 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
+assert.match(s2.content, /Step 2 of 3 done[\s\S]*Rules → <#CR>[\s\S]*Clan stats → <#NEWCH/);
+assert.match(s2.content, /Server icon: the clan badge/);
+assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)), 'the "pinned a message" notice is removed');
+const s3 = await autoSetupNext(withIcon, 'G3', 'PPCCR8VU');
+assert.match(s3.content, /All done ✅[\s\S]*channel notes pinned[\s\S]*Still to do:[\s\S]*Drag/);
+assert.equal(s3.components.length, 0);
+assert.match((await autoSetupNext(env, 'G3', 'PPCCR8VU')).content, /Nothing in progress/);
+// Continue button: leaders only.
+assert.match(await text(await interaction({ type: 3, guild_id: 'G3', member: member('U3'), data: { custom_id: 'autosetup|next' } })), /Leaders only/);
+// Fresh: everything new, the old channels deleted in the last step.
+const pvF = (await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', false, true)).content;
+assert.match(pvF, /Deletes 4 existing channels[\s\S]*in 4 steps/);
+await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true, true);
+await autoSetupNext(env, 'G3', 'PPCCR8VU'); const f3 = await autoSetupNext(env, 'G3', 'PPCCR8VU');
+assert.match(f3.content, /Last step deletes the \*\*4 old channels\*\*/);
+calls.length = 0;
+const f4 = await autoSetupNext(env, 'G3', 'PPCCR8VU');
+assert.match(f4.content, /set up the server ✅[\s\S]*Deleted 4 old channels/);
+assert.deepEqual(calls.filter(c => c.method === 'DELETE' && /\/channels\/\w+$/.test(c.url)).map(c => c.url.split('/').pop()).sort(), ['CLC', 'CR', 'CV', 'CW']);
 // A private channel the bot can't change keeps its job, with a clear fix.
+await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G3', '${JSON.stringify(cfg3)}')`);
 globalThis.lockLeaders = true;
-const ap2 = await autoSetup(env, 'G3', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v), 'PPCCR8VU', true);
+const ap2 = await autoSetup(env, 'G3', cfg3, 'PPCCR8VU', true);
 globalThis.lockLeaders = false;
-assert.match(ap2, /<#CLC>: couldn't change its permissions[\s\S]*add \*\*War Audit\*\*/);
+assert.match(ap2.content, /<#CLC>: couldn't change it[\s\S]*add War Audit/);
 assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v).channels.leaders, 'CLC', 'job kept');
+await DB.exec(`DELETE FROM kv WHERE k = 'autosetup:G3'`);
 
 // Someone with the Leader role (no Discord permissions) counts as a leader.
 assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U8' }, permissions: '0', roles: ['RL'] }, data: { name: 'links', options: [] } })), /Linked:/);
 // Without Manage Channels it says so and changes nothing.
 const noPerm = await autoSetup({ ...env, DISCORD_APP_ID: 'NOPE' }, 'G3', null, 'PPCCR8VU', true);
-assert.match(noPerm, /Can't start yet[\s\S]*Manage Channels/);
+assert.match(noPerm.content, /Can't start yet[\s\S]*Manage Channels/);
 
 // /autosetup keeps channels already chosen, whatever they're called (here: leaders = "bot-talk").
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G4', '{"clan":"PPCCR8VU","channels":{"leaders":"BT","war":"CW"},"roles":{}}')`);
@@ -279,8 +305,8 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G4', '{"clan":"
   globalThis.fetch = async (url, opt = {}) => { const u = String(url).replace('/guilds/G4/', '/guilds/G3/');
     if (/\/guilds\/G3\/channels$/.test(u) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'BT', type: 0, name: 'bot-talk' }]);
     return realF(u, opt); };
-  const pv4 = await autoSetup(env, 'G4', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G4'").first()).v), 'PPCCR8VU', false);
-  assert.match(pv4, /<#BT>: to-do list/); assert.doesNotMatch(pv4, /Create #🛡️-leaders/);
+  const pv4 = (await autoSetup(env, 'G4', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G4'").first()).v), 'PPCCR8VU', false)).content;
+  assert.match(pv4, /<#BT>: to-do list/); assert.doesNotMatch(pv4, /➕ #🛡️-leaders/);
   globalThis.fetch = realF; }
 
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.

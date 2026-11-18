@@ -43,6 +43,7 @@ export const COMMANDS = [
       { name: 'War board + battle-day reminders', value: 'war' },
       { name: 'Battle day summaries + war results', value: 'results' },
       { name: 'Welcomes + shout-outs', value: 'joins' },
+      { name: 'Rival scouting (each new war)', value: 'scout' },
       { name: 'Leaders only: to-do list after each war + absences', value: 'leaders' },
       { name: 'Clan stats board (updated after each war)', value: 'stats' },
       { name: 'Rules (kept up to date)', value: 'rules' },
@@ -66,8 +67,9 @@ export const COMMANDS = [
   { name: 'digest', description: 'Leaders: a private weekly digest before battle days (warnings, close to Elder, slipping…)', options: [
     { type: 5, name: 'on', description: 'On or off', required: true }] },
   { name: 'backup', description: 'Leaders: post a backup file of the full history in the leaders\' channel now' },
-  { name: 'autosetup', description: 'Leaders: set up roles, channels, permissions and the bot\'s posts for you', options: [
-    { type: 5, name: 'apply', description: 'False (default): only show what it would do. True: do it.' }] },
+  { name: 'autosetup', description: 'Leaders: set up the whole server (roles, channels, permissions, posts)', options: [
+    { type: 5, name: 'apply', description: 'False (default): only show what it would do. True: do it.' },
+    { type: 5, name: 'fresh', description: 'True: build everything new and delete all the old channels at the end' }] },
   { name: 'refresh', description: 'Leaders: re-post everything the bot keeps (rules, how to link, stats, to-do list)', options: [
     { type: 5, name: 'clean', description: 'First delete the bot\'s old messages in those channels' }] },
   { name: 'sync', description: 'Leaders: update everyone\'s roles and nicknames from the game now' },
@@ -113,7 +115,7 @@ async function allConfigs(env) {
     .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
 }
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
-export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs',
+export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
   leaders: 'Leaders only: to-do list after each war + absences' };
 const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
 const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
@@ -172,7 +174,7 @@ export async function handleDiscord(request, env, ctx) {
   if (!(await verifyDiscord(request, body, env.DISCORD_PUBLIC_KEY))) return new Response('bad signature', { status: 401 });
   const i = JSON.parse(body);
   if (i.type === 1) return Response.json({ type: 1 });                       // Discord's endpoint check
-  if (i.type === 3) return handleButton(i, env);
+  if (i.type === 3) return handleButton(i, env, ctx);
   if (i.type !== 2) return Response.json(reply('Not supported'));
   await setupDB(env);
   const guild = i.guild_id, user = i.member?.user?.id || i.user?.id, opt = Object.fromEntries((i.data.options || []).map(o => [o.name, o.value]));
@@ -343,8 +345,8 @@ export async function handleDiscord(request, env, ctx) {
     case 'autosetup': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       later((async () => {
-        const msg = await autoSetup(env, guild, cfg, clan, !!opt.apply).catch(e => `Something went wrong: ${String(e.message || e).slice(0, 150)}`);
-        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg.slice(0, 1990), allowed_mentions: { parse: [] } });
+        const msg = await autoSetup(env, guild, cfg, clan, !!opt.apply, !!opt.fresh).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 150)}` }));
+        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } });
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
@@ -416,9 +418,20 @@ export async function recruitCard(env, clan, tag) {
 }
 
 // A to-do button: tick (or untick) a group for everyone, then redraw the list in place.
-async function handleButton(i, env) {
+async function handleButton(i, env, ctx) {
   await setupDB(env);
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
+  if (kind === 'autosetup') {
+    const cfg0 = await getConfig(env, i.guild_id);
+    if (!isLeader(i.member, cfg0)) return Response.json(reply('Leaders only.'));
+    const clan0 = cfg0?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
+    const work = (async () => {
+      const msg = await autoSetupNext(env, i.guild_id, clan0).catch(e => ({ content: `Something went wrong: ${String(e.message || e).slice(0, 150)}`, components: [] }));
+      await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { ...msg, content: msg.content.slice(0, 1990), allowed_mentions: { parse: [] } }).catch(() => null);
+    })();
+    if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
+    return Response.json({ type: 6 });   // "working on it": the message is updated when the step finishes
+  }
   if (kind !== 'todo') return Response.json(reply('Not supported'));
   const cfg = await getConfig(env, i.guild_id), clan = cfg?.clan;
   if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
@@ -573,7 +586,7 @@ async function upsert(env, key, channel, content) {
   const body = typeof content === 'string' ? { content: content.slice(0, 1990), allowed_mentions: { parse: [] } } : content;
   const old = saved ? JSON.parse(saved.v) : null;
   if (old && old.channel !== channel && old.id) await dapi(env, 'DELETE', `/channels/${old.channel}/messages/${old.id}`).catch(() => null);   // moved: remove the old copy
-  if (saved && old.channel === channel) {   // same channel: edit; a new channel gets a new message
+  if (old && old.channel === channel && old.id) {   // same channel: edit; a new channel (or no message yet) gets a new message
     const { channel: ch, id } = JSON.parse(saved.v);
     const ok = await dapi(env, 'PATCH', `/channels/${ch}/messages/${id}`, body).then(() => true).catch(() => false);
     if (ok) return id;
@@ -669,11 +682,14 @@ export async function shoutOuts(env, clan, week, target) {
 }
 
 // Post a message to one job's channel in every server set up for this clan.
-export async function postToJob(env, clan, job, content) {
+export async function postToJob(env, clan, job, content, fallback = null) {
   if (!discordReady(env) || !content) return 0;
   await setupDB(env);
   let sent = 0;
-  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) if (await postJob(env, cfg.guild, cfg, job, content).catch(() => null)) sent++;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const j = chan(cfg, job) ? job : fallback && chan(cfg, fallback) ? fallback : null;
+    if (j && await postJob(env, cfg.guild, cfg, j, content).catch(() => null)) sent++;
+  }
   return sent;
 }
 
@@ -711,121 +727,217 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
   return sent;
 }
 
-// ---- /autosetup: roles, channels and permissions, then the bot's jobs and posts ----
+// ---- /autosetup: the whole server, in steps (each step is one Worker run, within its 50-request limit) ----
+//   Step 1: roles, categories, channels with permissions (reusing matching ones unless fresh)
+//   Step 2: jobs, rules / how to link / stats (posted, pinned), server icon
+//   Step 3: a pinned note in each channel, the to-do list, rival scouting
+//   Step 4 (fresh only): delete the old channels
 const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
-  MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, PIN: 1n << 51n, ADMIN: 1n << 3n };
+  CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n };
 const bits = (...k) => String(k.reduce((t, x) => t | P[x], 0n));
 const CHAT = bits('VIEW', 'SEND', 'HISTORY', 'REACT', 'EMBED', 'ATTACH', 'APPS'), READ = bits('VIEW', 'HISTORY', 'REACT', 'APPS');
 const BOT = bits('VIEW', 'SEND', 'HISTORY', 'EMBED', 'ATTACH');
 const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe2af4b], ['elder', 'Elder', 0x3b7dd8], ['member', 'Member', 0x95a5a6]];
-// Channel → which existing channel names count, the name to create, and its jobs.
-const CHANNEL_SPEC = [
-  { key: 'link', match: /link/, name: '🔗-link-tag', jobs: ['welcome'], topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
-  { key: 'rules', match: /rules/, name: '📜-rules', jobs: ['rules'], topic: 'Clan rules, kept up to date by War Audit.' },
-  { key: 'stats', match: /stats/, name: '📊-clan-stats', jobs: ['stats'], topic: 'Clan stats, updated by War Audit after every war.' },
-  { key: 'war', match: /^war$|warboard|clanwar/, name: '⚔️-war', jobs: ['war', 'results'], topic: 'War board, reminders, battle day summaries and results.' },
-  { key: 'general', match: /^(?!.*(leader|staff|mod|admin)).*(general|chat)/, name: '💬-general', jobs: ['joins'], topic: 'Chat. Welcomes and shout-outs from War Audit.' },
-  { key: 'leaders', match: /leader|staff|mods?$/, name: '🛡️-leaders', jobs: ['leaders'], topic: 'Leaders only: after-war to-do list, absences, digests, backups.' },
+// The layout. access: newcomers | public-read | members-read | members | leaders. jobs: what the bot posts there.
+export const LAYOUT = [
+  { cat: '👋 Start here', access: 'public', channels: [
+    { key: 'link', name: '🔗-link-tag', access: 'newcomers', jobs: ['welcome'], match: /link/, topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
+    { key: 'rules', name: '📜-rules', access: 'public-read', jobs: ['rules'], match: /rules/, topic: 'Clan rules, kept up to date by War Audit.' }] },
+  { cat: '📊 Clan info', access: 'public', channels: [
+    { key: 'stats', name: '📊-clan-stats', access: 'public-read', jobs: ['stats'], match: /stats/, topic: 'Clan stats, updated after every war.' },
+    { key: 'results', name: '🏆-results', access: 'members-read', jobs: ['results'], match: /result/, topic: 'Battle day summaries, war results and season recaps.' },
+    { key: 'scout', name: '🔭-rival-scouting', access: 'members-read', jobs: ['scout'], match: /scout|rival/, topic: 'Who we are racing each war, and how they usually do.' }] },
+  { cat: '⚔️ Clan', access: 'members', channels: [
+    { key: 'war', name: '⚔️-war', access: 'members', jobs: ['war'], match: /^war$|warboard|clanwar/, topic: 'War board, reminders and war chat.' },
+    { key: 'general', name: '💬-general', access: 'members', jobs: ['joins'], match: /^(?!.*(leader|staff|mod|admin)).*(general|chat)/, topic: 'Clan chat. Welcomes and shout-outs from War Audit.' },
+    { key: 'bot', name: '🤖-bot-commands', access: 'members', jobs: [], match: /bot|command/, topic: 'Use War Audit here: /mystats, /stats, /remind, /away, /season, /scout.' },
+    { key: 'voice', name: '🔊 Clan voice', type: 2, access: 'members', jobs: [], match: /voice/ }] },
+  { cat: '🛡️ Leaders', access: 'leaders', channels: [
+    { key: 'leaders', name: '🛡️-leaders', access: 'leaders', jobs: ['leaders'], match: /leader|staff|mods?$/, topic: 'Leaders only: to-do list, absences, digest, backups.' },
+    { key: 'leaderchat', name: '💭-leader-chat', access: 'leaders', jobs: [], match: /leaderchat|staffchat/, topic: 'Leaders only.' }] },
 ];
+const SPECS = LAYOUT.flatMap(c => c.channels);
 const plain = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
 
-function overwritesFor(key, guild, roles, botId) {
+function overwritesFor(access, guild, roles, botId, voice = false) {
   const ow = (id, allow, deny = '0', type = 0) => id && { id, type, allow, deny };
   const all = ['leader', 'coLeader', 'elder', 'member'].map(k => roles[k]), lead = [roles.leader, roles.coLeader], rest = [roles.elder, roles.member];
   const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
-  if (key === 'link') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...rest.map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
-  if (key === 'rules' || key === 'stats') return [ow(guild, READ, bits('SEND')), bot].filter(Boolean);   // read-only for everyone; only the bot posts
-  if (key === 'leaders') return [hide, ...lead.map(r => ow(r, CHAT)), bot].filter(Boolean);
-  return [hide, ...all.map(r => ow(r, CHAT)), bot].filter(Boolean);
+  const room = voice ? bits('VIEW', 'CONNECT', 'SPEAK') : CHAT;
+  if (access === 'public') return [];
+  if (access === 'newcomers') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...rest.map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
+  if (access === 'public-read') return [ow(guild, READ, bits('SEND')), bot].filter(Boolean);
+  if (access === 'members-read') return [hide, ...all.map(r => ow(r, READ, bits('SEND'))), bot].filter(Boolean);
+  if (access === 'leaders') return [hide, ...lead.map(r => ow(r, room)), voice ? null : bot].filter(Boolean);
+  return [hide, ...all.map(r => ow(r, room)), voice ? null : bot].filter(Boolean);
 }
 
-export async function autoSetup(env, guild, cfg, clan, apply) {
-  await setupDB(env);
+const INTROS = {
+  war: `⚔️ **This channel:** the **war board** on battle days (updated every 15 minutes) and **pings** for anyone with decks left in a battle day's last 4 hours. Chat about the war here too.`,
+  joins: `💬 **Clan chat.** War Audit posts a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war.`,
+  results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
+  scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
+  leaders: `🛡️ **Leaders only. War Audit posts here:** the **to-do list** after each war (who to kick, demote, warn, promote, with tick buttons), **absences** from \`/away\`, the **weekly digest** before battle days (or privately with \`/digest on:True\`) and a **monthly backup** of the full history.`,
+  bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/away 3 holiday\` tell the leaders you're away · \`/season\` season recap · \`/scout\` this war's rivals`,
+};
+const LABEL = { welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
+  war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups' };
+const STEPS = fresh => fresh ? 4 : 3;
+const nextButton = (step, of) => [{ type: 1, components: [{ type: 2, style: 1, label: `Continue ▶ (step ${step} of ${of})`, custom_id: 'autosetup|next' }] }];
+
+async function serverState(env, guild) {
   const botId = env.DISCORD_APP_ID;
-  const [roles, channels, me, guildInfo] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`),
+  const [roles, channels, me, info] = await Promise.all([dapi(env, 'GET', `/guilds/${guild}/roles`), dapi(env, 'GET', `/guilds/${guild}/channels`),
     dapi(env, 'GET', `/guilds/${guild}/members/${botId}`).catch(() => null), dapi(env, 'GET', `/guilds/${guild}`).catch(() => null)]);
-  // What the bot may do (its roles' permissions).
   const mine = roles.filter(r => (me?.roles || []).includes(r.id) || r.id === guild);
-  const perms = mine.reduce((t, r) => t | BigInt(r.permissions || '0'), 0n), has = k => (perms & P.ADMIN) === P.ADMIN || (perms & P[k]) === P[k];
+  const perms = mine.reduce((t, r) => t | BigInt(r.permissions || '0'), 0n);
+  const has = k => (perms & P.ADMIN) === P.ADMIN || (perms & P[k]) === P[k];
   const top = Math.max(0, ...roles.filter(r => (me?.roles || []).includes(r.id)).map(r => r.position));
-  const plan = [], problems = [];
-  if (!has('MANAGE_ROLES')) problems.push('Give **War Audit** the **Manage Roles** permission (Server Settings → Roles → War Audit).');
-  if (!has('MANAGE_CHANNELS')) problems.push('Give **War Audit** the **Manage Channels** permission (Server Settings → Roles → War Audit). You can turn it off again afterwards.');
+  return { roles, channels, info, has, top, botId };
+}
 
-  // Roles: existing ones by name, the rest created.
-  const roleIds = {};
-  for (const [k, name] of ROLE_SPEC) { const r = roles.find(x => plain(x.name) === plain(name)); if (r) roleIds[k] = r.id; }
-  const missingRoles = ROLE_SPEC.filter(([k]) => !roleIds[k]);
-  if (missingRoles.length) plan.push(`➕ Create roles: ${missingRoles.map(r => r[1]).join(', ')}`);
-  const above = ROLE_SPEC.filter(([k]) => roleIds[k] && roles.find(r => r.id === roleIds[k]).position >= top).map(r => r[1]);
-  if (above.length) problems.push(`Drag **War Audit** above ${above.join(', ')} (Server Settings → Roles), so it can give ${above.length === 1 ? 'that role' : 'those roles'} and set those players' nicknames. Discord doesn't let a bot move itself.`);
-
-  // Channels: existing text channels by name, the rest created.
-  const text = channels.filter(c => c.type === 0), found = {};
-  // Channels already chosen (with /post-here or an earlier /autosetup) keep their jobs, whatever they're called.
+// Which existing channels are reused (not when fresh): ones already given a job, then by name.
+async function reuse(env, guild, cfg, channels) {
+  const found = {}, text = channels.filter(c => c.type === 0), voice = channels.filter(c => c.type === 2);
   const savedCh = async k => (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v).channel)) || null;
-  const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), stats: await savedCh('discord:stats:' + guild), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
+  const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), stats: await savedCh('discord:stats:' + guild),
+    results: cfg?.channels?.results !== cfg?.channels?.war ? chan(cfg, 'results') : null, scout: chan(cfg, 'scout'), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
   for (const [k, id] of Object.entries(chosen)) if (id && text.some(c => c.id === id) && !Object.values(found).includes(id)) found[k] = id;
-  for (const k of ['leaders', 'link', 'rules', 'stats', 'war', 'general']) {
-    if (found[k]) continue;   // private ones first, so they're never taken as public
-    const spec = CHANNEL_SPEC.find(x => x.key === k), c = text.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
+  for (const k of ['leaderchat', 'leaders', 'link', 'rules', 'stats', 'results', 'scout', 'war', 'bot', 'general', 'voice']) {
+    if (found[k]) continue;
+    const spec = SPECS.find(x => x.key === k), pool = spec.type === 2 ? voice : text;
+    const c = pool.find(x => spec.match.test(plain(x.name)) && !Object.values(found).includes(x.id));
     if (c) found[k] = c.id;
   }
-  const label = { stats: 'clan stats', war: 'war board + reminders', results: 'summaries + results', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups', rules: 'rules', stats: 'clan stats', welcome: 'how to link' };
-  for (const spec of CHANNEL_SPEC) plan.push(found[spec.key] ? `🔧 <#${found[spec.key]}>: ${spec.jobs.map(j => label[j]).join(', ')}` : `➕ Create #${spec.name}: ${spec.jobs.map(j => label[j]).join(', ')}`);
-  plan.push('🔒 Newcomers see only link, rules and stats. Rules and stats are read-only for everyone (only War Audit posts). Linked members chat in war and general. Only Leader and Co-Leader see leaders.');
-  plan.push('🎨 Channels in order with topics; rank roles coloured and listed separately in the member list' + (has('MANAGE_GUILD') && !guildInfo?.icon ? '; the clan badge as the server icon' : '') + '.');
-  plan.push('📌 Post and pin the rules, clan stats and how-to-link messages; post the to-do list in leaders.');
+  return found;
+}
 
-  if (!apply) return [`**/autosetup would do this:**`, ...plan, problems.length ? `\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}` : '', `\nRun \`/autosetup apply:True\` to do it. Existing permissions on those channels are replaced.`].filter(Boolean).join('\n');
+export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
+  await setupDB(env);
+  const st = await serverState(env, guild), problems = [];
+  if (!st.has('MANAGE_ROLES')) problems.push('Give **War Audit** the **Manage Roles** permission (Server Settings → Roles → War Audit).');
+  if (!st.has('MANAGE_CHANNELS')) problems.push('Give **War Audit** the **Manage Channels** permission (Server Settings → Roles → War Audit).');
+  const found = fresh ? {} : await reuse(env, guild, cfg, st.channels);
+  const roleIds = {};
+  for (const [k, name] of ROLE_SPEC) { const r = st.roles.find(x => plain(x.name) === plain(name)); if (r) roleIds[k] = r.id; }
+  const above = ROLE_SPEC.filter(([k]) => roleIds[k] && st.roles.find(r => r.id === roleIds[k]).position >= st.top).map(r => r[1]);
+  if (above.length) problems.push(`Drag **War Audit** above ${above.join(', ')} (Server Settings → Roles), so it can give ${above.length === 1 ? 'that role' : 'those roles'} and set nicknames. Discord doesn't let a bot move itself.`);
+  const old = fresh ? st.channels.filter(c => !Object.values(found).includes(c.id)) : [];
+
+  if (!apply) {
+    const lines = [`**/autosetup${fresh ? ' fresh' : ''} would do this:**`];
+    const missing = ROLE_SPEC.filter(([k]) => !roleIds[k]).map(r => r[1]);
+    if (missing.length) lines.push(`➕ Roles: ${missing.join(', ')}`);
+    for (const c of LAYOUT) lines.push(`**${c.cat}**`, ...c.channels.map(x => `${found[x.key] ? `🔧 <#${found[x.key]}>` : `➕ ${x.type === 2 ? '' : '#'}${x.name}`}${x.jobs.length ? ': ' + x.jobs.map(j => LABEL[j]).join(', ') : ''}`));
+    lines.push('🔒 Newcomers see only Start here and stats. Rules and stats are read-only for everyone; results and scouting read-only for members. Only Leader and Co-Leader see the Leaders category.');
+    if (old.length) lines.push(`🗑️ **Deletes ${old.length} existing channel${old.length === 1 ? '' : 's'}** (last step): ${old.filter(c => c.type !== 4).slice(0, 15).map(c => c.name).join(', ')}${old.length > 15 ? '…' : ''}`);
+    if (problems.length) lines.push(`\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}`);
+    lines.push(`\nRun \`/autosetup apply:True${fresh ? ' fresh:True' : ''}\` to do it, in ${STEPS(fresh)} steps (tap Continue between them).`);
+    return { content: lines.join('\n') };
+  }
   const blocking = problems.filter(x => /Manage (Roles|Channels)/.test(x));
-  if (blocking.length) return `**Can't start yet:**\n${blocking.map(x => '• ' + x).join('\n')}`;
+  if (blocking.length) return { content: `**Can't start yet:**\n${blocking.map(x => '• ' + x).join('\n')}` };
 
+  // Step 1: roles, categories, channels.
   const done = [];
-  for (const [k, name, color] of missingRoles) {
+  for (const [k, name, color] of ROLE_SPEC) if (!roleIds[k]) {
     const r = await dapi(env, 'POST', `/guilds/${guild}/roles`, { name, color, hoist: true, mentionable: false, permissions: '0' }).catch(() => null);
     if (r?.id) { roleIds[k] = r.id; done.push(`✅ Role ${name}`); } else done.push(`⚠️ Couldn't create role ${name}`);
   }
-  const ch = {};
-  for (const spec of CHANNEL_SPEC) {
-    const permission_overwrites = overwritesFor(spec.key, guild, roleIds, botId);
-    const res = found[spec.key]
-      ? await dapi(env, 'PATCH', `/channels/${found[spec.key]}`, { permission_overwrites }).catch(e => ({ error: e.message }))
-      : await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: spec.name, type: 0, topic: spec.topic, permission_overwrites }).catch(e => ({ error: e.message }));
-    if (res?.id) { ch[spec.key] = res.id; done.push(`✅ <#${res.id}>`); }
-    else if (found[spec.key]) {
-      ch[spec.key] = found[spec.key];   // keep its jobs; only the permissions are unchanged
-      done.push(`⚠️ <#${found[spec.key]}>: couldn't change its permissions (War Audit isn't in this private channel). Edit Channel → Permissions → add **War Audit** → allow View Channel, then run \`/autosetup apply:True\` again. Its jobs are set anyway.`);
-    } else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
-    if (found[spec.key] && res?.id && !text.find(c => c.id === res.id)?.topic) await dapi(env, 'PATCH', `/channels/${res.id}`, { topic: spec.topic }).catch(() => null);
+  for (const [k, , color] of ROLE_SPEC) {   // coloured, listed separately (only roles below the bot)
+    const r = st.roles.find(x => x.id === roleIds[k]);
+    if (r && r.position < st.top && (!r.hoist || !r.color)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { color: r.color || color, hoist: true }).catch(() => null);
   }
-  // Tidy: channels in a sensible order (link, rules, war, general, leaders), above any others.
-  const order = CHANNEL_SPEC.map(x => ch[x.key]).filter(Boolean);
-  if (order.length) await dapi(env, 'PATCH', `/guilds/${guild}/channels`, order.map((id, k) => ({ id, position: k }))).then(() => done.push('✅ Channels in order'), () => null);
-  // Rank roles: coloured, shown separately in the member list (only those below the bot's own role can be changed).
-  let tidied = 0;
-  for (const [k, , color] of ROLE_SPEC) {
-    const r = roles.find(x => x.id === roleIds[k]);
-    if (r && r.position < top && (!r.hoist || !r.color)) if (await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { color: r.color || color, hoist: true }).then(() => true, () => false)) tidied++;
-  }
-  if (tidied) done.push(`✅ ${tidied} rank role${tidied === 1 ? '' : 's'} coloured and listed separately`);
-  // Server icon: the clan badge, only if the server has none.
-  if (has('MANAGE_GUILD') && guildInfo && !guildInfo.icon && env.ASSETS) {
-    const png = await env.ASSETS.fetch(new Request('https://assets.local/icons/discord-server-icon.png')).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
-    if (png) {
-      let bin = ''; const u8 = new Uint8Array(png); for (let k = 0; k < u8.length; k += 0x8000) bin += String.fromCharCode(...u8.subarray(k, k + 0x8000));
-      if (await dapi(env, 'PATCH', `/guilds/${guild}`, { icon: 'data:image/png;base64,' + btoa(bin) }).then(() => true, () => false)) done.push('✅ Server icon: the clan badge');
+  const ids = {};
+  let pos = 0;
+  for (const cat of LAYOUT) {
+    const existing = !fresh && st.channels.find(c => c.type === 4 && plain(c.name) === plain(cat.cat));
+    const catRes = existing || await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: cat.cat, type: 4, position: pos++, permission_overwrites: overwritesFor(cat.access, guild, roleIds, st.botId) }).catch(() => null);
+    for (const [n2, spec] of cat.channels.entries()) {
+      const permission_overwrites = overwritesFor(spec.access, guild, roleIds, st.botId, spec.type === 2);
+      const body = { permission_overwrites, parent_id: catRes?.id || null, position: n2, ...(spec.type === 2 ? {} : { topic: spec.topic }) };
+      const res = found[spec.key]
+        ? await dapi(env, 'PATCH', `/channels/${found[spec.key]}`, body).catch(e => ({ error: e.message }))
+        : await dapi(env, 'POST', `/guilds/${guild}/channels`, { name: spec.name, type: spec.type || 0, ...body }).catch(e => ({ error: e.message }));
+      if (res?.id) ids[spec.key] = res.id;
+      else if (found[spec.key]) { ids[spec.key] = found[spec.key]; done.push(`⚠️ <#${found[spec.key]}>: couldn't change it (War Audit isn't in this private channel: Edit Channel → Permissions → add War Audit → View Channel). Its job is kept.`); }
+      else done.push(`⚠️ ${spec.name}: ${String(res?.error || 'failed').replace(/^Discord /, '')}`);
     }
   }
-  // Jobs, then the kept messages (posted fresh in their channels) via /refresh.
+  done.unshift(`✅ ${Object.keys(ids).length} channels in ${LAYOUT.length} categories, with permissions`);
   const next = { clan, channels: {}, roles: roleIds };
-  for (const spec of CHANNEL_SPEC) for (const j of spec.jobs) if (ch[spec.key] && JOBS[j]) next.channels[j] = ch[spec.key];
+  for (const spec of SPECS) for (const j of spec.jobs) if (ids[spec.key] && JOBS[j]) next.channels[j] = ids[spec.key];
   await setConfig(env, guild, next);
-  for (const [job, key] of [['rules', 'rules'], ['stats', 'stats'], ['welcome', 'link']]) if (ch[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ch[key], id: null })).run();
-  const posts = await refreshAll(env, guild, next, clan, false);
-  return ['**Set up ✅**', ...done, '', ...posts.split('\n').slice(1).filter(Boolean),
-    problems.length ? `\n**Still to do:**\n${problems.filter(x => !/Manage (Roles|Channels)/.test(x)).map(x => '• ' + x).join('\n')}` : '',
-    '\nNext: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
+  for (const [job, key] of [['rules', 'rules'], ['stats', 'stats'], ['welcome', 'link']]) if (ids[key]) {
+    const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(`discord:${job}:${guild}`).first();
+    const p2 = prev ? JSON.parse(prev.v) : null;
+    if (!p2 || p2.channel !== ids[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ids[key], id: null })).run();
+  }
+  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
+  return { content: [`**Step 1 of ${STEPS(fresh)} done: roles and channels**`, ...done].join('\n').slice(0, 1900), components: nextButton(2, STEPS(fresh)) };
+}
+
+// The next step, from the Continue button.
+export async function autoSetupNext(env, guild, clan) {
+  await setupDB(env);
+  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('autosetup:' + guild).first();
+  if (!row) return { content: 'Nothing in progress. Start with `/autosetup`.', components: [] };
+  const run = JSON.parse(row.v), cfg = await getConfig(env, guild), of = STEPS(run.fresh), done = [];
+  const save = s => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ ...run, step: s })).run();
+  const pin = async (ch, id) => {
+    if (!(await dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false))) return false;
+    const recent = await dapi(env, 'GET', `/channels/${ch}/messages?limit=5`).catch(() => []);
+    const note = (Array.isArray(recent) ? recent : []).find(m => m.type === 6 && m.message_reference?.message_id === id);
+    if (note) await dapi(env, 'DELETE', `/channels/${ch}/messages/${note.id}`).catch(() => null);
+    return true;
+  };
+  const post = async (key, ch, text, label) => {
+    const id = await upsert(env, key, ch, text).catch(() => null);
+    if (!id) return done.push(`⚠️ ${label}: couldn't post in <#${ch}>`);
+    await pin(ch, id); done.push(`✅ ${label} → <#${ch}>`);
+  };
+  if (run.step === 2) {
+    const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
+    const [rules, welcome, stats] = await Promise.all([kv('discord:rules:' + guild), kv('discord:welcome:' + guild), kv('discord:stats:' + guild)]);
+    if (rules) await post('discord:rules:' + guild, rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
+    if (welcome) await post('discord:welcome:' + guild, welcome.channel, WELCOME, 'How to link');
+    if (stats) await post('discord:stats:' + guild, stats.channel, await statsBoard(env, clan), 'Clan stats');
+    const info = await dapi(env, 'GET', `/guilds/${guild}`).catch(() => null);
+    if (info && !info.icon && env.ASSETS) {
+      const png = await env.ASSETS.fetch(new Request('https://assets.local/icons/discord-server-icon.png')).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+      if (png) {
+        let bin = ''; const u8 = new Uint8Array(png); for (let k = 0; k < u8.length; k += 0x8000) bin += String.fromCharCode(...u8.subarray(k, k + 0x8000));
+        if (await dapi(env, 'PATCH', `/guilds/${guild}`, { icon: 'data:image/png;base64,' + btoa(bin) }).then(() => true, () => false)) done.push('✅ Server icon: the clan badge');
+      }
+    }
+    await save(3);
+    return { content: [`**Step 2 of ${of} done: rules, how to link, stats**`, ...done].join('\n'), components: nextButton(3, of) };
+  }
+  if (run.step === 3) {
+    for (const key of ['war', 'joins', 'results', 'scout', 'leaders']) { const c = chan(cfg, key); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
+    if (run.ids?.bot) await post(`discord:intro:${guild}:${run.ids.bot}`, run.ids.bot, INTROS.bot, 'Note');
+    if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: try `/todo`'));
+    if (chan(cfg, 'scout')) {
+      const race = await cr(env, `/clans/${encodeURIComponent('#' + clan)}/currentriverrace`).catch(() => null);
+      const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
+      const text = race && await scoutRivals(env, clan, week, (race.clans || []).map(c => ({ tag: String(c.tag).replace('#', ''), name: c.name, score: c.clanScore || 0 }))).catch(() => null);
+      if (text && await postJob(env, guild, cfg, 'scout', text).catch(() => null)) { done.push(`✅ Rival scouting → <#${chan(cfg, 'scout')}>`); if (week) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${week}`, String(Date.now())).run(); }
+    }
+    const shown = done.filter(x => !/^✅ Note/.test(x)), notes = done.length - shown.length;
+    if (run.fresh && run.old.length) { await save(4); return { content: [`**Step 3 of ${of} done: notes${notes ? ` (${notes} pinned)` : ''}, to-do list, scouting**`, ...shown, '', `Last step deletes the **${run.old.length} old channels** (including this one).`].join('\n'), components: nextButton(4, of) }; }
+    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
+    return { content: [`**All done ✅**`, ...shown, notes ? `✅ ${notes} channel notes pinned` : '', run.problems?.length ? `\n**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', '\nNext: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n'), components: [] };
+  }
+  if (run.step === 4) {
+    let removed = 0; const left = [];
+    for (const id of run.old) { if (removed >= 40) { left.push(id); continue; } if (await dapi(env, 'DELETE', `/channels/${id}`).then(() => true, () => false)) removed++; }
+    if (left.length) { run.old = left; await save(4); return { content: `Deleted ${removed} old channels; ${left.length} left.`, components: nextButton(4, of) }; }
+    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
+    const summary = [`**War Audit set up the server ✅**`, `Deleted ${removed} old channel${removed === 1 ? '' : 's'}.`, run.problems?.length ? `**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', 'Next: `/link #YOURTAG`, then `/sync`.'].filter(Boolean).join('\n');
+    if (chan(cfg, 'leaders')) await postJob(env, guild, cfg, 'leaders', summary).catch(() => null);   // the channel this ran in may be gone
+    return { content: summary, components: [] };
+  }
+  return { content: 'Nothing to do.', components: [] };
 }
 
 // /refresh: re-post (or edit) every message the bot keeps, optionally deleting its old messages first, and pin them.

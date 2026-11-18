@@ -89,35 +89,39 @@ At **discord.com/developers/applications** → **New Application** (e.g. "War Au
 
 ## 6. Discord server: roles and channels
 
-The bot does this itself in step 7 (`/autosetup`). The only thing it can't do: **drag War Audit above Co-Leader,
-Elder and Member** (Server Settings → Roles, drag it up the list, Save). Discord doesn't let a bot move itself.
+The bot builds the whole server itself (step 7). The only thing you do by hand: **drag War Audit to the top of the
+role list** (Server Settings → Roles → drag → Save). Discord doesn't let a bot move itself.
 
-What `/autosetup` makes (it reuses channels and roles that already exist with these names):
+| Category | Channel | Who sees it | Bot posts |
+|---|---|---|---|
+| 👋 Start here | `#🔗-link-tag` | Newcomers only (hidden once linked; `/link` only, no chat) | How to link (pinned) |
+| | `#📜-rules` | Everyone, read-only | Rules (pinned, kept up to date) |
+| 📊 Clan info | `#📊-clan-stats` | Everyone, read-only | Stats board (pinned, after every war) |
+| | `#🏆-results` | Members, read-only | Battle day summaries, war results, season recaps |
+| | `#🔭-rival-scouting` | Members, read-only | Who we're racing, each new war |
+| ⚔️ Clan | `#⚔️-war` | Members, chat | War board, deck reminders |
+| | `#💬-general` | Members, chat | Welcomes, promotion congrats, shout-outs |
+| | `#🤖-bot-commands` | Members, chat | (for `/mystats`, `/stats`, …) |
+| | `🔊 Clan voice` | Members | |
+| 🛡️ Leaders | `#🛡️-leaders` | Leader + Co-Leader | To-do list, absences, digest, backups |
+| | `#💭-leader-chat` | Leader + Co-Leader | |
 
-| Channel | Who sees it | Bot posts |
-|---|---|---|
-| `#🔗-link-tag` | Newcomers only (hidden once linked; they can't chat, only use `/link`) | How to link (pinned) |
-| `#📜-rules` | Everyone, read-only (only the bot posts) | Rules (pinned) |
-| `#📊-clan-stats` | Everyone, read-only (only the bot posts) | Clan stats board, updated after every war (pinned) |
-| `#⚔️-war` | Linked members | War board, reminders, battle day summaries, results, rival scouting |
-| `#💬-general` | Linked members | Welcomes, promotion congrats, shout-outs |
-| `#🛡️-leaders` | Leader and Co-Leader only | To-do list, absences, digest, backups |
-
-Roles: `Leader`, `Co-Leader`, `Elder`, `Member` (created if missing). Anyone with the Leader or Co-Leader role can use
-leader commands. Change anything afterwards by hand or with `/post-here`; any channel can do any job.
+Roles `Leader`, `Co-Leader`, `Elder`, `Member` (made if missing, coloured, listed separately). Anyone with Leader or
+Co-Leader can use leader commands. Each channel also gets a short pinned note saying what appears there.
 
 ## 7. Turn the bot on in the server
 
 1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 20 commands in your server".
-   (Again whenever new commands are added. Commands listed twice: register again and reopen the app.)
-2. In Discord, anywhere: **`/autosetup`**. It shows what it will do and anything you must fix first (Manage Channels,
-   the bot's role position).
-3. **`/autosetup apply:True`**. Roles, channels, permissions, jobs and pinned posts, done. It lists what it did.
-4. **`/link #YOURTAG`**, then **`/sync`** (roles and nicknames for everyone linked).
-5. Optional: Server Settings → Roles → War Audit → turn **Manage Channels** off again.
+2. In Discord: **`/autosetup`** (or **`/autosetup fresh:True`** to start from nothing). It shows the plan and anything to
+   fix first. Nothing changes yet.
+3. **`/autosetup apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
+   channels are deleted** in the last step). Then tap **Continue ▶** after each step until it says done (3 steps, or 4
+   with fresh).
+4. **`/link #YOURTAG`**, then **`/sync`**.
 
-Later: **`/setup`** shows what goes where; **`/refresh clean:True`** clears the bot's old posts and puts everything
-back, pinned.
+Without `fresh`, it reuses channels it recognises (by name, or because they already have a job) and only adds what's
+missing. Later: **`/setup`** shows what goes where; **`/refresh clean:True`** clears the bot's old posts and re-posts
+everything.
 
 **Commands**
 
