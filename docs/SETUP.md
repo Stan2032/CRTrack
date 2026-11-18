@@ -113,7 +113,7 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 ## 7. Turn the bot on in the server
 
-1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 8 commands in your server".
+1. Site → **Rules** → leader code → **Register Discord commands** → "Done: 9 commands in your server".
 2. In Discord: **`/setup auto`** (or **`/setup auto fresh:True`** to start from nothing). It shows the plan and anything to
    fix first. Nothing changes yet.
 3. **`/setup auto apply:True`** (add `fresh:True` for a clean start: everything is built new and **all the old
@@ -125,13 +125,14 @@ Without `fresh`, it reuses channels it recognises (by name, or because they alre
 missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** clears the bot's old posts and re-posts
 everything.
 
-**Commands** (8)
+**Commands** (9)
 
 | Command | What |
 |---|---|
-| `/link #TAG` · `/unlink` | Connect or disconnect your Discord and Clash Royale accounts |
+| `/link #TAG` · `/unlink` | Connect or disconnect your accounts. `/link` asks you to put 2 of your cards into your deck in game, as proof it's yours |
 | `/mystats` | Your war report (only you see it; `share:True` to post it) |
 | `/remind 3` | DM 3 hours before reset if you still have decks (`/remind 0` = stop) |
+| `/warreport on:True` | Your result by DM after each war: medals, place, streak, reliability |
 | `/away 3 holiday` | Tell leaders you're away: no automatic kick (`/away 0` = back) |
 | `/clan stats` · `/clan season` · `/clan scout` | Clan stats · season recap · this war's rivals |
 | **Leaders** | |
@@ -140,6 +141,7 @@ everything.
 | `/leader digest on:True` · `/leader backup` | Also get the weekly digest by DM · backup file now |
 | `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
 | `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
+| `/setup tidy 7` | Remove people from the Not in clan waiting room after 7 days (heads-up the day before; 0 = never) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
 
 "Leaders" means anyone with the Leader or Co-Leader role, or Manage Roles / Administrator in Discord.
@@ -186,3 +188,13 @@ Clan description** (add your Discord link there). Copy one into Clan → Edit �
 | Old page after an update | Close and reopen the app (it updates itself) |
 
 Developer notes (how it works, the maths, tests) are in [`HANDOFF.md`](HANDOFF.md).
+
+## 10. Older history and automatic tests
+
+- **Older wars:** site → **Rules** → leader code → **Import older wars (RoyaleAPI CSV)**. Use RoyaleAPI's *War log* or
+  *War history* export. Only wars the tracker doesn't already have are added; tracked wars are never changed.
+- **Automatic tests on GitHub** (every push to `main`): runs all checks, builds the Worker like Cloudflare does, and
+  tests both pages in a browser. If runs fail within seconds with no log, GitHub is refusing to start them on account
+  grounds: github.com → your profile → **Settings → Billing and plans** (check for a failed payment or a $0 spending
+  limit for Actions), and the repository → **Settings → Actions → General** → *Allow all actions*. Then repository →
+  **Actions → Tests → Run workflow** to try it.

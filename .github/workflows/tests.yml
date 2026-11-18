@@ -1,21 +1,36 @@
 name: Tests
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node tests/check.mjs
-      - run: node tests/function.mjs
-      - run: node --no-warnings tests/history.mjs
-      - run: node tests/stats.mjs
-      - run: node --no-warnings tests/discord.mjs
-      - run: node --no-warnings tests/leaders.mjs
-      - run: node --no-warnings tests/extras.mjs
-      - run: npm install --no-save playwright && npx playwright install --with-deps chromium
-      - run: node tests/ui.mjs
+      - name: Decisions, rules, generated Worker copies
+        run: node tests/check.mjs
+      - name: API
+        run: node tests/function.mjs
+      - name: History, schedule, notifications, import
+        run: node --no-warnings tests/history.mjs
+      - name: Stats and forecasts
+        run: node tests/stats.mjs
+      - name: Discord bot
+        run: node --no-warnings tests/discord.mjs
+      - name: Leaders' decisions in the Worker
+        run: node --no-warnings tests/leaders.mjs
+      - name: Season recap, scouting, digest, backup
+        run: node --no-warnings tests/extras.mjs
+      - name: Worker builds (as Cloudflare deploys it)
+        run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/build
+      - name: Browser checks (both pages)
+        run: npm install --no-save playwright && npx playwright install --with-deps chromium && node tests/ui.mjs

@@ -40,7 +40,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `docs/gemini/` | The earlier Gemini work this replaced |
 
 Run all tests: `for t in check function history stats discord leaders extras; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
-(the GitHub workflow runs them too, but GitHub Actions is currently blocked by an account setting).
+(the GitHub workflow runs them too, plus a Wrangler dry-run build; it was verified step by step in a clean clone. GitHub refuses to start the job on account grounds, see SETUP.md §10).
 
 ## Setup
 
@@ -164,6 +164,20 @@ screenshots for absence messages, if wanted.
 ## Open
 
 - First real battle day (Thu 19 Nov): check snapshots, race data, battle-log coverage (raise `BATTLELOGS_PER_RUN` to 5 if patchy).
-- GitHub Actions blocked by an account setting.
+- GitHub Actions: jobs fail in 1 s with no log (account/billing setting on GitHub, not the tests). Workflow verified locally.
 - Older RoyaleAPI exports (before 7 Sep 2026) can be imported if Stan has them.
 - The members' page shows anyone's numbers to whoever types their tag (same data RoyaleAPI shows publicly).
+
+## Added 18 Nov (optional extras)
+
+- **Tag proof** (`/link`): the bot picks 2 cards the player owns that aren't in their current deck; they put both in
+  their selected deck; **Done: check it** reads `currentDeck` from the game API. (The profile's favourite card can't be
+  set by players, so it isn't used.) `/leader link` skips proof. A proven owner takes over a tag someone else linked.
+- **Waiting room tidy-up**: `discord_guests` records when someone got the Not in clan role; on quiet training-day runs
+  (once a day) a heads-up in #not-in-clan at `tidyDays - 1`, removal at `tidyDays` (default 7, `/setup tidy`). Leaders
+  and anyone who linked meanwhile are left alone.
+- **War report DM** (`/warreport`): after each war, in the stats-board run, up to 20 per run (rest on later runs).
+- **Forecast accuracy** (site, Clan stats): "right X% of the time", by band and battle day (`calibrate` in stats.js).
+  Not on Discord: rerunning thousands of simulations would exceed the Worker's CPU limit.
+- **Import older wars** (`/api/import`, site Rules): RoyaleAPI War log / War history CSVs; only untracked weeks;
+  imported wars have `ended_at = ''` (sort before tracked ones, no invented dates).
