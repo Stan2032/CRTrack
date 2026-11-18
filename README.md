@@ -18,9 +18,9 @@ Open the hosted link (or `site/index.html` on your computer), and it loads the c
    - Kicks, demotions and promotions tick themselves once the game shows them. First & only warnings and check-ins have **Mark done** (they happen in clan chat, which the game's data doesn't include). People who've left are hidden unless you tick *Show … who left the clan*.
    - Tap a name for their history and to change the suggestion or join day.
    - Pick an earlier war to see what was decided and done. Results are remembered automatically.
-3. **Clan chat messages**: copy and paste.
+3. **All clan chat messages** (folded): every message in one list. Each one also sits inside its step under Recommended.
 
-Folded at the bottom: **Clan log** (joins, leaves, promotions) and **Rules**.
+Folded below: **Clan rules explained**, **Clan stats**, **Check a player**, **Clan log** and **Rules** (downloads are under Rules → Downloads).
 
 Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
 or download CSVs from RoyaleAPI and drop them in (*Other ways*).

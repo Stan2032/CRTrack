@@ -59,10 +59,10 @@
   <div id="groups"><div class="empty">Load a clan to start</div></div>
 </section>
 
-<section class="step">
-  <h2><span class="n">3</span>Clan chat messages <button class="q" data-help="chat" aria-label="What is this?" aria-expanded="false">?</button></h2>
+<details class="step" id="msgbox">
+  <summary>All clan chat messages <button class="q" data-help="chat" aria-label="What is this?" aria-expanded="false">?</button></summary>
   <div class="cards" id="cards"><div class="empty">Nothing yet</div></div>
-</section>
+</details>
 
 <details class="step" id="explainbox">
   <summary>Clan rules explained</summary>
@@ -95,11 +95,16 @@
   <div class="row" style="margin-top:12px">
     <button class="btn" id="reset">Undo changes on this device</button>
     <button class="btn hidden" id="saverules">Save rules for everyone</button>
-    <button class="btn" id="export">Download report</button>
-    <button class="btn" id="backup">Download full history (backup)</button>
-    <button class="btn" id="csvwar">This war as a spreadsheet</button>
-    <button class="btn" id="csvall">All wars as a spreadsheet</button>
   </div>
+  <details class="downloads">
+    <summary>Downloads</summary>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="export">Report</button>
+      <button class="btn" id="csvwar">This war (spreadsheet)</button>
+      <button class="btn" id="csvall">All wars (spreadsheet)</button>
+      <button class="btn" id="backup">Full history (backup)</button>
+    </div>
+  </details>
   <div id="leader" class="hidden" style="margin-top:14px">
     <div class="row"><input id="code" type="text" class="grow masked" placeholder="Leader code" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" aria-label="Leader code"><button class="btn" id="savecode">Use code</button></div>
     <div class="hint" id="codehint">With the leader code, your changes are saved for everyone.</div>

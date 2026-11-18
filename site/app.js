@@ -284,7 +284,7 @@ function render() {
   if (!model || !model.players.length) return;
   $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>` + raceBox();
   if (mode === 'live' && source === 'api' && !raceInfo.day) {
-    $('#steps').classList.add('hidden');
+    $('#steps').classList.add('hidden'); syncMsgBox();
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
     $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
   }
@@ -391,6 +391,12 @@ async function requestUpdate() {
 // ---- Recommended steps: in-game actions first, then what to post ----
 let stepTexts = [];
 const STEP = id => ({ tag: 'STEP-' + id });
+// The messages are in their steps; the full list stays folded unless the steps aren't shown (e.g. an older war).
+let _stepsShown = null;
+function syncMsgBox() {
+  const shown = !$('#steps').classList.contains('hidden');
+  if (shown !== _stepsShown) { $('#msgbox').open = !shown; _stepsShown = shown; }
+}
 function renderSteps(list, msgs) {
   stepTexts = [];
   const box = $('#steps');
@@ -434,6 +440,7 @@ function renderSteps(list, msgs) {
     posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
+  syncMsgBox();
   const left = steps.filter(x => !x.done).length;
   box.innerHTML = `<div class="steps-head">Recommended <span class="count">${steps.length ? `${steps.length - left} of ${steps.length} done` : ''}</span></div>` + (steps.length
     ? `<ul>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}">${x.tick || ''}<div class="step-text">${x.text}${x.copy
@@ -831,7 +838,7 @@ renderInstall();
 // ---- Help: small ? buttons next to section titles open a short explanation underneath ----
 const HELP = {
   act: 'What to do after each war, in order. Tap a circle when a step is done: kicks, demotions and promotions tick themselves once the game shows them. Tap a name for their history and battle record, or to change the suggestion. On battle days, <b>This war</b> shows who still has decks to play, forecasts and the race.',
-  chat: 'Ready-made messages for clan chat, each within the 256-character limit. Tap <b>Copy</b>, then paste in game.',
+  chat: 'Every clan chat message in one list (each within the 256-character limit). The same messages also sit inside their steps under Recommended.',
   rules: 'The numbers behind every suggestion. Leaders: enter the <b>leader code</b> here so your ticks and changes are shared with the other leaders, then turn on <b>🔔 alerts</b> at the top.',
   stats: 'Medals and pass rate per war, the most and least reliable players, battle types, when the clan plays (UK time), top donors and who has been offline.',
 };

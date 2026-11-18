@@ -240,3 +240,4 @@ details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
 .stepmsg-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; gap: 8px; }
 .stepmsg-foot .cnt { color: var(--muted); font-size: 12px; }
 .steps li.is-done .stepmsgs { opacity: .8; }
+.downloads { margin-top: 12px; } .downloads > summary { cursor: pointer; font-weight: 600; font-size: 14px; }

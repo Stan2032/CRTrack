@@ -1162,19 +1162,13 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
   if (kept.rules) await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
   if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
-  const intros = {
-    war: `⚔️ **What appears here**\n• **War board** on battle days (Thu–Sun), updated every 15 minutes\n• **Pings** for anyone with decks left in a battle day's last 4 hours\n• **Battle day summary** after each daily reset\n• **War result** when a war ends\n• **Rival scouting** when a new war starts\n\nYour own numbers: \`/mystats\` · reminder before reset: \`/remind 3\` · going away: \`/away\``,
-    joins: `💬 **War Audit posts here:** a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war (top 3, streaks at the target).`,
-    leaders: `🛡️ **Leaders only. War Audit posts here:**\n• **Absences** from \`/away\`\n• **Weekly digest** before battle days (or privately: \`/leader digest on:True\`)\n• **Monthly backup** of the full history`,
-  };
+  // One note per channel, from the same texts /setup auto uses (a channel with several jobs gets each one's line).
   const introCh = {};
-  for (const job of ['war', 'joins', 'leaders']) {
+  for (const job of ['war', 'results', 'scout', 'joins', 'leaders', 'guests']) {
     const c = chan(cfg, job);
-    if (!c) continue;
-    if (introCh[c]) { introCh[c].push(job); continue; }
-    introCh[c] = [job];
+    if (c) (introCh[c] ||= []).push(job);
   }
-  for (const [c, jobs] of Object.entries(introCh)) await post(`discord:intro:${guild}:${c}`, c, jobs.map(j => intros[j]).join('\n\n'), 'What appears here');
+  for (const [c, jobs] of Object.entries(introCh)) await post(`discord:intro:${guild}:${c}`, c, jobs.map(j => INTROS[j]).join('\n\n'), 'What appears here');
   if (chan(cfg, 'war')) done.push(`➖ War board: posts itself at the next pull on a battle day`);
   return ['**Refreshed**', ...done, unpinned ? `\n📌 ${unpinned} message${unpinned === 1 ? '' : 's'} couldn't be pinned: long-press ${unpinned === 1 ? 'it' : 'them'} → Pin (or give War Audit **Pin Messages**).` : ''].filter(Boolean).join('\n');
 }
