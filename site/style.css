@@ -231,3 +231,12 @@ svg.spark .ax { font-size: 9px; fill: var(--muted); } svg.spark .ax.strong { fil
   font: 700 12px/1 inherit; cursor: pointer; padding: 0; display: inline-grid; place-items: center; }
 .q[aria-expanded="true"] { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
 .helptip { background: var(--soft); border-left: 3px solid var(--gold); border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 13px; color: var(--text); }
+/* Clan chat messages shown inside their step */
+.steps li { grid-template-columns: 30px 1fr; }
+.stepmsgs { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+details.stepmsgs { display: block; } details.stepmsgs > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
+.stepmsg .quote { margin: 0; }
+.stepmsg-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; gap: 8px; }
+.stepmsg-foot .cnt { color: var(--muted); font-size: 12px; }
+.steps li.is-done .stepmsgs { opacity: .8; }

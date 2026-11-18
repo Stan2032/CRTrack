@@ -398,9 +398,10 @@ function renderSteps(list, msgs) {
   const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
   const of = s => list.filter(p => p.res.status === s && (s === 'Kick' || !p.gone));
   const names = a => `<div class="pills">${a.map(p => `<span class="pill ${isDone(p) ? 'done' : ''}">${esc(p.name)}</span>`).join('')}</div>`;
+  // Each step shows its clan chat message(s) right there, each with its Copy button.
   const copy = prefix => msgs.filter(m => m.title.startsWith(prefix)).map(m => {
     stepTexts.push(m.text); const i = stepTexts.length - 1, part = m.title.match(/\d+\/\d+$/);
-    return `<button class="copybtn" data-copystep="${i}">Copy${part ? ' ' + part[0] : ''}</button>`;
+    return `<div class="stepmsg"><div class="quote">${esc(m.text)}</div><div class="stepmsg-foot"><span class="cnt">${m.text.length}/${rules().chatLimit}${part ? ` · part ${part[0].replace('/', ' of ')}` : ''}</span><button class="copybtn" data-copystep="${i}">Copy</button></div></div>`;
   }).join('');
   const steps = [];   // { text, copy, done, ctl }
   const auto = (ps, verb, cp = '') => ps.length && steps.push({ text: `In game, <b>${verb}</b> ${names(ps)}`, copy: cp, done: ps.every(isDone),
@@ -435,7 +436,8 @@ function renderSteps(list, msgs) {
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
   const left = steps.filter(x => !x.done).length;
   box.innerHTML = `<div class="steps-head">Recommended <span class="count">${steps.length ? `${steps.length - left} of ${steps.length} done` : ''}</span></div>` + (steps.length
-    ? `<ul>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}">${x.tick || ''}<div class="step-text">${x.text}</div><div class="copies">${x.copy || ''}</div></li>`).join('')}</ul>
+    ? `<ul>${steps.map(x => `<li class="${x.done ? 'is-done' : ''}">${x.tick || ''}<div class="step-text">${x.text}${x.copy
+        ? (x.done ? `<details class="stepmsgs"><summary>Message${(x.copy.match(/class="stepmsg"/g) || []).length > 1 ? 's' : ''}</summary>${x.copy}</details>` : `<div class="stepmsgs">${x.copy}</div>`) : ''}</div></li>`).join('')}</ul>
        ${left ? '' : '<div class="alldone">✓ All done for this war</div>'}
        <div class="hint">Tap a circle when done. In-game steps tick themselves.</div>`
     : '<div class="alldone">✓ Nothing to do for this war</div>');
