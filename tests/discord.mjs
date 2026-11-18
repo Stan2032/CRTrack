@@ -129,6 +129,13 @@ assert.equal(await discordPost(env, 'PPCCR8VU', 'Battle day 2 ends in under 4 ho
 const msg = calls.find(c => /channels\/C\/messages/.test(c.url)).body;
 assert.match(msg.content, /<@U1> \(4 left\)/); assert.match(msg.content, /perc \(2 left\)/);
 assert.deepEqual(msg.allowed_mentions, { parse: [], users: ['U1'] });
+// Someone with /remind on gets the DM, not a second ping in #war.
+await DB.exec(`INSERT OR REPLACE INTO discord_reminders (guild, user_id, hours, dm) VALUES ('G', 'U1', 3, 'DM-U1')`);
+calls.length = 0;
+await discordPost(env, 'PPCCR8VU', 'Battle day 2 ends in under 4 hours', '6 decks still to play:', [{ tag: '2VJ9V2PV', name: 'Luke', text: '(4 left)' }]);
+{ const m2 = calls.find(c => /channels\/C\/messages/.test(c.url)).body;
+  assert.match(m2.content, /• Luke \(4 left\) 📩[\s\S]*📩 = reminded by DM/); assert.deepEqual(m2.allowed_mentions.users, [], 'not pinged'); }
+await DB.exec(`DELETE FROM discord_reminders WHERE user_id = 'U1'`);
 
 // /remind: checks a private message gets through, then DMs once per battle day when time is short.
 const { dmReminders } = await import('../worker/discord.js');

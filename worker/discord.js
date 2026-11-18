@@ -570,7 +570,14 @@ export async function discordPost(env, clan, title, body, pings = [], job = 'war
   let sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) {
     const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
-    const users = [], parts = pings.map(p => { const u = links.get(p.tag); if (u) users.push(u); return u ? `<@${u}> ${p.text}` : `${cleanName(p.name)} ${p.text}`; });
+    // People with /remind on already get a DM for this: listed by name, not pinged twice.
+    const dmed = pings.length ? new Set((await env.DB.prepare('SELECT user_id FROM discord_reminders WHERE guild = ? AND hours > 0').bind(cfg.guild).all()).results.map(r => r.user_id)) : new Set();
+    const users = [], parts = pings.map(p => {
+      const u = links.get(p.tag);
+      if (u && !dmed.has(u)) { users.push(u); return `<@${u}> ${p.text}`; }
+      return `${cleanName(p.name)} ${p.text}${u && dmed.has(u) ? ' 📩' : ''}`;
+    });
+    if (parts.some(x => x.endsWith('📩'))) parts.push('📩 = reminded by DM');
     const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
     await dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
   }
