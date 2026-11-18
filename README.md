@@ -34,8 +34,8 @@ left today, their forecast, their war history and consistency, how they play, an
 
 A bot run by the same Worker ([setup](docs/SETUP.md#5-discord-bot)). Members: `/link #TAG`, `/mystats` (a full personal war report), `/clan stats` (clan stats), `/away` (going away: leaders see it, no automatic kick),
 `/remind` (private message when a battle day is ending with decks left). Leaders: `/setup channel` in each channel to choose
-what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only to-do list with tick buttons,
-rules, how to link, a clan stats board), `/setup`, `/setup sync`, `/leader todo`, `/player #TAG`, `/check #TAG` (someone applying). Roles and nicknames
+what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only channel for absences, digests and backups,
+rules, how to link, a clan stats board), `/setup`, `/setup sync`, `/leader player #TAG`, `/leader check #TAG` (someone applying). Roles and nicknames
 follow the game.
 
 ## Stats and forecasts

@@ -73,7 +73,7 @@ assert.equal((await (await cmd('me', [{ name: 'share', value: true }])).json()).
 assert.match(await text(await cmd('links', [], leader)), /Linked: 1 of 2[\s\S]*Not linked yet:\*\* perc/);
 
 // /away: saved as a shared note the page reads, posted to the leaders' channel.
-assert.match(await text(await here('leaders', 'LC')), /Leaders only: to-do list after each war \+ absences → <#LC>/);
+assert.match(await text(await here('leaders', 'LC')), /Leaders only: absences, digest, backups → <#LC>/);
 calls.length = 0;
 assert.match(await text(await cmd('away', [{ name: 'days', value: 3 }, { name: 'reason', value: 'holiday' }])), /away until \*\*.+\*\*[\s\S]*leaders decide/);
 await Promise.all(pending);
@@ -84,14 +84,8 @@ assert.match(await text(await cmd('away', [{ name: 'days', value: 1 }, { name: '
 assert.match(await text(await cmd('away', [{ name: 'days', value: 0 }])), /Welcome back/);
 assert.equal(await DB.prepare("SELECT 1 FROM notes WHERE kind = 'away'").first(), null, 'cleared');
 
-// To-do buttons: leaders only; a list that's gone says so.
-const btn = (m, id = 'todo|1-1|Warn|do') => interaction({ type: 3, guild_id: 'G', member: m, data: { custom_id: id } });
-assert.match(await text(await btn(member('U3'))), /Leaders only/);
-assert.match(await text(await btn(leader)), /list has gone/);
-const deferred = await (await cmd('todo', [], leader)).json();
-assert.equal(deferred.type, 5, '/todo answers "thinking…" first');
-await Promise.all(pending);
-assert.ok(calls.some(c => c.method === 'PATCH' && /webhooks\/A\/.*\/messages\/@original$/.test(c.url)), 'then edits that reply');
+// Old to-do buttons (the list is on the website now) just say so.
+assert.match(await text(await interaction({ type: 3, guild_id: 'G', member: leader, data: { custom_id: 'todo|1-1|Warn|do' } })), /on the website/);
 
 // Grouped commands: /leader links, /setup show, /clan stats route to the same handlers; members can't use leader ones.
 const grouped = (name, subName, options = [], m = leader) => interaction({ type: 2, guild_id: 'G', member: m, data: { name, options: [{ type: 1, name: subName, options }] } });
@@ -241,7 +235,7 @@ calls.length = 0;
 const rf = await refreshAll(env, 'G', cfgG, 'PPCCR8VU', true);
 const dels = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').pop());
 assert.ok(dels.includes('OLD1') && dels.includes('OLD2') && !dels.includes('USER1'), 'only the bot\'s messages');
-assert.match(rf, /Deleted \d+ old messages[\s\S]*✅ Rules → <#C>[\s\S]*✅ How to link → <#C>[\s\S]*✅ To-do list → <#LC>/);
+assert.match(rf, /Deleted \d+ old messages[\s\S]*✅ Rules → <#C>[\s\S]*✅ How to link → <#C>/);
 assert.ok(calls.some(c => c.method === 'PUT' && /\/pins\/M\d+$/.test(c.url)), 'pinned');
 assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)), 'the "pinned a message" notice is removed');
 assert.match(rf, /What appears here → <#C>/, 'a note in the war channel');
@@ -384,7 +378,7 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G4', '{"clan":"
     if (/\/guilds\/G3\/channels$/.test(u) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'CW', type: 0, name: '⚔️-war' }, { id: 'BT', type: 0, name: 'bot-talk' }]);
     return realF(u, opt); };
   const pv4 = (await autoSetup(env, 'G4', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G4'").first()).v), 'PPCCR8VU', false)).content;
-  assert.match(pv4, /<#BT>: to-do list/); assert.doesNotMatch(pv4, /➕ #🛡️-leaders/);
+  assert.match(pv4, /<#BT>: absences, digest, backups/); assert.doesNotMatch(pv4, /➕ #🛡️-leaders/);
   globalThis.fetch = realF; }
 
 // Re-running: the waiting room is reused (not made again), exact-name copies from earlier runs are removed; voice is view-only.
@@ -409,10 +403,10 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G5', '{"clan":"
 
 // Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
 await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
-const { postTodo } = await import('../worker/discord.js');
-calls.length = 0;
-await postTodo(env, 'PPCCR8VU', 'OLD');
-assert.ok(!calls.some(c => /channels\/PUB\//.test(c.url)), 'no to-do list in the public channel');
+{ const { sendDigest } = await import('../worker/discord.js'); calls.length = 0;
+  await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%' AND k NOT IN ('discord:OLD')`);
+  await sendDigest(env, 'PPCCR8VU').catch(() => 0);
+  assert.ok(!calls.some(c => /channels\/PUB\//.test(c.url)), 'no leaders-only digest in the public channel'); }
 await interaction({ type: 2, guild_id: 'OLD', member: leader, data: { name: 'setup', options: [] } });
 assert.deepEqual(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:OLD'").first()).v).channels, { war: 'PUB', results: 'PUB', joins: 'PUB' }, 'migrated, not dropped');
 

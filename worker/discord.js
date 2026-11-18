@@ -8,7 +8,6 @@ import { sanitizeRules, DEFAULT_RULES } from './logic.gen.js';
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
 import { PUSH_SCHEMA } from './push.js';
-import { makeTodo, todoState, todoMessage, chatMessage, tickTodo } from './leaders.js';
 
 const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
@@ -41,7 +40,6 @@ export const COMMANDS = [
     sub('scout', 'The clans we\'re racing and how they usually do')] },
   // Leaders
   { name: 'leader', description: 'Leader tools', default_member_permissions: '1', options: [
-    sub('todo', 'Post the after-war to-do list again'),
     sub('player', 'A member\'s record', [tagOpt('Player tag, e.g. #ABC123', false), { type: 6, name: 'user', description: 'Or a linked Discord member' }]),
     sub('check', 'Check someone who wants to join', [tagOpt('Their player tag, e.g. #ABC123')]),
     sub('links', 'Who is linked, and who isn\'t yet'),
@@ -53,14 +51,14 @@ export const COMMANDS = [
     sub('show', 'What the bot posts where, and its roles'),
     sub('channel', 'Choose what the bot posts in THIS channel', [{ type: 3, name: 'what', description: 'What this channel is for', required: true, choices: [
       { name: 'War board + reminders', value: 'war' }, { name: 'Summaries + results', value: 'results' }, { name: 'Rival scouting', value: 'scout' },
-      { name: 'Welcomes + shout-outs', value: 'joins' }, { name: 'Leaders: to-do list, absences', value: 'leaders' }, { name: 'Not in clan (waiting room)', value: 'guests' },
+      { name: 'Welcomes + shout-outs', value: 'joins' }, { name: 'Leaders: absences, digest, backups', value: 'leaders' }, { name: 'Not in clan (waiting room)', value: 'guests' },
       { name: 'Clan stats board', value: 'stats' }, { name: 'Rules', value: 'rules' }, { name: 'How to link', value: 'welcome' }, { name: 'Nothing', value: 'none' }] }]),
     sub('sync', 'Update everyone\'s roles and nicknames from the game'),
     sub('refresh', 'Re-post and pin the rules, stats and other kept messages', [bool('clean', 'First delete the bot\'s old messages')]),
     sub('check', 'Check the live server: what each role can see and post in')] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
-const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader todo': 'todo', 'leader player': 'player', 'leader check': 'check',
+const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
   'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'setup auto': 'autosetup', 'setup show': 'setup',
   'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', me: 'mystats', whosees: 'whosees' };
 
@@ -105,7 +103,7 @@ async function allConfigs(env) {
 }
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
 export const JOBS = { guests: 'Not in clan (waiting room)', war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
-  leaders: 'Leaders only: to-do list after each war + absences' };
+  leaders: 'Leaders only: absences, digest, backups' };
 const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
 const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
 const channelsOf = cfg => ({ ...(cfg?.channels || (cfg?.channel ? Object.fromEntries(LEGACY_JOBS.map(j => [j, cfg.channel])) : {})) });
@@ -279,16 +277,6 @@ export async function handleDiscord(request, env, ctx) {
       await setConfig(env, guild, next);
       return Response.json(reply('Done.\n\n' + await overview(env, guild, next)));
     }
-    case 'todo': {
-      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
-      if (!chan(cfg, 'leaders')) return Response.json(reply('Choose the leaders\' channel first: go to it and run `/setup channel` → **Leaders only**.'));
-      // Working it out can take a few seconds: answer "thinking…" now, then edit that reply.
-      later((async () => {
-        const msg = await postTodo(env, clan, guild, true).then(n => n ? `Posted in <#${chan(cfg, 'leaders')}>.` : 'No finished war found yet.', e => `Couldn't make the list: ${String(e.message || e).slice(0, 100)}`);
-        await dapi(env, 'PATCH', `/webhooks/${env.DISCORD_APP_ID}/${i.token}/messages/@original`, { content: msg });
-      })());
-      return Response.json({ type: 5, data: { flags: EPHEMERAL } });
-    }
     case 'player': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       let tag = cleanTag(opt.tag);
@@ -424,7 +412,6 @@ export async function recruitCard(env, clan, tag) {
   return lines.join('\n');
 }
 
-// A to-do button: tick (or untick) a group for everyone, then redraw the list in place.
 async function handleButton(i, env, ctx) {
   await setupDB(env);
   const [kind, week, status, how] = String(i.data?.custom_id || '').split('|');
@@ -439,44 +426,7 @@ async function handleButton(i, env, ctx) {
     if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
     return Response.json({ type: 6 });   // "working on it": the message is updated when the step finishes
   }
-  if (kind !== 'todo') return Response.json(reply('Not supported'));
-  const cfg = await getConfig(env, i.guild_id), clan = cfg?.clan;
-  if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
-  const by = 'Discord: ' + cleanName(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || 'leader');
-  const t = await tickTodo(env, clan, week, status, how === 'undo', by);
-  if (!t) return Response.json(reply('That list has gone. Run `/leader todo` for a fresh one.'));
-  return Response.json({ type: 7, data: todoMessage(t) });
-}
-
-// Post or redraw the to-do list (and the clan chat messages) in each leaders' channel for this clan.
-//   fresh: work the decisions out again first (after a war ends, or /todo).
-export async function postTodo(env, clan, onlyGuild = null, fresh = false) {
-  if (!discordReady(env)) return 0;
-  await setupDB(env);
-  const cfgs = (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'leaders') && (!onlyGuild || c.guild === onlyGuild));
-  if (!cfgs.length) return 0;
-  const week = fresh ? (await makeTodo(env, clan))?.week : (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:latest:' + clan).first())?.v;
-  const t = week && await todoState(env, clan, week);
-  if (!t) return 0;
-  let sent = 0;
-  for (const cfg of cfgs) {
-    if (await upsert(env, `discord:todo:${cfg.guild}:${week}`, chan(cfg, 'leaders'), todoMessage(t)).catch(() => null)) sent++;
-    const chat = fresh && chatMessage(t);
-    if (chat) await upsert(env, `discord:todochat:${cfg.guild}:${week}`, chan(cfg, 'leaders'), chat).catch(() => null);
-  }
-  return sent;
-}
-
-// Redraw the list when the game or the site changes something on it.
-export async function refreshTodo(env, clan, changedTags = null) {
-  if (!discordReady(env)) return 0;
-  const week = (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:latest:' + clan).first())?.v;
-  if (!week) return 0;
-  if (changedTags) {
-    const t = await todoState(env, clan, week);
-    if (!t || !t.items.some(x => changedTags.includes(x.tag))) return 0;
-  }
-  return postTodo(env, clan);
+  return Response.json(reply('That button is no longer used. The after-war to-do list is on the website.'));
 }
 
 // Update roles/nicknames for linked users. `limit` keeps it within the Worker's per-run request budget.
@@ -737,7 +687,7 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
 // ---- /autosetup: the whole server, in steps (each step is one Worker run, within its 50-request limit) ----
 //   Step 1: roles, categories, channels with permissions (reusing matching ones unless fresh)
 //   Step 2: jobs, rules / how to link / stats (posted, pinned), server icon
-//   Step 3: a pinned note in each channel, the to-do list, rival scouting
+//   Step 3: a pinned note in each channel, rival scouting
 //   Step 4 (fresh only): delete the old channels
 const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
   INVITE: 1n << 0n, CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n };
@@ -761,7 +711,7 @@ export const LAYOUT = [
     { key: 'bot', name: '🤖-bot-commands', access: 'members', jobs: [], match: /bot|command/, topic: 'Use War Audit here: /mystats, /stats, /remind, /away, /season, /scout.' },
     { key: 'voice', name: '🔊 Clan voice', type: 2, access: 'members', jobs: [], match: /voice/ }] },
   { cat: '🛡️ Leaders', access: 'leaders', channels: [
-    { key: 'leaders', name: '🛡️-leaders', access: 'leaders', jobs: ['leaders'], match: /leader|staff|mods?$/, topic: 'Leaders only: to-do list, absences, digest, backups.' },
+    { key: 'leaders', name: '🛡️-leaders', access: 'leaders', jobs: ['leaders'], match: /leader|staff|mods?$/, topic: 'Leaders only: absences, digest, backups.' },
     { key: 'leaderchat', name: '💭-leader-chat', access: 'leaders', jobs: [], match: /leaderchat|staffchat/, topic: 'Leaders only.' }] },
 ];
 const SPECS = LAYOUT.flatMap(c => c.channels);
@@ -787,12 +737,12 @@ const INTROS = {
   joins: `💬 **Clan chat.** War Audit posts a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war.`,
   results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
-  leaders: `🛡️ **Leaders only. War Audit posts here:** the **to-do list** after each war (who to kick, demote, warn, promote, with tick buttons), **absences** from \`/away\`, the **weekly digest** before battle days (or privately with \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
+  leaders: `🛡️ **Leaders only. War Audit posts here:** **absences** from \`/away\`, the **weekly digest** before battle days (or privately with \`/leader digest on:True\`) and a **monthly backup** of the full history.`,
   guests: `🚪 **Not in the clan right now.** The tag you linked isn't in #WINNING's member list. Join the clan in game, then use \`/link\` here again, or ask a leader below. You're free to leave the server any time.`,
   bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/clan stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/away 3 holiday\` tell the leaders you're away · \`/clan season\` season recap · \`/clan scout\` this war's rivals`,
 };
 const LABEL = { guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
-  war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups' };
+  war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'absences, digest, backups' };
 const STEPS = fresh => fresh ? 4 : 3;
 const nextButton = (step, of) => [{ type: 1, components: [{ type: 2, style: 1, label: `Continue ▶ (step ${step} of ${of})`, custom_id: 'autosetup|next' }] }];
 
@@ -984,7 +934,6 @@ export async function autoSetupNext(env, guild, clan) {
   if (run.step === 3) {
     for (const key of ['guests', 'war', 'joins', 'results', 'scout', 'leaders']) { const c = chan(cfg, key); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
     if (run.ids?.bot) await post(`discord:intro:${guild}:${run.ids.bot}`, run.ids.bot, INTROS.bot, 'Note');
-    if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: try `/leader todo`'));
     if (chan(cfg, 'scout')) {
       const race = await cr(env, `/clans/${encodeURIComponent('#' + clan)}/currentriverrace`).catch(() => null);
       const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
@@ -992,7 +941,7 @@ export async function autoSetupNext(env, guild, clan) {
       if (text && await postJob(env, guild, cfg, 'scout', text).catch(() => null)) { done.push(`✅ Rival scouting → <#${chan(cfg, 'scout')}>`); if (week) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${week}`, String(Date.now())).run(); }
     }
     const shown = done.filter(x => !/^✅ Note/.test(x)), notes = done.length - shown.length;
-    if (run.fresh && run.old.length) { await save(4); return { content: [`**Step 3 of ${of} done: notes${notes ? ` (${notes} pinned)` : ''}, to-do list, scouting**`, ...shown, '', `Last step deletes the **${run.old.length} old channels** (including this one).`].join('\n'), components: nextButton(4, of) }; }
+    if (run.fresh && run.old.length) { await save(4); return { content: [`**Step 3 of ${of} done: notes${notes ? ` (${notes} pinned)` : ''}, scouting**`, ...shown, '', `Last step deletes the **${run.old.length} old channels** (including this one).`].join('\n'), components: nextButton(4, of) }; }
     await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
     return { content: [`**All done ✅**`, ...shown, notes ? `✅ ${notes} channel notes pinned` : '', run.problems?.length ? `\n**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', '\nNext: `/link #YOURTAG`, then `/setup sync`.'].filter(Boolean).join('\n'), components: [] };
   }
@@ -1053,11 +1002,10 @@ export async function refreshAll(env, guild, cfg, clan, clean) {
   if (kept.rules) await post('discord:rules:' + guild, kept.rules.channel, rulesText(await clanRules(env, clan)), 'Rules');
   if (kept.welcome) await post('discord:welcome:' + guild, kept.welcome.channel, WELCOME, 'How to link');
   if (kept.stats) await post('discord:stats:' + guild, kept.stats.channel, await statsBoard(env, clan), 'Clan stats board');
-  if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: couldn\'t make it (try `/leader todo`)'));
   const intros = {
     war: `⚔️ **What appears here**\n• **War board** on battle days (Thu–Sun), updated every 15 minutes\n• **Pings** for anyone with decks left in a battle day's last 4 hours\n• **Battle day summary** after each daily reset\n• **War result** when a war ends\n• **Rival scouting** when a new war starts\n\nYour own numbers: \`/mystats\` · reminder before reset: \`/remind 3\` · going away: \`/away\``,
     joins: `💬 **War Audit posts here:** a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war (top 3, streaks at the target).`,
-    leaders: `🛡️ **Leaders only. War Audit posts here:**\n• **To-do list** after each war (who to kick, demote, warn, promote), with tick buttons\n• **Absences** from \`/away\`\n• **Weekly digest** before battle days (or privately: \`/leader digest on:True\`)\n• **Monthly backup** of the full history`,
+    leaders: `🛡️ **Leaders only. War Audit posts here:**\n• **Absences** from \`/away\`\n• **Weekly digest** before battle days (or privately: \`/leader digest on:True\`)\n• **Monthly backup** of the full history`,
   };
   const introCh = {};
   for (const job of ['war', 'joins', 'leaders']) {

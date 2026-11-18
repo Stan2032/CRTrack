@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, postTodo, refreshTodo, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 
 export const SCHEMA = `
@@ -264,12 +264,12 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
   await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);   // once per run, not per check
   for (const clan of only ? [only] : trackedClans(env)) {
     try {
-      // A war ended last run: make the leaders' to-do list now, in a run of its own (it needs the full history).
+      // A war ended last run: refresh the stats boards now, in a run of its own (they read the whole history).
       if (!force && !only) {
         const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
         if (due) {
           await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
-          out.push({ clan, todo: await postTodo(env, clan, null, true).catch(e => String(e.message || e)), stats: await updateStatsBoards(env, clan).catch(() => 0) });
+          out.push({ clan, stats: await updateStatsBoards(env, clan).catch(() => 0) });
           continue;
         }
         // Last training day: the leaders' weekly digest, also in a run of its own.
@@ -301,7 +301,6 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push(res);
       await alertsFor(env, res, now).catch(() => {});
       await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
-      if (res.changedTags?.length) await refreshTodo(env, clan, res.changedTags).catch(() => {});
       if (res.wars?.length) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('todo:due:' + clan, String(now)).run();
       // A new race: scout the other clans once.
       if (res.week && res.rivals?.length > 1 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`scout:${clan}:${res.week}`).first())) {

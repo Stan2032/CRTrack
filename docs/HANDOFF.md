@@ -33,7 +33,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/discord.js` | Discord bot |
 | `worker/extras.js` | Season recap, rival scouting, weekly digest, monthly backup |
 | `worker/cards.js` | `/mystats` report and the clan stats board |
-| `worker/leaders.js` | After-war to-do list for the leaders' channel (decisions from `logic.gen.js`) |
+| `worker/leaders.js` | The page's after-war decisions worked out in the Worker (for the weekly digest) |
 | `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
 | `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
 | `samples/` | Real RoyaleAPI exports from 16 Nov 2026 (used by tests) |
@@ -119,13 +119,13 @@ Discord (`worker/discord.js`, `worker/leaders.js`). Commands:
   away during a war → **Leaders decide** instead of kick/warn, shown on the page), `/remind hours` (private message when a
   battle day has that long left and they still have decks; checked on turn-on; once per day; max 8 per run).
 - Leaders (Manage Roles): `/linkuser`, `/links`, `/setup` (shows what goes where; finds roles named Member / Elder /
-  Co-Leader / Leader), `/setup sync`, `/setup channel` (run **in** a channel to give it a job), `/leader todo` (redo the to-do list),
+  Co-Leader / Leader), `/setup sync`, `/setup channel` (run **in** a channel to give it a job),
   `/player #TAG` (reliability, recent wars, away, warning), `/check #TAG` (someone applying: public stats, recent war
   battles, any time already spent in this clan).
 
 Channel jobs (`/setup channel`): **war** (live war board with text bars, refreshed every pull; "under 4 hours" pings),
 **results** (battle day summary with +/- % after each reset; war result), **joins** (welcomes, promotion congrats,
-after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (after-war to-do list + absences),
+after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (absences, digest, backups),
 **rules**, **how to link** and the **clan stats board** (messages kept up to date by editing; stats after every war:
 last 8 wars as bars, pass-rate trend, most reliable, streaks, most improved, battle types, busiest hours, joins/leaves,
 top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
@@ -135,14 +135,10 @@ top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
 rival scouting once per race from each rival's last 5 wars (`/clan scout`); the leaders' weekly digest on the last training
 day (queued, then sent in a run of its own; DM to `/digest` leaders, else the leaders' channel); a monthly backup file
 (gzipped full history, posted as an attachment, in a run of its own on a training day; `/leader backup`). Heavy jobs each get
-their own 15-minute run: to-do list, then digest, then backup.
+their own 15-minute run: stats boards after a war, then digest, then backup.
 
-**Leaders' to-do list**: when a war ends, the next 15-minute run (a run of its own) works out the decisions with the
-page's own code (`worker/gen.mjs` copies `site/logic.js` / `site/stats.js` to `worker/*.gen.js` on every deploy; a test
-fails if they're stale) and posts the list plus the clan chat messages in code blocks. Kicks/demotions/promotions tick
-themselves from the game; warnings, check-ins and decisions have buttons. Buttons write the same `done` notes as the
-page, and ticking on the page redraws the Discord list. Reads only `lookback + 2` wars of history (lite) to stay within
-the 10 ms CPU limit (~4 ms measured with 12 wars, 50 players, 2,000 events).
+**Who to act on after a war** is on the website only (Stan, 18 Nov: the Discord to-do list was unnecessary). `worker/leaders.js`
+still works out the page's decisions in the Worker (copied from `site/logic.js` by `worker/gen.mjs`) for the weekly digest.
 
 Discord app and server setup: [`SETUP.md`](SETUP.md#5-discord-bot).
 

@@ -87,7 +87,7 @@ assert.equal(posted.length, 1); assert.match(posted[0].body.content, /who we're 
 assert.ok(await DB.prepare("SELECT 1 FROM kv WHERE k = 'digest:due:PPCCR8VU'").first(), 'last training day: digest queued');
 calls.length = 0;
 out = await snapshotAll(env, { now: Date.parse('2026-11-18T10:30:00Z') });
-assert.equal(out[0].todo, 1, 'the first snapshot saw finished wars: their to-do list goes first');
+assert.equal(out[0].stats, 0, 'the first snapshot saw finished wars: stats boards refresh first (none set up here)');
 out = await snapshotAll(env, { now: Date.parse('2026-11-18T10:45:00Z') });
 assert.equal(out[0].digest, 1, 'then the digest, in a run of its own');
 assert.ok(calls.some(c => /channels\/DML1\/messages$/.test(c.url)));

@@ -104,7 +104,7 @@ role list** (Server Settings → Roles → drag → Save). Discord doesn't let a
 | | `#💬-general` | Members, chat | Welcomes, promotion congrats, shout-outs |
 | | `#🤖-bot-commands` | Members, chat | (for `/mystats`, `/clan stats`, …) |
 | | `🔊 Clan voice` | Members | |
-| 🛡️ Leaders | `#🛡️-leaders` | Leader + Co-Leader | To-do list, absences, digest, backups |
+| 🛡️ Leaders | `#🛡️-leaders` | Leader + Co-Leader | Absences, digest, backups |
 | | `#💭-leader-chat` | Leader + Co-Leader | |
 
 Roles `Leader`, `Co-Leader`, `Elder`, `Member` (made if missing, coloured, listed separately) and `Not in clan`.
@@ -135,7 +135,6 @@ everything.
 | `/away 3 holiday` | Tell leaders you're away: no automatic kick (`/away 0` = back) |
 | `/clan stats` · `/clan season` · `/clan scout` | Clan stats · season recap · this war's rivals |
 | **Leaders** | |
-| `/leader todo` | Post the after-war to-do list again |
 | `/leader player #TAG` · `/leader check #TAG` | A member's record · someone who wants to join |
 | `/leader links` · `/leader link @who #TAG` | Who's linked · link someone else |
 | `/leader digest on:True` · `/leader backup` | Weekly digest by DM · backup file now |
@@ -153,7 +152,7 @@ everything.
 | Last 4 hours of a battle day | Pings linked members with decks left | War |
 | Reset, from each member's `/remind` | Private reminder | DMs |
 | After each daily reset | Battle day summary (+/- % vs the day before) | Results |
-| War ends | Result; shout-outs (top 3, streaks); to-do list + clan chat messages ~15 min later; stats board refresh | Results, Welcomes, Leaders, Rules |
+| War ends | Result; shout-outs (top 3, streaks); stats board refresh ~15 min later (who to act on: the website) | Results, Welcomes, Leaders, Rules |
 | Someone joins / is promoted in game | Welcome / congrats; role and nickname updated | Welcomes |
 | New race starts | Rival scouting: each clan's last 5 wars vs ours | War |
 | Last training day | Leaders' weekly digest (DM to `/digest` leaders, else the leaders' channel) | DMs / Leaders |
@@ -184,7 +183,6 @@ Clan description** (add your Discord link there). Copy one into Clan → Edit �
 | Roles don't change | Bot role must be above the clan roles; run `/setup` and check the roles listed; then `/setup sync` |
 | "I can't post in #channel" | Add War Audit to that channel: View Channel, Send Messages, Read Message History |
 | `/remind` says it can't DM | Long-press the server → Privacy Settings → Direct Messages on |
-| No to-do list after a war | Run `/leader todo` in the leaders' channel |
 | Old page after an update | Close and reopen the app (it updates itself) |
 
 Developer notes (how it works, the maths, tests) are in [`HANDOFF.md`](HANDOFF.md).
