@@ -311,9 +311,10 @@ function render() {
   }
   $('#groups').innerHTML = parts.map(([s, ps]) => {
     const d = ps.filter(isDone).length;
-    const head = `${esc(label(s))} <span class="count">${ps.length}${d ? `, ${d} done` : ''}</span>`;
+    const allDone = ACTIONS.includes(s) && ps.length && d === ps.length;
+    const head = `${esc(label(s))} <span class="count">${ps.length}${allDone ? ' ✓ all done' : d ? `, ${d} done` : ''}</span>`;
     const body = ps.map(row).join('');
-    return FOLDED.includes(s) ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
+    return FOLDED.includes(s) || allDone ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
@@ -334,7 +335,7 @@ function render() {
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
-      <button class="btn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
+      <button class="copybtn" data-copy="${i}">Copy</button></div>`).join('') : '<div class="empty">Nothing to post</div>';
   fit();
   renderSteps(all, msgs);
   renderLog();
@@ -551,7 +552,7 @@ function renderStats() {
 
 let explainTexts = [];
 function renderExplain() {
-  const { sections, chat } = rulesExplained(rules());
+  const { sections, chat } = rulesExplained(rules(), { discord: site.discord });
   explainTexts = chat;
   $('#explain').innerHTML = sections.map(([h, ps]) => `<h3>${h}</h3>${ps.filter(Boolean).map(x => `<p>${x}</p>`).join('')}`).join('')
     + `<h3>Post in clan chat</h3>${chat.map((t, i) => `<div class="card"><b>Part ${i + 1} of ${chat.length}<span class="cnt">${t.length}/${rules().chatLimit}</span></b><div class="quote">${esc(t)}</div><button class="copybtn" data-explain="${i}">Copy</button></div>`).join('')}
@@ -579,7 +580,7 @@ function renderLog() {
   const what = n => n.kind === 'done' ? (n.value ? 'ticked done' : 'unticked') : n.kind === 'over' ? (n.value ? `changed to ${label(n.value)}` : 'reset to suggested')
     : n.kind === 'join' ? `set join day: ${n.value || 'auto'}` : n.kind === 'rules' ? 'saved the rules' : n.kind === 'away' ? (n.value ? `away (${(() => { const x = parseAway(n.value); return x ? awayText(x) : ''; })()})` : 'back') : n.kind;
   const who = (hist.noteLog || []).filter(n => n.by).slice(0, 15).map(n => `<div class="ev"><span class="when">${esc(fmtDate(parseTime(n.at)))}</span> <b>${esc(n.by)}</b> ${esc(what(n))}${
-    n.tag && n.tag !== '*' ? ' · ' + esc(names[n.tag] || (n.tag.startsWith('STEP-') ? n.tag.slice(5).toLowerCase() + ' step' : n.tag)) : ''} <span class="muted">(war ${esc(n.week)})</span></div>`).join('');
+    n.tag && n.tag !== '*' ? ' · ' + esc(names[n.tag] || (n.tag.startsWith('STEP-') ? n.tag.slice(5).toLowerCase() + ' step' : n.tag)) : ''}${n.week && n.week !== '*' ? ` <span class="muted">(war ${esc(n.week)})</span>` : ''}</div>`).join('');
   $('#log').innerHTML = `<div class="hint">${h.weeks} wars stored${h.since ? ' · tracking since ' + esc(fmtDate(h.since)) : ''}</div>${ev || '<div class="empty">No joins or leaves yet</div>'}`
     + (who ? `<div class="hint" style="margin-top:12px">Leader changes</div>${who}` : '');
 }

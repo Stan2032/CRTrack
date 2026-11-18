@@ -40,7 +40,7 @@ function bars(items, { h = 110, fmt = v => v, ref = null, label = '' } = {}) {
 }
 
 // ---- Clan rules, explained for members (written from the current rule settings) ----
-function rulesExplained(r) {
+function rulesExplained(r, opts = {}) {
   const n = x => Number(x).toLocaleString();
   const sections = [
     ['🎯 The target', [
@@ -57,7 +57,7 @@ function rulesExplained(r) {
       `Medals per battle: <b>duels 250</b> a game won (100 lost), <b>1v1 200</b> (100), <b>boat attacks 125</b> (75). Duels first, boats last.`,
       r.spareBoats ? `Mostly on boats and under? You get the warning plus a tip. ` + (r.boatRepeatKick ? `Still under on boats next war: kick.` : '') : '']],
     ['💬 Going away?', [
-      `Tell a leader in chat. Regulars who reached the target <b>${r.holdWeeks}+ wars in a row</b> and go quiet for ${r.holdOffline}+ days get a check-in, not a kick.`]],
+      `Tell a leader${opts.discord ? ', or use <b>/away</b> on our Discord' : ' in chat'}. Regulars who reached the target <b>${r.holdWeeks}+ wars in a row</b> and go quiet for ${r.holdOffline}+ days get a check-in, not a kick.`]],
     ['⭐ Becoming Elder', [
       `Members with <b>${r.promoWeeks}+ wars</b> in the clan, at most <b>${r.promoMisses} miss</b>, and an average of <b>${n(r.promoAvg)}+</b> are put forward for Elder.`]],
     ['👑 Leaders decide', [
