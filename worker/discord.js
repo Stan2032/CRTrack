@@ -218,7 +218,7 @@ async function startProof(env, guild, user, tag, m) {
   return { type: 4, data: { content: proofText(tag, cleanName(m.name), cards), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
 }
 
-// The Check button: favourite card matches → linked, roles and nickname set.
+// The Check button: both cards in their deck → linked, roles and nickname set.
 async function checkProof(i, env, ctx) {
   const guild = i.guild_id, user = i.member?.user?.id;
   const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(proofKey(guild, user)).first();
@@ -273,8 +273,8 @@ export async function handleDiscord(request, env, ctx) {
           : ' Join in game first, then link.')));
       }
       const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, tag, target).first();
-      // Already linked to someone else: proving it (favourite card) takes it over; otherwise ask a leader.
-      // Members prove the tag is theirs (set a favourite card in game); leaders linking someone else vouch for them.
+      // Already linked to someone else: proving it (cards in their deck) takes it over; otherwise ask a leader.
+      // Members prove the tag is theirs (2 cards into their deck in game); leaders linking someone else vouch for them.
       if (i.data.name === 'link') {
         const already = await env.DB.prepare('SELECT 1 FROM discord_links WHERE guild = ? AND user_id = ? AND tag = ?').bind(guild, target, tag).first();
         if (!already) return Response.json(await startProof(env, guild, target, tag, m));
