@@ -137,6 +137,39 @@ await discordPost(env, 'PPCCR8VU', 'Battle day 2 ends in under 4 hours', '6 deck
   assert.match(m2.content, /• Luke \(4 left\) 📩[\s\S]*📩 = reminded by DM/); assert.deepEqual(m2.allowed_mentions.users, [], 'not pinged'); }
 await DB.exec(`DELETE FROM discord_reminders WHERE user_id = 'U1'`);
 
+// Battle-day pings at sensible times: an evening nudge (19:00 UK by default, or the clan's busiest hours) and a last call
+// 2 hours before reset; each once per battle day. (Before: one ping in the last 4 hours, i.e. ~05:45 UK for a 09:43 reset.)
+{ const { battleDayPings, nextUkHour, busiestHour } = await import('../worker/discord.js');
+  assert.equal(nextUkHour(Date.parse('2026-07-10T09:43:00Z'), 19), Date.parse('2026-07-10T18:00:00Z'), 'summer: 19:00 UK is 18:00 UTC');
+  assert.equal(nextUkHour(Date.parse('2026-11-19T09:43:00Z'), 19), Date.parse('2026-11-19T19:00:00Z'));
+  const start = Date.parse('2026-11-19T09:43:00Z'), at = iso => { const t = Date.parse(iso); return [t, start + 864e5 - t]; };
+  const r = { clan: 'PPCCR8VU', week: '139-1', day: 1, decksLeft: 6, leftToday: [{ tag: 'YVJRGLCC', name: 'perc', left: 2 }], board: { reset: '09:43' } };
+  const posts = () => calls.filter(c => c.method === 'POST' && /channels\/C\/messages$/.test(c.url)).map(c => c.body.content);
+  calls.length = 0;
+  let res = await battleDayPings(env, r, ...at('2026-11-19T15:00:00Z'));
+  assert.ok(!res.evening && !res.lastCall && !posts().length, 'afternoon: nothing yet');
+  res = await battleDayPings(env, r, ...at('2026-11-19T19:05:00Z'));
+  assert.ok(res.evening); assert.match(posts()[0], /Battle day 1: decks still to play \(resets 09:43 UK\)[\s\S]*6 decks left:[\s\S]*perc \(2 left\)/);
+  await battleDayPings(env, r, ...at('2026-11-19T19:20:00Z'));
+  assert.equal(posts().length, 1, 'evening once');
+  calls.length = 0;
+  res = await battleDayPings(env, r, ...at('2026-11-20T07:50:00Z'));
+  assert.ok(res.lastCall); assert.match(posts()[0], /Last call: battle day 1 ends in about 2 hours/);
+  // Leaders set their own time and turn the last call off.
+  assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'pings', options: [{ name: 'hour', value: 21 }, { name: 'last_call', value: 0 }] }] } })),
+    /Evening: \*\*21:00 UK\*\*[\s\S]*Last call: off/);
+  const r2 = { ...r, day: 2 }, s2 = Date.parse('2026-11-20T09:43:00Z'), at2 = iso => { const t = Date.parse(iso); return [t, s2 + 864e5 - t]; };
+  calls.length = 0;
+  await battleDayPings(env, r2, ...at2('2026-11-20T20:00:00Z')); assert.equal(posts().length, 0, '21:00 not reached');
+  await battleDayPings(env, r2, ...at2('2026-11-20T21:01:00Z')); assert.equal(posts().length, 1);
+  await battleDayPings(env, r2, ...at2('2026-11-21T08:30:00Z')); assert.equal(posts().length, 1, 'no last call');
+  // Auto: the start of the clan's busiest 3 hours, from when decks were played.
+  await DB.exec(`INSERT INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${Array.from({ length: 40 }, (_, k) => `('PPCCR8VU','138-3','T${k}','${new Date(Date.now() - 864e5 - k * 6e4).toISOString().slice(0, 11)}${['20', '21', '22'][k % 3]}:1${k % 10}:00.000Z',1,0,1,1,0)`).join(',')}`);
+  const bh = await busiestHour(env, 'PPCCR8VU');
+  assert.ok(bh >= 19 && bh <= 21, 'busiest evening hours found: ' + bh);
+  assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'pings', options: [{ name: 'auto', value: true }, { name: 'last_call', value: 2 }] }] } })), /auto: start of the clan's busiest hours/);
+  await DB.exec(`DELETE FROM race_events WHERE week = '138-3'`); }
+
 // /remind: checks a private message gets through, then DMs once per battle day when time is short.
 const { dmReminders } = await import('../worker/discord.js');
 calls.length = 0;

@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 
 export const SCHEMA = `
@@ -239,15 +239,10 @@ async function alertsFor(env, r, now) {
     const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
     const reset0 = st0 ? ms(st0.ended_at) : null, left0 = reset0 == null ? 864e5 : (((reset0 - now) % 864e5) + 864e5) % 864e5;
     if (reset0 != null) await dmReminders(env, r.clan, r.week, r.day, left0, r.leftToday, r.board?.reset).catch(() => {});
-    if (left0 < 4 * 3600e3) {
-      const sentL = await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
-        (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + ' · under 4 hours left');
-      // Ping linked members on Discord, once per battle day (the alert key above stops repeats).
-      if (sentL !== 0 || !(await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`dping:${r.clan}:${r.week}:${r.day}`).first())) {
-        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`dping:${r.clan}:${r.week}:${r.day}`, String(now)).run();
-        await discordPost(env, r.clan, `⏰ Battle day ${r.day} ends in under 4 hours`, `${r.decksLeft} decks still to play:`, r.leftToday.map(p => ({ tag: p.tag, name: p.name, text: `(${p.left} left)` })));
-      }
-    }
+    // Pings and the leaders' phone alert at times people can act on: an evening nudge and a last call before reset.
+    const pg = reset0 != null ? await battleDayPings(env, r, now, left0).catch(() => null) : null;
+    if (pg?.evening || pg?.lastCall) await sendAlert(env, r.clan, `left:${r.clan}:${r.week}:${r.day}:${pg.lastCall ? 'last' : 'eve'}`, `Battle day ${r.day}: ${r.decksLeft} decks still unused`,
+      (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + (r.board?.reset ? ` · resets ${r.board.reset} UK` : ''));
   }
   if (r.day === 4 && r.out.length) {
     const st = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();

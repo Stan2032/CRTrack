@@ -59,12 +59,14 @@ export const COMMANDS = [
     sub('sync', 'Update everyone\'s roles and nicknames from the game'),
     sub('refresh', 'Re-post and pin the rules, stats and other kept messages', [bool('clean', 'First delete the bot\'s old messages')]),
     sub('check', 'Check the live server: what each role can see and post in'),
+    sub('pings', 'When battle-day pings go out', [{ type: 4, name: 'hour', description: 'Evening ping hour, UK time (0-23)', min_value: 0, max_value: 23 },
+      bool('auto', 'Evening ping at the start of the clan\'s busiest hours'), { type: 4, name: 'last_call', description: 'Last call this many hours before reset (0 = off)', min_value: 0, max_value: 6 }]),
     sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }])] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
 const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
   'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'setup auto': 'autosetup', 'setup show': 'setup',
-  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup tidy': 'tidy', me: 'mystats', whosees: 'whosees' };
+  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup tidy': 'tidy', 'setup pings': 'pings', me: 'mystats', whosees: 'whosees' };
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
 
@@ -467,6 +469,14 @@ export async function handleDiscord(request, env, ctx) {
       })());
       return Response.json({ type: 5, data: { flags: EPHEMERAL } });
     }
+    case 'pings': {
+      if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
+      const next = { ...(cfg || { clan, channels: {}, roles: {} }) };
+      if (opt.auto) delete next.pingHour; else if (opt.hour != null) next.pingHour = Math.max(0, Math.min(23, Number(opt.hour)));
+      if (opt.last_call != null) next.lastCall = Math.max(0, Math.min(6, Number(opt.last_call)));
+      await setConfig(env, guild, next);
+      return Response.json(reply(await pingSummary(env, next, clan)));
+    }
     case 'tidy': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
       const days = Math.max(0, Math.min(60, Number(opt.days) || 0));
@@ -568,20 +578,82 @@ export async function discordPost(env, clan, title, body, pings = [], job = 'war
   if (!discordReady(env)) return 0;
   await setupDB(env);
   let sent = 0;
-  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) {
-    const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
-    // People with /remind on already get a DM for this: listed by name, not pinged twice.
-    const dmed = pings.length ? new Set((await env.DB.prepare('SELECT user_id FROM discord_reminders WHERE guild = ? AND hours > 0').bind(cfg.guild).all()).results.map(r => r.user_id)) : new Set();
-    const users = [], parts = pings.map(p => {
-      const u = links.get(p.tag);
-      if (u && !dmed.has(u)) { users.push(u); return `<@${u}> ${p.text}`; }
-      return `${cleanName(p.name)} ${p.text}${u && dmed.has(u) ? ' 📩' : ''}`;
-    });
-    if (parts.some(x => x.endsWith('📩'))) parts.push('📩 = reminded by DM');
-    const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
-    await dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => sent++).catch(() => {});
-  }
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, job))) if (await postPings(env, cfg, title, body, pings, job)) sent++;
   return sent;
+}
+
+// One server: title, body, and a list where linked members are mentioned (people with /remind on get their DM instead).
+async function postPings(env, cfg, title, body, pings = [], job = 'war') {
+  const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
+  const dmed = pings.length ? new Set((await env.DB.prepare('SELECT user_id FROM discord_reminders WHERE guild = ? AND hours > 0').bind(cfg.guild).all()).results.map(r => r.user_id)) : new Set();
+  const users = [], parts = pings.map(p => {
+    const u = links.get(p.tag);
+    if (u && !dmed.has(u)) { users.push(u); return `<@${u}> ${p.text}`; }
+    return `${cleanName(p.name)} ${p.text}${u && dmed.has(u) ? ' 📩' : ''}`;
+  });
+  if (parts.some(x => x.endsWith('📩'))) parts.push('📩 = reminded by DM');
+  const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
+  return dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => true, () => false);
+}
+
+// ---- Battle-day pings at times people can act on ----
+// Evening nudge: cfg.pingHour (UK), or the start of the clan's busiest 3 hours (from when decks were played), else 19:00.
+// Last call: cfg.lastCall hours before the reset (default 2; 0 = off). Each once per battle day per server.
+const ukHourOf = t => +new Date(t).toLocaleString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hour12: false }) % 24;
+export function nextUkHour(from, hour) {   // first whole UK hour == `hour` at or after `from`
+  let t = Math.ceil(from / 3600e3) * 3600e3;
+  for (let k = 0; k < 26; k++, t += 3600e3) if (ukHourOf(t) === hour) return t;
+  return null;
+}
+export async function busiestHour(env, clan) {
+  const rows = (await env.DB.prepare("SELECT CAST(strftime('%H', at) AS INTEGER) AS h, count(*) AS c FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-35 days') GROUP BY h").bind(clan).all().catch(() => ({ results: [] }))).results;
+  const total = rows.reduce((t, x) => t + x.c, 0);
+  if (total < 30) return null;
+  const off = (ukHourOf(Date.now()) - new Date().getUTCHours() + 24) % 24, hc = Array(24).fill(0);
+  for (const x of rows) hc[(x.h + off) % 24] += x.c;
+  let best = 19, top = -1;
+  for (let h = 12; h <= 21; h++) { const c = hc[h] + hc[h + 1] + hc[h + 2]; if (c > top) { top = c; best = h; } }   // afternoons and evenings only
+  return best;
+}
+export function pingPlan(cfg, auto) {
+  return { hour: cfg?.pingHour ?? auto ?? 19, lastCall: cfg?.lastCall ?? 2, autoHour: cfg?.pingHour == null };
+}
+export async function battleDayPings(env, r, now, msLeft) {
+  const dayStart = now - (864e5 - msLeft), dayEnd = dayStart + 864e5, out = { evening: false, lastCall: false, sent: 0 };
+  const auto = env.DB ? await busiestHour(env, r.clan) : null;
+  const due = plan => {
+    const eveAt = nextUkHour(dayStart, plan.hour), lastAt = plan.lastCall ? dayEnd - plan.lastCall * 3600e3 : null;
+    return { evening: eveAt != null && now >= eveAt && (!lastAt || eveAt < lastAt), lastCall: !!lastAt && now >= lastAt };
+  };
+  Object.assign(out, due(pingPlan(null, auto)));   // for the leaders' phone alerts
+  if (!discordReady(env) || !r.leftToday?.length) return out;
+  await setupDB(env);
+  const list = r.leftToday.map(p => ({ tag: p.tag, name: p.name, text: `(${p.left} left)` }));
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && chan(c, 'war'))) {
+    const d = due(pingPlan(cfg, auto));
+    for (const [kind, on] of [['eve', d.evening], ['last', d.lastCall]]) {
+      if (!on) continue;
+      const key = `ping:${cfg.guild}:${r.week}:${r.day}:${kind}`;
+      if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(key).first()) continue;
+      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, String(now)).run();
+      const h = Math.max(1, Math.round(msLeft / 3600e3));
+      const title = kind === 'eve' ? `⚔️ Battle day ${r.day}: decks still to play${r.board?.reset ? ` (resets ${r.board.reset} UK)` : ''}` : `⏰ Last call: battle day ${r.day} ends in about ${h} hour${h === 1 ? '' : 's'}`;
+      if (await postPings(env, cfg, title, `${r.decksLeft} decks left:`, list)) out.sent++;
+    }
+  }
+  return out;
+}
+
+async function pingSummary(env, cfg, clan) {
+  const auto = await busiestHour(env, clan), plan = pingPlan(cfg, auto);
+  const resetRow = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? AND ended_at != \'\' ORDER BY ended_at DESC LIMIT 1').bind(clan).first();
+  const m = String(resetRow?.ended_at || '').match(/T(\d\d):?(\d\d)/), now = new Date();
+  const reset = m ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), +m[1], +m[2]) : null;
+  const uk = t => new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' });
+  return [`**Battle-day pings** (people with decks left, in the war channel; people with \`/remind\` get their DM instead)`,
+    `• Evening: **${String(plan.hour).padStart(2, '0')}:00 UK**${plan.autoHour ? (auto != null ? ' (auto: start of the clan\'s busiest hours)' : ' (auto: 19:00 until there\'s enough battle-day data)') : ''}`,
+    `• Last call: ${plan.lastCall ? `**${plan.lastCall} hour${plan.lastCall === 1 ? '' : 's'} before reset**${reset ? ` (${uk(reset - plan.lastCall * 3600e3)} UK)` : ''}` : 'off'}`,
+    `Change: \`/setup pings hour:20\` · \`/setup pings auto:True\` · \`/setup pings last_call:0\``].join('\n');
 }
 
 // Private reminders for members who asked (/remind): once per battle day, when the time left drops under
