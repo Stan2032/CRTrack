@@ -1008,7 +1008,7 @@ const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe
 export const LAYOUT = [
   { cat: '👋 Start here', access: 'public', channels: [
     { key: 'link', name: '🔗-link-tag', access: 'newcomers', jobs: ['welcome'], match: /link/, topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
-    { key: 'guests', name: '🚪-not-in-clan', access: 'guests', jobs: ['guests'], match: /notinclan|guest|waiting/, topic: 'Not in the clan (yet)? Ask the leaders here, or join in game and /link again.' },
+    { key: 'guests', name: '🚪-not-in-clan', access: 'guests', jobs: ['guests'], match: /notinclan|guest|waiting/, topic: 'Not in the clan? /apply #YOURTAG to join, or /link again once you have. Ask the leaders here.' },
     { key: 'rules', name: '📜-rules', access: 'members-read', jobs: ['rules'], match: /rules/, topic: 'Clan rules, kept up to date by War Audit.' }] },
   { cat: '📊 Clan info', access: 'public', channels: [
     { key: 'stats', name: '📊-clan-stats', access: 'members-read', jobs: ['stats'], match: /stats/, topic: 'Clan stats, updated after every war.' },
