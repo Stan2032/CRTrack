@@ -95,6 +95,7 @@ role list** (Server Settings → Roles → drag → Save). Discord doesn't let a
 | Category | Channel | Who sees it | Bot posts |
 |---|---|---|---|
 | 👋 Start here | `#🔗-link-tag` | Newcomers only (hidden once linked; `/link` only, no chat) | How to link (pinned) |
+| | `#🚪-not-in-clan` | `Not in clan` role + leaders, chat | Waiting room for tags not in the clan, and members who left in game |
 | | `#📜-rules` | Members, read-only | Rules (pinned, kept up to date) |
 | 📊 Clan info | `#📊-clan-stats` | Members, read-only | Stats board (pinned, after every war) |
 | | `#🏆-results` | Members, read-only | Battle day summaries, war results, season recaps |
@@ -106,7 +107,8 @@ role list** (Server Settings → Roles → drag → Save). Discord doesn't let a
 | 🛡️ Leaders | `#🛡️-leaders` | Leader + Co-Leader | To-do list, absences, digest, backups |
 | | `#💭-leader-chat` | Leader + Co-Leader | |
 
-Roles `Leader`, `Co-Leader`, `Elder`, `Member` (made if missing, coloured, listed separately). Anyone with Leader or
+Roles `Leader`, `Co-Leader`, `Elder`, `Member` (made if missing, coloured, listed separately) and `Not in clan`.
+Only Leader and Co-Leader can create invites. Anyone with Leader or
 Co-Leader can use leader commands. Each channel also gets a short pinned note saying what appears there.
 
 ## 7. Turn the bot on in the server

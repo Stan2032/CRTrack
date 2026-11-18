@@ -115,7 +115,7 @@ async function allConfigs(env) {
     .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
 }
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
-export const JOBS = { war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
+export const JOBS = { guests: 'Not in clan (waiting room)', war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
   leaders: 'Leaders only: to-do list after each war + absences' };
 const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
 const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
@@ -128,7 +128,8 @@ async function findRoles(env, guild, opt, cfg) {
     for (const r of Array.isArray(list) ? list : []) { const k = String(r.name).toLowerCase().replace(/[^a-z]/g, ''); if (['member', 'elder', 'coleader', 'leader'].includes(k) && !byName[k]) byName[k] = r.id; }
   }
   return { member: opt.member_role || cfg?.roles?.member || byName.member, elder: opt.elder_role || cfg?.roles?.elder || byName.elder,
-    coLeader: opt.coleader_role || cfg?.roles?.coLeader || byName.coleader, leader: opt.leader_role || cfg?.roles?.leader || byName.leader };
+    coLeader: opt.coleader_role || cfg?.roles?.coLeader || byName.coleader, leader: opt.leader_role || cfg?.roles?.leader || byName.leader,
+    ...(cfg?.roles?.guest ? { guest: cfg.roles.guest } : {}) };
 }
 
 async function overview(env, guild, cfg) {
@@ -155,8 +156,8 @@ const isLeader = (member, cfg) => {
 // Desired clan role and nickname for a linked user, from their game role.
 async function syncOne(env, guild, cfg, userId, m) {
   if (!cfg?.roles) return;
-  const clanRoles = Object.values(cfg.roles).filter(Boolean);
-  const want = m && m.in_clan ? cfg.roles[m.role] || cfg.roles.member : null;
+  const clanRoles = Object.values(cfg.roles).filter(Boolean);   // ranks and "Not in clan"
+  const want = m && m.in_clan ? (cfg.roles[m.role] || cfg.roles.member) : m && cfg.roles.guest ? cfg.roles.guest : null;
   const cur = await dapi(env, 'GET', `/guilds/${guild}/members/${userId}`).catch(() => null);
   if (!cur) return;
   const has = Array.isArray(cur.roles) ? cur.roles : [];
@@ -190,7 +191,13 @@ export async function handleDiscord(request, env, ctx) {
       const target = i.data.name === 'linkuser' ? opt.user : user, tag = cleanTag(opt.tag);
       if (!TAG.test(tag)) return Response.json(reply('That doesn\'t look like a player tag. It\'s under your name on your profile, e.g. #ABC123.'));
       const m = await member(tag);
-      if (!m || !m.in_clan) return Response.json(reply(`#${tag} isn't in the clan right now.`));
+      if (!m || !m.in_clan) {
+        const g = cfg?.roles?.guest, room = chan(cfg, 'guests');
+        if (g && i.data.name === 'link') later(dapi(env, 'PUT', `/guilds/${guild}/members/${target}/roles/${g}`));
+        return Response.json(reply(`#${tag} isn't in the clan right now.` + (g && i.data.name === 'link'
+          ? ` You can now see${room ? ` <#${room}>` : ' the Not in clan channel'}: ask a leader there, or join the clan in game and \`/link\` again. You're free to leave the server any time.`
+          : ' Join in game first, then link.')));
+      }
       const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, tag, target).first();
       if (taken && i.data.name === 'link') return Response.json(reply(`#${tag} is already linked to someone else. Ask a leader if that's wrong.`));
       if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, tag).run();
@@ -733,15 +740,16 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
 //   Step 3: a pinned note in each channel, the to-do list, rival scouting
 //   Step 4 (fresh only): delete the old channels
 const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
-  CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n };
+  INVITE: 1n << 0n, CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n };
 const bits = (...k) => String(k.reduce((t, x) => t | P[x], 0n));
 const CHAT = bits('VIEW', 'SEND', 'HISTORY', 'REACT', 'EMBED', 'ATTACH', 'APPS'), READ = bits('VIEW', 'HISTORY', 'REACT', 'APPS');
 const BOT = bits('VIEW', 'SEND', 'HISTORY', 'EMBED', 'ATTACH');
-const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe2af4b], ['elder', 'Elder', 0x3b7dd8], ['member', 'Member', 0x95a5a6]];
+const ROLE_SPEC = [['leader', 'Leader', 0xe65157], ['coLeader', 'Co-Leader', 0xe2af4b], ['elder', 'Elder', 0x3b7dd8], ['member', 'Member', 0x95a5a6], ['guest', 'Not in clan', 0x5c5f66]];
 // The layout. access: newcomers | public-read | members-read | members | leaders. jobs: what the bot posts there.
 export const LAYOUT = [
   { cat: '👋 Start here', access: 'public', channels: [
     { key: 'link', name: '🔗-link-tag', access: 'newcomers', jobs: ['welcome'], match: /link/, topic: 'New here? Link your Clash Royale account to see the rest of the server.' },
+    { key: 'guests', name: '🚪-not-in-clan', access: 'guests', jobs: ['guests'], match: /notinclan|guest|waiting/, topic: 'Not in the clan (yet)? Ask the leaders here, or join in game and /link again.' },
     { key: 'rules', name: '📜-rules', access: 'members-read', jobs: ['rules'], match: /rules/, topic: 'Clan rules, kept up to date by War Audit.' }] },
   { cat: '📊 Clan info', access: 'public', channels: [
     { key: 'stats', name: '📊-clan-stats', access: 'members-read', jobs: ['stats'], match: /stats/, topic: 'Clan stats, updated after every war.' },
@@ -765,7 +773,8 @@ function overwritesFor(access, guild, roles, botId, voice = false) {
   const bot = ow(botId, BOT, '0', 1), hide = ow(guild, '0', bits('VIEW'));
   const room = voice ? bits('VIEW', 'CONNECT', 'SPEAK') : CHAT;
   if (access === 'public') return [];
-  if (access === 'newcomers') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...rest.map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
+  if (access === 'newcomers') return [ow(guild, bits('VIEW', 'HISTORY', 'APPS'), bits('SEND')), ...[...rest, roles.guest].map(r => ow(r, '0', bits('VIEW'))), bot].filter(Boolean);
+  if (access === 'guests') return [hide, ...[roles.guest, ...lead].map(r => ow(r, CHAT)), bot].filter(Boolean);
   if (access === 'public-read') return [ow(guild, READ, bits('SEND')), bot].filter(Boolean);
   if (access === 'members-read') return [hide, ...all.map(r => ow(r, READ, bits('SEND'))), bot].filter(Boolean);
   if (access === 'leaders') return [hide, ...lead.map(r => ow(r, room)), voice ? null : bot].filter(Boolean);
@@ -778,9 +787,10 @@ const INTROS = {
   results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,
   leaders: `🛡️ **Leaders only. War Audit posts here:** the **to-do list** after each war (who to kick, demote, warn, promote, with tick buttons), **absences** from \`/away\`, the **weekly digest** before battle days (or privately with \`/digest on:True\`) and a **monthly backup** of the full history.`,
+  guests: `🚪 **Not in the clan right now.** The tag you linked isn't in #WINNING's member list. Join the clan in game, then use \`/link\` here again, or ask a leader below. You're free to leave the server any time.`,
   bot: `🤖 **Use War Audit here:**\n\`/mystats\` your full war report · \`/stats\` clan stats · \`/remind 3\` a private reminder 3 hours before reset · \`/away 3 holiday\` tell the leaders you're away · \`/season\` season recap · \`/scout\` this war's rivals`,
 };
-const LABEL = { welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
+const LABEL = { guests: 'waiting room for tags not in the clan', welcome: 'how to link', rules: 'rules', stats: 'clan stats', results: 'summaries, results, season recaps', scout: 'rival scouting',
   war: 'war board + reminders', joins: 'welcomes + shout-outs', leaders: 'to-do list, absences, digest, backups' };
 const STEPS = fresh => fresh ? 4 : 3;
 const nextButton = (step, of) => [{ type: 1, components: [{ type: 2, style: 1, label: `Continue ▶ (step ${step} of ${of})`, custom_id: 'autosetup|next' }] }];
@@ -829,6 +839,8 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     const missing = ROLE_SPEC.filter(([k]) => !roleIds[k]).map(r => r[1]);
     if (missing.length) lines.push(`➕ Roles: ${missing.join(', ')}`);
     for (const c of LAYOUT) lines.push(`**${c.cat}**`, ...c.channels.map(x => `${found[x.key] ? `🔧 <#${found[x.key]}>` : `➕ ${x.type === 2 ? '' : '#'}${x.name}`}${x.jobs.length ? ': ' + x.jobs.map(j => LABEL[j]).join(', ') : ''}`));
+    lines.push('🎟️ Only Leader and Co-Leader can create invites.');
+    lines.push('🚪 A tag that isn\'t in the clan (or a member who leaves in game) gets the **Not in clan** role: they see only #not-in-clan, where leaders can talk to them.');
     lines.push('🔒 Newcomers see **only** the link channel. Once linked, Members and Elders see rules, stats, results and scouting (read-only) and chat in war, general, bot-commands and voice; the link channel disappears for them. Leader and Co-Leader also see the Leaders category.');
     if (old.length) lines.push(`🗑️ **Deletes ${old.length} existing channel${old.length === 1 ? '' : 's'}** (last step): ${old.filter(c => c.type !== 4).slice(0, 15).map(c => c.name).join(', ')}${old.length > 15 ? '…' : ''}`);
     if (problems.length) lines.push(`\n**Fix first:**\n${problems.map(x => '• ' + x).join('\n')}`);
@@ -844,9 +856,16 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
     const r = await dapi(env, 'POST', `/guilds/${guild}/roles`, { name, color, hoist: true, mentionable: false, permissions: '0' }).catch(() => null);
     if (r?.id) { roleIds[k] = r.id; done.push(`✅ Role ${name}`); } else done.push(`⚠️ Couldn't create role ${name}`);
   }
-  for (const [k, , color] of ROLE_SPEC) {   // coloured, listed separately (only roles below the bot)
+  for (const [k, , color] of ROLE_SPEC.filter(r => r[0] !== 'guest')) {   // ranks coloured, listed separately (only roles below the bot)
     const r = st.roles.find(x => x.id === roleIds[k]);
     if (r && r.position < st.top && (!r.hoist || !r.color)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { color: r.color || color, hoist: true }).catch(() => null);
+  }
+  // Invites: only Leader and Co-Leader (taken off @everyone, given to those two roles).
+  const everyone = st.roles.find(r => r.id === guild), inv = P.INVITE;
+  if (everyone && (BigInt(everyone.permissions) & inv)) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${guild}`, { permissions: String(BigInt(everyone.permissions) & ~inv) }).then(() => done.push('✅ Invites: only Leader and Co-Leader'), () => done.push('⚠️ Couldn\'t limit invites'));
+  for (const k of ['leader', 'coLeader']) {
+    const r = st.roles.find(x => x.id === roleIds[k]) || { id: roleIds[k], permissions: '0', position: 0 };
+    if (r.id && !(BigInt(r.permissions || '0') & inv) && r.position < st.top) await dapi(env, 'PATCH', `/guilds/${guild}/roles/${r.id}`, { permissions: String(BigInt(r.permissions || '0') | inv) }).catch(() => null);
   }
   const ids = {};
   let pos = 0;
@@ -914,7 +933,7 @@ export async function autoSetupNext(env, guild, clan) {
     return { content: [`**Step 2 of ${of} done: rules, how to link, stats**`, ...done].join('\n'), components: nextButton(3, of) };
   }
   if (run.step === 3) {
-    for (const key of ['war', 'joins', 'results', 'scout', 'leaders']) { const c = chan(cfg, key); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
+    for (const key of ['guests', 'war', 'joins', 'results', 'scout', 'leaders']) { const c = chan(cfg, key); if (c) await post(`discord:intro:${guild}:${c}`, c, INTROS[key], 'Note'); }
     if (run.ids?.bot) await post(`discord:intro:${guild}:${run.ids.bot}`, run.ids.bot, INTROS.bot, 'Note');
     if (chan(cfg, 'leaders')) done.push(await postTodo(env, clan, guild, true).then(n => n ? `✅ To-do list → <#${chan(cfg, 'leaders')}>` : '➖ To-do list: no finished war yet', () => '⚠️ To-do list: try `/todo`'));
     if (chan(cfg, 'scout')) {

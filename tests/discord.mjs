@@ -21,7 +21,7 @@ globalThis.fetch = async (url, opt = {}) => {
   calls.push({ url: String(url), method: opt.method, body: opt.body ? JSON.parse(opt.body) : null });
   if (/\/channels\/CLC$/.test(url) && opt.method === 'PATCH' && globalThis.lockLeaders) return new Response('{}', { status: 403 });
   if (/\/guilds\/G\/members\/U1$/.test(url) && opt.method === 'GET') return Response.json({ roles: currentRoles, nick: null });
-  if (/\/guilds\/G3\/roles$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'G3', name: '@everyone', position: 0, permissions: String((1n << 31n) | (1n << 10n)) },
+  if (/\/guilds\/G3\/roles$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json([{ id: 'G3', name: '@everyone', position: 0, permissions: String((1n << 31n) | (1n << 10n) | 1n) },
     { id: 'BOTROLE', name: 'War Audit', position: 5, permissions: String((1n << 28n) | (1n << 4n) | (1n << 5n)) }, { id: 'RL', name: 'Leader', position: 6, permissions: '0' }, { id: 'RM3', name: 'Member', position: 1, permissions: '0' }]);
   if (/\/guilds\/G3\/roles$/.test(url) && opt.method === 'POST') return Response.json({ id: 'NEW-' + JSON.parse(opt.body).name });
   if (/\/guilds\/G3$/.test(url) && (opt.method || 'GET') === 'GET') return Response.json({ id: 'G3', icon: null });
@@ -261,6 +261,9 @@ const res3 = calls.find(c => c.method === 'POST' && /guilds\/G3\/channels$/.test
 assert.ok(res3.some(o => o.id === 'RM3' && !(BigInt(o.allow) & (1n << 11n))), 'results read-only for members');
 assert.ok(calls.some(c => c.method === 'POST' && c.body?.type === 4 && c.body.name === '🛡️ Leaders'), 'categories made');
 assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c.body.hoist), 'Member role listed separately');
+assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/G3$/.test(c.url) && !(BigInt(c.body.permissions) & 1n)), 'invites taken off @everyone');
+assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/NEW-Co-Leader$/.test(c.url) && BigInt(c.body.permissions) & 1n), 'Co-Leader can invite');
+assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v).roles.guest, 'NEW-Not in clan');
 // Who sees what, worked out like Discord does (server @everyone can view; channel overwrites: @everyone, then roles, then the member).
 {
   const made = calls.filter(c => /guilds\/G3\/channels$|\/channels\/(CW|CR|CV|CLC)$/.test(c.url) && ['POST', 'PATCH'].includes(c.method) && c.body?.type !== 4);
@@ -279,7 +282,9 @@ assert.ok(calls.some(c => c.method === 'PATCH' && /roles\/RM3$/.test(c.url) && c
   const clanView = ['⚔️-war', '💬-general', '📊-clan-stats', '📜-rules', '🔊 Clan voice', '🔭-rival-scouting', '🤖-bot-commands', '🏆-results'].sort();
   assert.deepEqual(sees(MEMBER), clanView, 'members: the clan channels, not link or leaders');
   assert.deepEqual(sees(ELDER), clanView, 'elders: same as members');
-  for (const L of [LEADER, CO]) assert.deepEqual(sees(L), [...clanView, '🔗-link-tag', '🛡️-leaders', '💭-leader-chat'].sort(), 'leaders: everything');
+  for (const L of [LEADER, CO]) assert.deepEqual(sees(L), [...clanView, '🔗-link-tag', '🛡️-leaders', '💭-leader-chat', '🚪-not-in-clan'].sort(), 'leaders: everything');
+  assert.deepEqual(sees(['NEW-Not in clan']), ['🚪-not-in-clan'], 'not in the clan: only the waiting room');
+  assert.ok(can(byName['🚪-not-in-clan'], ['NEW-Not in clan'], S), 'and they can talk to leaders there');
   const chats = roles => Object.keys(byName).filter(n => can(byName[n], roles, V) && can(byName[n], roles, S)).sort();
   assert.deepEqual(chats(MEMBER), ['⚔️-war', '💬-general', '🔊 Clan voice', '🤖-bot-commands'].sort(), 'members chat only in war, general, bot-commands, voice');
   assert.ok(!chats(LEADER).includes('📜-rules') && !chats(LEADER).includes('📊-clan-stats'), 'rules and stats read-only even for leaders');
@@ -320,6 +325,23 @@ globalThis.lockLeaders = false;
 assert.match(ap2.content, /<#CLC>: couldn't change it[\s\S]*add War Audit/);
 assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v).channels.leaders, 'CLC', 'job kept');
 await DB.exec(`DELETE FROM kv WHERE k = 'autosetup:G3'`);
+
+// /link with a tag that isn't in the clan: the Not in clan role, pointed at the waiting room.
+calls.length = 0;
+assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U9' }, permissions: '0', roles: [] }, data: { name: 'link', options: [{ name: 'tag', value: '#QQQQQQ' }] } })),
+  /isn't in the clan right now\. You can now see <#NEWCH-notinclan>: ask a leader there/);
+await Promise.all(pending);
+assert.ok(calls.some(c => c.method === 'PUT' && /members\/U9\/roles\/NEW-Not in clan$/.test(c.url)));
+// A linked member who leaves the clan in game: rank role off, Not in clan on.
+{ const { syncGuild } = await import('../worker/discord.js');
+  await DB.exec(`INSERT OR REPLACE INTO discord_links (guild, user_id, clan, tag) VALUES ('G3', 'U1', 'PPCCR8VU', 'YVJRGLCC'); UPDATE members SET in_clan = 0 WHERE tag = 'YVJRGLCC'`);
+  const realF = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => /guilds\/G3\/members\/U1$/.test(String(url)) && (opt.method || 'GET') === 'GET' ? Response.json({ roles: ['RM3', 'OTHER'], nick: 'perc' }) : realF(url, opt);
+  calls.length = 0;
+  await syncGuild(env, 'G3', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v), 'PPCCR8VU');
+  assert.deepEqual(calls.find(c => c.method === 'PATCH' && /members\/U1$/.test(c.url)).body.roles.sort(), ['NEW-Not in clan', 'OTHER']);
+  globalThis.fetch = realF;
+  await DB.exec(`UPDATE members SET in_clan = 1 WHERE tag = 'YVJRGLCC'`); }
 
 // Someone with the Leader role (no Discord permissions) counts as a leader.
 assert.match(await text(await interaction({ type: 2, guild_id: 'G3', member: { user: { id: 'U8' }, permissions: '0', roles: ['RL'] }, data: { name: 'links', options: [] } })), /Linked:/);
