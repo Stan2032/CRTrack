@@ -222,3 +222,9 @@ console.log('History checks passed');
   assert.equal(r3.imported.length, 9, 'the 10 wars in the export, minus the one tracked'); assert.equal(r3.invalid, 0);
   console.log('Import checks passed');
 }
+
+// Live battle day (real shape, 19 Nov 2026): the clan's own "fame" stays 0 until the reset; its players' medals are the live total.
+{ const { raceFame } = await import('../worker/logic.gen.js');
+  assert.equal(raceFame({ fame: 0, periodPoints: 3950, participants: [{ fame: 3000 }, { fame: 950 }] }), 3950, 'live day: players\' medals');
+  assert.equal(raceFame({ fame: 12000, participants: [{ fame: 100 }] }), 12000, 'after a reset: the clan total');
+  assert.equal(raceFame({}), 0); console.log('Race total checks passed'); }

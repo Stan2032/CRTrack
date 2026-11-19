@@ -5,6 +5,7 @@
 import { sendAlert, PUSH_SCHEMA } from './push.js';
 import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
+import { raceFame } from './logic.gen.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -118,7 +119,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
 
   // Rival clans in this race, per battle day
   if (week && day && race.clans?.length) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ${
-    rows(race.clans.map(c => [clan, week, day, clean(c.tag), c.name, c.fame, now]))}`);
+    rows(race.clans.map(c => [clan, week, day, clean(c.tag), c.name, raceFame(c), now]))}`);
 
   // War battles from players' battle logs (each log holds their last 25 battles).
   // A few players per run, in rotation, to stay inside the free plan's per-run limits.
@@ -168,7 +169,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     leftToday: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday < 4).map(p => ({ tag: clean(p.tag), name: p.name, left: 4 - p.decksUsedToday })).sort((a, b) => b.left - a.left) : [],
     board: day ? (() => {
       const mine = live.filter(p => here.has(clean(p.tag)));
-      return { standings: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, fame: c.fame || 0 })).sort((a, b) => b.fame - a.fame),
+      return { standings: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, fame: raceFame(c) })).sort((a, b) => b.fame - a.fame),
         members: here.size, reached: mine.filter(p => p.fame >= target).length,
         decksUsed: mine.reduce((t, p) => t + Math.min(4, p.decksUsedToday), 0), decksTotal: here.size * 4,
         notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };

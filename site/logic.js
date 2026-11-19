@@ -105,6 +105,9 @@ function detect(rows) {
 }
 
 const cleanTag = t => String(t || '').replace(/^#/, '').toUpperCase();
+// A clan's race medals so far. On battle days the game leaves the clan's own "fame" at 0 until the daily reset
+// (today's medals are in periodPoints), so the sum of its players' medals is the live number (checked 19 Nov 2026).
+const raceFame = c => Math.max(Number(c?.fame) || 0, (c?.participants || []).reduce((s, p) => s + (Number(p.fame) || 0), 0));
 // In-game colour codes in names, e.g. "<c4>Baki" (shown in game as a coloured name).
 const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
 const keyParts = k => String(k).split('-').map(Number);
@@ -446,7 +449,7 @@ function apiToRows({ clan, members, race, log }) {
   }
   const last = (log?.items || [])[0];
   const raceWeek = race && last ? `${race.sectionIndex > last.sectionIndex ? last.seasonId : last.seasonId + 1}-${race.sectionIndex + 1}` : null;
-  const standings = (race?.clans || []).map(c => ({ tag: cleanTag(c.tag), name: c.name, fame: c.fame || 0 })).sort((a, b) => b.fame - a.fame);
+  const standings = (race?.clans || []).map(c => ({ tag: cleanTag(c.tag), name: c.name, fame: raceFame(c) })).sort((a, b) => b.fame - a.fame);
   return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null, standings };
 }
 
@@ -589,4 +592,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { raceFame, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
