@@ -241,6 +241,9 @@ await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,bo
   ('PPCCR8VU','138-3',1,'2VJ9V2PV','Luke',800,4,4,0,'x'),('PPCCR8VU','138-3',2,'2VJ9V2PV','Luke',1700,8,4,0,'x'),
   ('PPCCR8VU','138-3',1,'YVJRGLCC','perc',500,4,4,0,'x'),('PPCCR8VU','138-3',2,'YVJRGLCC','perc',900,6,2,0,'x');
   INSERT INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ('PPCCR8VU','138-3',1,'PPCCR8VU','#WINNING',1000,20000,'x'),('PPCCR8VU','138-3',2,'PPCCR8VU','#WINNING',2800,22000,'x'),('PPCCR8VU','138-3',2,'AAA','Rival',4000,25000,'x');`);
+await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES ('PPCCR8VU','138-3',2,'LATE1','Latecomer',0,0,0,0,'x');
+  INSERT INTO periods (clan,week,period,type,first_seen) VALUES ('PPCCR8VU','138-3',17,'warDay','2026-11-19T09:45:00Z'),('PPCCR8VU','138-3',18,'warDay','2026-11-20T09:45:00Z');
+  INSERT INTO member_events (clan,tag,at,kind,detail) VALUES ('PPCCR8VU','LATE1','2026-11-20T15:00:00Z','join','');`);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'no results channel yet: nothing posted');
 await DB.prepare("DELETE FROM kv WHERE k LIKE 'dsum:%'").run();
 await here('results', 'R');
@@ -250,6 +253,7 @@ assert.ok(calls.some(c => c.method === 'POST' && /channels\/R\/messages$/.test(c
 const sum = calls.find(c => c.method === 'POST').body.content;
 assert.match(sum, /Battle day 2 summary[\s\S]*\+22,000\*\* \(\+10% vs day 1\) · \*\*2nd\*\* of 2 clans today[\s\S]*Race points: \*\*\+1,800\*\*[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*Race: \*\*2nd\*\* of 2, 2,800 race points, 1,200 behind Rival[\s\S]*Luke \+900[\s\S]*Missed decks: \*\*2 unused\*\* · perc 2/);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
+await DB.exec(`DELETE FROM race_days WHERE tag = 'LATE1'; DELETE FROM member_events WHERE tag = 'LATE1'; DELETE FROM periods WHERE week = '138-3' AND period IN (17, 18);`);
 
 // Rules: posted with /rules, then edited when the rules change.
 calls.length = 0;

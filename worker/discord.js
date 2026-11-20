@@ -983,8 +983,12 @@ export async function daySummary(env, clan, week, day) {
   if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(once).first()) return 0;
   const rows = d => env.DB.prepare('SELECT tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
   const stand = d => env.DB.prepare('SELECT rival, name, fame, medals FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
-  const [today, before, st, stBefore] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1)]);
-  if (!today.length) return 0;
+  const [all, before, st, stBefore] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1)]);
+  if (!all.length) return 0;
+  // Joined after this battle day started (seen joining after the day's period was first seen): not counted as missed.
+  const dayStart = (await env.DB.prepare("SELECT first_seen FROM periods WHERE clan = ? AND week = ? AND type != 'training' ORDER BY period LIMIT 1 OFFSET ?").bind(clan, week, day - 1).first())?.first_seen;
+  const lateJoin = new Set(dayStart ? (await env.DB.prepare("SELECT tag FROM member_events WHERE clan = ? AND kind = 'join' AND at > ?").bind(clan, dayStart).all()).results.map(x => x.tag) : []);
+  const today = all.filter(p => !lateJoin.has(p.tag));
   const prevFame = Object.fromEntries(before.map(p => [p.tag, p.fame]));
   const gains = today.map(p => ({ name: p.name, gain: p.fame - (prevFame[p.tag] || 0) })).sort((a, b) => b.gain - a.gain);
   const used = today.reduce((t, p) => t + Math.min(4, p.today), 0), total = today.length * 4;
@@ -1004,7 +1008,7 @@ export async function daySummary(env, clan, week, day) {
     i >= 0 ? `Race: **${place(i)}** of ${sorted.length}, ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
     `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
     (() => { const m = today.filter(p => p.today < 4).sort((a, b) => a.today - b.today || cleanName(a.name).localeCompare(cleanName(b.name)));
-      return m.length ? `Missed decks: **${total - used} unused** · ${m.slice(0, 25).map(p => `${cleanName(p.name)} ${4 - p.today}`).join(', ')}${m.length > 25 ? ` +${m.length - 25} more` : ''}` : '✅ No decks missed'; })(),
+      return m.length ? `Missed decks: **${m.reduce((t, p) => t + 4 - p.today, 0)} unused** · ${m.slice(0, 25).map(p => `${cleanName(p.name)} ${4 - p.today}`).join(', ')}${m.length > 25 ? ` +${m.length - 25} more` : ''}` : '✅ No decks missed'; })(),
   ].filter(Boolean).join('\n');
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
   let sent = 0;
