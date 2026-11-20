@@ -106,9 +106,6 @@ function detect(rows) {
 }
 
 const cleanTag = t => String(t || '').replace(/^#/, '').toUpperCase();
-// A clan's race medals so far. On battle days the game leaves the clan's own "fame" at 0 until the daily reset
-// (today's medals are in periodPoints), so the sum of its players' medals is the live number (checked 19 Nov 2026).
-const raceFame = c => Math.max(Number(c?.fame) || 0, (c?.participants || []).reduce((s, p) => s + (Number(p.fame) || 0), 0));
 // In-game colour codes in names, e.g. "<c4>Baki" (shown in game as a coloured name).
 const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
 const keyParts = k => String(k).split('-').map(Number);
@@ -450,11 +447,45 @@ function apiToRows({ clan, members, race, log }) {
   }
   const last = (log?.items || [])[0];
   const raceWeek = race && last ? `${race.sectionIndex > last.sectionIndex ? last.seasonId : last.seasonId + 1}-${race.sectionIndex + 1}` : null;
-  const standings = (race?.clans || []).map(c => ({ tag: cleanTag(c.tag), name: c.name, fame: raceFame(c) })).sort((a, b) => b.fame - a.fame);
-  return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null, standings };
+  const outlook = raceOutlook(race);
+  return { roster, race: raceRows, log: logRows, raceWeek, raceDay: raceDay(race), racePeriod: race?.periodType || null, outlook };
 }
 
 // periodIndex: 0-2 training, 3-6 battle days 1-4 (repeats each week)
+// ---- The race (worked out from the clan's own day logs: 9 battle days, Nov 2026, all consistent) ----
+// Normal weeks: each battle day the clans are ranked by THAT DAY's medals; the place earns race points
+// (1st 3,000 · 2nd 1,800 · 3rd 1,000 · 4th 600 · 5th 400) plus a small bonus for boat defences left standing.
+// Most race points after day 4 wins (10,000 is the finish line). Colosseum (a season's last week): total medals win.
+// The game shows a clan's race points ("fame") only as of the last reset; today's medals are "periodPoints".
+const RANK_POINTS = [3000, 1800, 1000, 600, 400], FINISH = 10000;
+function raceOutlook(race) {
+  const day = raceDay(race);
+  if (!day || !race.clans?.length) return null;
+  const colosseum = race.periodType === 'colosseum', sum = a => a.reduce((t, x) => t + x, 0);
+  const past = {};   // each clan's logged battle days (this season's logs): medals and defence bonus
+  for (const l of race.periodLogs || []) for (const it of l.items || []) (past[cleanTag(it.clan?.tag)] ||= []).push({ medals: it.pointsEarned || 0, bonus: it.progressEarnedFromDefenses || 0 });
+  const rows = race.clans.map(c => {
+    const tag = cleanTag(c.tag), h = past[tag] || [], medals = sum((c.participants || []).map(p => Number(p.fame) || 0));
+    return { tag, name: c.name, points: colosseum ? medals : Number(c.fame) || 0, today: Number(c.periodPoints) || 0, medals,
+      avgMedals: h.length ? Math.round(sum(h.map(x => x.medals)) / h.length) : null, avgBonus: h.length ? Math.round(sum(h.map(x => x.bonus)) / h.length) : 0 };
+  });
+  const started = rows.some(r => r.today > 0);
+  // Today's place: clans level on medals share the higher place (how the game splits a tie isn't known).
+  for (const r of rows) r.place = started ? rows.filter(x => x.today > r.today).length : null;
+  // The next clan up on today's medals (the closest one with more).
+  for (const r of rows) r.next = started ? rows.filter(x => x.today > r.today).sort((a, b) => a.today - b.today)[0]?.tag || null : null;
+  for (const r of rows) r.ifNow = colosseum ? r.points : Math.min(FINISH, r.points + (started ? RANK_POINTS[r.place] || 0 : 0));
+  // Projection on recent form: today ends at their usual daily medals (or today's, if already more), then the
+  // remaining days at their usual medals; places by those, plus their usual defence bonus.
+  const est = r => r.avgMedals ?? r.today;
+  const placeBy = f => { const o = rows.slice().sort((a, b) => f(b) - f(a)); return r => o.indexOf(r); };
+  const todayPl = placeBy(r => Math.max(r.today, est(r))), laterPl = placeBy(est), left = 4 - day;
+  for (const r of rows) r.projected = colosseum ? r.medals + Math.max(0, est(r) - r.today) + left * est(r)
+    : Math.min(FINISH, r.points + RANK_POINTS[todayPl(r)] + r.avgBonus + left * (RANK_POINTS[laterPl(r)] + r.avgBonus));
+  rows.sort((a, b) => b.ifNow - a.ifNow || b.today - a.today);
+  return { day, colosseum, started, rows, unit: colosseum ? 'medals' : 'race points' };
+}
+
 function raceDay(race) {
   if (!race || !['warDay', 'colosseum'].includes(race.periodType)) return 0;
   return Math.min(4, Math.max(1, (race.periodIndex % 7) - 2));
@@ -593,4 +624,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-export { raceFame, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+export { raceOutlook, RANK_POINTS, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

@@ -132,12 +132,6 @@ function bestMode(ms) {
   return { mode: names[ok[0][0]], perDeck: Math.round(ok[0][1].perDeck), next: names[ok[1][0]], gain: Math.round(ok[0][1].perDeck - ok[1][1].perDeck) };
 }
 
-// Projected end-of-war medals for every clan in the race, at their pace so far.
-//   elapsed = battle days fully done + share of today gone (from the daily reset time).
-function projectRace(standings, day, msSinceReset) {
-  const elapsed = Math.max(0.25, (day - 1) + clamp(msSinceReset / 864e5, 0, 1));
-  return standings.map(c => ({ ...c, projected: Math.round(c.fame / elapsed * 4) })).sort((a, b) => b.projected - a.projected);
-}
 
 // Clan war history: medals, place, trophy change and pass rate per war (oldest first).
 function clanSeries(wars, players, target) {
@@ -221,4 +215,4 @@ function seasonSummary(log, wars, season, target) {
   return { season, weeks, top, perfect, placings, complete: weeks.length >= 4, medals: ps.reduce((t, x) => t + x.total, 0) };
 }
 
-export { seasonSummary, band, BANDS, weekCmp, calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, projectRace, clanSeries, median };
+export { seasonSummary, band, BANDS, weekCmp, calibrate, habits, clanHabits, forecast, reliability, playTimes, modeStats, bestMode, clanSeries, median };

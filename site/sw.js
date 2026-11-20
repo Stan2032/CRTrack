@@ -1,6 +1,6 @@
 // Service worker: lets the site install as an app, works offline for the page itself,
 // and shows notifications. Pushes carry no data; the latest alert is fetched from the site.
-const CACHE = 'war-audit-v17';
+const CACHE = 'war-audit-v18';
 const SHELL = ['./', 'index.html', 'style.css', 'logic.js', 'stats.js', 'ui.js', 'app.js', 'me.html', 'me.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/clan-badge.svg', 'privacy.html'];
 
 self.addEventListener('install', e => {

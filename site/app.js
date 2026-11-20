@@ -98,7 +98,7 @@ async function pull() {
       site.history ? fetch('api/history?clan=' + t, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : null]);
     hist = h;
     const rows = apiToRows({ clan, members, race, log });
-    raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod, standings: rows.standings };
+    raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod, outlook: rows.outlook };
     if (raceInfo.day) day = raceInfo.day;
     pickWeek = null;
     load(rows, 'api');
@@ -243,41 +243,36 @@ function resetUK() {
 }
 const liveOpts = () => ({ day, reset: resetUK() });
 
-// Rival clans in this race: medals, gap to us, and how the gap moved since yesterday.
+// The race (raceOutlook in logic.js): race points if today ended now, today's medals and place, what passing the
+// next clan today is worth, and the finish on recent form. Colosseum weeks: total medals decide it.
+const nth = i => ['1st', '2nd', '3rd', '4th', '5th'][i] || i + 1 + 'th';
 function raceBox() {
-  const st = raceInfo.standings || [];
+  const o = raceInfo.outlook, st = o?.rows || [];
   if (mode !== 'live' || !raceInfo.day || st.length < 2) return '';
   const me = st.find(c => c.tag === model.clan.tag);
   if (!me) return '';
-  const yday = {};
-  for (const x of hist?.standings || []) if (x.week === raceInfo.week && x.day === raceInfo.day - 1) yday[x.rival] = x.fame;
-  const gapNow = c => c.fame - me.fame, gapY = c => yday[c.tag] != null && yday[me.tag] != null ? yday[c.tag] - yday[me.tag] : null;
-  const rows = st.map((c, i) => {
-    const us = c.tag === me.tag, g = gapNow(c), gy = gapY(c);
-    // Did the distance shrink or grow since yesterday? Good or bad depends on whether they're ahead or behind.
-    const shrank = gy != null && Math.abs(g) < Math.abs(gy), grew = gy != null && Math.abs(g) > Math.abs(gy);
-    const trend = us || gy == null || (!shrank && !grew) ? '' : g > 0
-      ? (shrank ? ' <span class="up">▲ we’re catching up</span>' : ' <span class="down">▼ they’re pulling away</span>')
-      : (shrank ? ' <span class="down">▼ they’re catching up</span>' : ' <span class="up">▲ we’re pulling away</span>');
-    const gap = us ? '<b>us</b>' : g > 0 ? `${g.toLocaleString()} ahead of us` : g < 0 ? `${(-g).toLocaleString()} behind us` : 'level';
-    return `<tr class="${us ? 'us' : ''}"><td>${i + 1}</td><td>${esc(cleanName(c.name))}</td><td class="num">${c.fame.toLocaleString()}</td><td>${gap}${trend}</td></tr>`;
-  }).join('');
-  const i = st.indexOf(me), above = st[i - 1], below = st[i + 1];
-  const line = above ? `${(above.fame - me.fame).toLocaleString()} medals to catch ${esc(cleanName(above.name))}` : below ? `Leading by ${(me.fame - below.fame).toLocaleString()} medals` : '';
-  const w = (hist?.wars || []).map(x => parseTime(x.ended_at)).filter(Boolean).sort((a, b) => b - a)[0];
-  const since = w ? (((Date.now() - w) % 864e5) + 864e5) % 864e5 : 864e5 / 2;
-  const proj = projectRace(st, raceInfo.day, since), pi = proj.findIndex(c => c.tag === me.tag);
-  const projLine = `At today's pace: finish ${['1st', '2nd', '3rd', '4th', '5th'][pi] || pi + 1 + 'th'} with ~${proj[pi].projected.toLocaleString()} medals`
-    + (pi > 0 ? `, ${(proj[pi - 1].projected - proj[pi].projected).toLocaleString()} behind ${esc(cleanName(proj[pi - 1].name))}` : proj[1] ? `, ${(proj[0].projected - proj[1].projected).toLocaleString()} ahead` : '');
-  return `<div class="race"><div class="steps-head">Race ${line ? '<span class="count">' + line + '</span>' : ''}</div><table>${rows}</table><div class="hint" style="margin-top:6px">${projLine}</div></div>`;
+  const nm = c => esc(cleanName(c.name)), val = c => o.colosseum ? c.medals : c.ifNow;
+  const head = o.colosseum ? '<tr><th></th><th>Clan</th><th class="num">Medals</th></tr>' : '<tr><th></th><th>Clan</th><th class="num">Race pts</th><th class="num">Today</th></tr>';
+  const rows = st.map((c, i) => `<tr class="${c.tag === me.tag ? 'us' : ''}"><td>${i + 1}</td><td>${nm(c)}</td><td class="num">${val(c).toLocaleString()}</td>${o.colosseum ? '' : `<td class="num">${c.today.toLocaleString()}</td>`}</tr>`).join('');
+  const lines = [];
+  if (!o.colosseum && o.started) {
+    const k = me.place, up = st.find(c => c.tag === me.next);
+    lines.push(`Today we're <b>${nth(k)}</b> on medals (+${RANK_POINTS[k].toLocaleString()} race points)` + (up ? `. <b>${(up.today - me.today + 1).toLocaleString()}</b> more medals passes ${nm(up)}: <b>+${(RANK_POINTS[up.place] - RANK_POINTS[k]).toLocaleString()}</b>` : '. Keep it!'));
+  }
+  if (st.some(c => c.avgMedals != null)) {
+    const pr = st.slice().sort((a, b) => b.projected - a.projected), k = pr.indexOf(me);
+    lines.push(`On recent form: finish <b>${nth(k)}</b> (~${me.projected.toLocaleString()})` + (k > 0 ? `, ${nm(pr[0])} ~${pr[0].projected.toLocaleString()}` : `, ${nm(pr[1])} next on ~${pr[1].projected.toLocaleString()}`));
+  }
+  const sub = o.colosseum ? 'Colosseum: total medals decide it' : `Race points${o.started ? ' if today ended now' : ''}. Each day the clan with the most medals gets 3,000, then 1,800, 1,000, 600, 400`;
+  return `<div class="race"><div class="steps-head">Race <span class="count">${nth(st.indexOf(me))} of ${st.length}</span></div><div class="hint">${sub}</div><table>${head}${rows}</table>${lines.map(l => `<div class="hint" style="margin-top:6px">${l}</div>`).join('')}</div>`;
 }
 
 function contextLine() {
   if (!model) return '';
   if (mode === 'end') return model.season ? '' : 'No finished war found';
   if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''}: training days. Battle days haven't started.`;
-  const st = raceInfo.standings || [], i = st.findIndex(c => c.tag === model.clan.tag);
-  const place = i >= 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][i] || i + 1 + 'th'} of ${st.length} clans, ${st[i].fame.toLocaleString()} medals` : '';
+  const o = raceInfo.outlook, st = o?.rows || [], i = st.findIndex(c => c.tag === model.clan.tag);
+  const place = i >= 0 ? ` · ${nth(i)} of ${st.length} clans` : '';
   return `${raceInfo.week ? 'War ' + raceInfo.week + ': ' : ''}battle day ${day} of 4${place}`;
 }
 function weekPicker() {

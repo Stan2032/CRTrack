@@ -41,9 +41,6 @@ assert.equal(S.bestMode(ms2).mode, 'Duels');
 const pt = S.playTimes([{ tag: 'A', week: 'w', at: '2026-11-19T19:05:00.000Z', decks: 2 }, { tag: 'A', week: 'w', at: '2026-11-20T08:10:00.000Z', decks: 3 }], 'A');
 assert.equal(pt.total, 3); assert.equal(pt.hours[19], 2); assert.equal(pt.hours[8], 1);
 
-// Race projection: steady pace carries to day 4.
-const pr = S.projectRace([{ tag: 'U', fame: 10000 }, { tag: 'R', fame: 12000 }], 2, 864e5 / 2);
-assert.equal(pr[0].tag, 'R'); assert.equal(pr[1].projected, Math.round(10000 / 1.5 * 4));
 
 // Clan series uses member medal totals.
 const cs = S.clanSeries([{ week: '1-1', ended_at: 'a', rank: 2, fame: 7700, trophy_change: 10 }], [{ week: '1-1', fame: 2000, decks: 16 }, { week: '1-1', fame: 1500, decks: 16 }], 1800);

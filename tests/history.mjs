@@ -223,8 +223,27 @@ console.log('History checks passed');
   console.log('Import checks passed');
 }
 
-// Live battle day (real shape, 19 Nov 2026): the clan's own "fame" stays 0 until the reset; its players' medals are the live total.
-{ const { raceFame } = await import('../worker/logic.gen.js');
-  assert.equal(raceFame({ fame: 0, periodPoints: 3950, participants: [{ fame: 3000 }, { fame: 950 }] }), 3950, 'live day: players\' medals');
-  assert.equal(raceFame({ fame: 12000, participants: [{ fame: 100 }] }), 12000, 'after a reset: the clan total');
-  assert.equal(raceFame({}), 0); console.log('Race total checks passed'); }
+// The race, on the real day log of war 138-3 (20 Nov 2026, just after the first reset): race points = place on that
+// day's medals (3,000/1,800/1,000/600/400) + defence bonus. Day 1: Bolo 25,350 medals → 3,012; us 21,150 (3rd) → 1,376.
+{ const { raceOutlook, RANK_POINTS } = await import('../worker/logic.gen.js');
+  const item = (tag, medals, end, bonus) => ({ clan: { tag: '#' + tag }, pointsEarned: medals, progressStartOfDay: 0, progressEndOfDay: end, progressEarned: end - bonus, progressEarnedFromDefenses: bonus });
+  const log = [item('Q9U89V0Y', 25350, 3012, 12), item('L8VJL0Q9', 21750, 2123, 323), item('PPCCR8VU', 21150, 1376, 376), item('JLYYGU', 18200, 1035, 435), item('G0V9YUVC', 12600, 776, 376)];
+  log.forEach((x, i) => assert.equal(x.progressEarned, RANK_POINTS[i], 'place ' + (i + 1) + ' earns ' + RANK_POINTS[i]));
+  const clans = log.map(x => ({ tag: x.clan.tag, name: x.clan.tag, fame: x.progressEndOfDay, periodPoints: 0, participants: [{ fame: x.pointsEarned }] }));
+  const race = { periodType: 'warDay', periodIndex: 18, sectionIndex: 2, clans, periodLogs: [{ periodIndex: 17, items: log }] };
+  let o = raceOutlook(race);
+  assert.equal(o.day, 2); assert.equal(o.started, false);
+  assert.deepEqual(o.rows.map(r => r.ifNow), [3012, 2123, 1376, 1035, 776], 'just after the reset: race points as the game shows them');
+  // Mid-day: we're 2nd on today's medals → +1,800 if the day ended now, which passes ATATÜRKİYE (2,123 + 1,000).
+  clans.find(c => c.tag === '#PPCCR8VU').periodPoints = 7000; clans.find(c => c.tag === '#L8VJL0Q9').periodPoints = 6000; clans.find(c => c.tag === '#Q9U89V0Y').periodPoints = 8000;
+  o = raceOutlook(race);
+  assert.deepEqual(o.rows.slice(0, 3).map(r => [r.tag, r.ifNow]), [['Q9U89V0Y', 6012], ['PPCCR8VU', 3176], ['L8VJL0Q9', 3123]]);
+  // Ties share the higher place: one clan has played, the other four are level on 0 → all 2nd (+1,800).
+  for (const c of clans) c.periodPoints = 0; clans.find(c => c.tag === '#L8VJL0Q9').periodPoints = 125;
+  o = raceOutlook(race);
+  assert.deepEqual(o.rows.map(r => r.place), [1, 0, 1, 1, 1].map((_, i) => o.rows[i].tag === 'L8VJL0Q9' ? 0 : 1));
+  assert.equal(o.rows.find(r => r.tag === 'PPCCR8VU').next, 'L8VJL0Q9', 'the clan to pass');
+  // Colosseum: total medals decide it (the clan's own wars 136-4 and 137-4 ended on 90,250 and 106,200 = the members' medals).
+  const col = raceOutlook({ ...race, periodType: 'colosseum' });
+  assert.equal(col.colosseum, true); assert.deepEqual(col.rows.map(r => r.ifNow), [25350, 21750, 21150, 18200, 12600]);
+  console.log('Race points checks passed'); }

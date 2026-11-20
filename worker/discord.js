@@ -3,8 +3,9 @@
 //   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes, cr } from './history.js';
-import { reliability, projectRace } from './stats.gen.js';
-import { sanitizeRules, DEFAULT_RULES } from './logic.gen.js';
+import { reliability } from './stats.gen.js';
+import { sanitizeRules, DEFAULT_RULES, RANK_POINTS } from './logic.gen.js';
+const FINISH_POINTS = 10000;   // a normal week's race can't pass this; a colosseum's medal totals can
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
 import { PUSH_SCHEMA } from './push.js';
@@ -901,36 +902,36 @@ async function upsert(env, key, channel, content) {
   return m?.id;
 }
 
+// The race part of the board (see raceOutlook in logic.js): race points if today ended now, today's medal place and
+// what passing the next clan is worth, the projection on recent form, and a table.
+export function raceLines(b, clan) {
+  const st = b.standings || [], i = st.findIndex(c => c.tag === clan), me = st[i];
+  if (!me || st.length < 2) return [];
+  const name = c => cleanName(c.name).slice(0, 16), out = [];
+  if (b.colosseum) {
+    out.push(`🏛️ Colosseum: total medals decide it · **${place(i)}** of ${st.length}, ${n(me.medals)}${i > 0 ? ` · ${n(st[i - 1].medals - me.medals)} behind ${name(st[i - 1])}` : ` · ${n(me.medals - st[1].medals)} ahead`}`);
+  } else {
+    out.push(`🏁 Race: **${place(i)}** of ${st.length} · ${n(me.ifNow)} race points${b.started ? ' if today ended now' : ''}${i > 0 ? ` · ${n(st[i - 1].ifNow - me.ifNow)} behind ${name(st[i - 1])}` : ` · ${n(me.ifNow - st[1].ifNow)} ahead`}`);
+    if (b.started) {
+      const k = me.place, up = st.find(c => c.tag === me.next), down = st.filter(c => c.today < me.today).sort((a, c) => c.today - a.today)[0];
+      out.push(`📅 Today: **${place(k)}** on medals (${n(me.today)}) = +${n(RANK_POINTS[k])}`
+        + (up ? ` · ${n(up.today - me.today + 1)} more medals to pass ${name(up)} = **+${n(RANK_POINTS[up.place] - RANK_POINTS[k])}**` : '')
+        + (down ? ` · ${name(down)} ${n(me.today - down.today)} behind` : ''));
+    }
+  }
+  const pr = st.slice().sort((a, c) => c.projected - a.projected), k = pr.indexOf(me);
+  if (st.some(c => c.avgMedals != null)) out.push(`📈 On recent form: **${place(k)}** (~${n(me.projected)})${k > 0 ? ` · ${name(pr[0])} ~${n(pr[0].projected)}` : ` · next ${name(pr[1])} ~${n(pr[1].projected)}`}`);
+  const top = Math.max(1, ...st.map(c => b.colosseum ? c.medals : c.ifNow));
+  out.push('```\n' + (b.colosseum ? '' : '    race pts  medals today\n') + st.map((c, j) => `${j + 1}. ${bar((b.colosseum ? c.medals : c.ifNow) / top, 6)} ${n(b.colosseum ? c.medals : c.ifNow).padStart(6)}${b.colosseum ? '' : n(c.today).padStart(8)}  ${name(c)}${c.tag === clan ? ' ◀' : ''}`).join('\n') + '\n```');
+  return out;
+}
+
 // The live war board: one message per war, edited after every pull on battle days.
 export async function warBoard(env, r, now) {
   if (!discordReady(env) || !r.day || !r.week || !r.board) return 0;
   await setupDB(env);
-  const b = r.board, st = b.standings, i = st.findIndex(c => c.tag === r.clan), me = st[i];
-  const y = Object.fromEntries((await env.DB.prepare('SELECT rival, fame FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(r.clan, r.week, r.day - 1).all()).results.map(x => [x.rival, x.fame]));
-  let gap = '';
-  if (me && st.length > 1) {
-    const other = i > 0 ? st[i - 1] : st[1], g = Math.abs(other.fame - me.fame), gy = y[other.tag] != null && y[me.tag] != null ? Math.abs(y[other.tag] - y[me.tag]) : null;
-    gap = i > 0 ? ` · ${n(g)} behind ${cleanName(other.name)}` : ` · leading ${cleanName(other.name)} by ${n(g)}`;
-    if (gy != null && gy !== g) gap += i > 0 ? (g < gy ? ' (closing ▲)' : ' (gap growing ▼)') : (g > gy ? ' (pulling away ▲)' : ' (they\'re closing ▼)');
-  }
-  const pct = b.decksTotal ? Math.round(100 * b.decksUsed / b.decksTotal) : 0;
-  // Projected finish at the pace so far (the page's projectRace), once half a battle day has passed.
-  let proj = '';
-  const lastEnd = await env.DB.prepare("SELECT ended_at FROM wars WHERE clan = ? AND ended_at != '' ORDER BY ended_at DESC LIMIT 1").bind(r.clan).first();
-  const m0 = String(lastEnd?.ended_at || '').match(/^(\d{4})-?(\d{2})-?(\d{2})T(\d{2}):?(\d{2}):?(\d{2})/);
-  if (m0 && st.length > 1) {
-    const resetMs = Date.UTC(+m0[1], m0[2] - 1, +m0[3], +m0[4], +m0[5], +m0[6]), since = (((now - resetMs) % 864e5) + 864e5) % 864e5;
-    if ((r.day - 1) * 864e5 + since >= 12 * 3600e3) {
-      const pr = projectRace(st, r.day, since), k = pr.findIndex(c => c.tag === r.clan);
-      if (k >= 0) proj = `📈 On pace for **${place(k)}** (~${n(pr[k].projected)})${k > 0 ? ` · ${cleanName(pr[0].name)} on ~${n(pr[0].projected)}` : pr[1] ? ` · next: ${cleanName(pr[1].name)} ~${n(pr[1].projected)}` : ''}`;
-    }
-  }
-  const top = st[0]?.fame || 1;
-  const content = [
-    `⚔️ **War ${r.week} · battle day ${r.day} of 4**`,
-    me ? `🏁 ${place(i)} of ${st.length} · ${n(me.fame)} medals${gap}` : '',
-    proj,
-    st.length > 1 ? '```\n' + st.map((c, k) => `${k + 1}. ${bar(c.fame / top, 8)} ${n(c.fame).padStart(6)}  ${cleanName(c.name).slice(0, 16)}${c.tag === r.clan ? ' ◀' : ''}`).join('\n') + '\n```' : '',
+  const b = r.board, pct = b.decksTotal ? Math.round(100 * b.decksUsed / b.decksTotal) : 0;
+  const content = [`⚔️ **War ${r.week} · battle day ${r.day} of 4**`, ...raceLines(b, r.clan),
     `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
     `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
     b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
@@ -951,22 +952,26 @@ export async function daySummary(env, clan, week, day) {
   const once = `dsum:${clan}:${week}:${day}`;
   if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(once).first()) return 0;
   const rows = d => env.DB.prepare('SELECT tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
-  const stand = d => env.DB.prepare('SELECT rival, name, fame FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
-  const [today, before, st, stBefore, stTwo] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1), stand(day - 2)]);
+  const stand = d => env.DB.prepare('SELECT rival, name, fame, medals FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
+  const [today, before, st, stBefore] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1)]);
   if (!today.length) return 0;
   const prevFame = Object.fromEntries(before.map(p => [p.tag, p.fame]));
   const gains = today.map(p => ({ name: p.name, gain: p.fame - (prevFame[p.tag] || 0) })).sort((a, b) => b.gain - a.gain);
   const used = today.reduce((t, p) => t + Math.min(4, p.today), 0), total = today.length * 4;
-  const ours = rs => rs.find(x => x.rival === clan)?.fame;
-  const gain = ours(st) != null ? ours(st) - (ours(stBefore) ?? 0) : gains.reduce((t, x) => t + x.gain, 0);
-  const prevGain = day > 1 && ours(stBefore) != null ? ours(stBefore) - (ours(stTwo) ?? 0) : null;
+  // Standings rows: fame = race points at the end of the day (colosseum: medals), medals = that day's medals.
+  const ours = rs => rs.find(x => x.rival === clan), me = ours(st);
+  const gain = me?.medals ?? gains.reduce((t, x) => t + x.gain, 0), prevGain = day > 1 ? ours(stBefore)?.medals : null;
   const change = prevGain ? Math.round(100 * (gain - prevGain) / prevGain) : null;
+  const colosseum = st.length > 0 && st.every(x => x.medals != null && x.fame >= x.medals) && st.some(x => x.fame > FINISH_POINTS);   // colosseum: points are medals
+  const dayRank = st.slice().sort((a, b) => (b.medals || 0) - (a.medals || 0)).findIndex(x => x.rival === clan);
+  const earned = me && !colosseum ? me.fame - (ours(stBefore)?.fame ?? 0) : null;
   const sorted = st.slice().sort((a, b) => b.fame - a.fame), i = sorted.findIndex(x => x.rival === clan);
   const content = [
     `📊 **Battle day ${day} summary · war ${week}**`,
-    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}`,
+    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}${dayRank >= 0 && me?.medals != null ? ` · **${place(dayRank)}** of ${st.length} clans today` : ''}`,
+    earned != null && earned > 0 ? `Race points: **+${n(earned)}** for the day` : '',
     `${bar(used / total)} Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
-    i >= 0 ? `Place: ${place(i)} of ${sorted.length}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
+    i >= 0 ? `Race: **${place(i)}** of ${sorted.length}, ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
     `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
   ].filter(Boolean).join('\n');
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();

@@ -202,31 +202,31 @@ calls.length = 0;
 await syncGuild(env, 'G', { roles: { member: 'RM', elder: 'RE' } }, 'PPCCR8VU');
 assert.deepEqual(calls.find(c => c.method === 'PATCH' && /members\/U1$/.test(c.url)).body, { roles: ['OTHER'] });
 
-// Live war board: posted once, then edited in place.
-calls.length = 0;
-const board = { standings: [{ tag: 'AAA', name: 'Rival', fame: 22500 }, { tag: 'PPCCR8VU', name: '#WINNING', fame: 21000 }], members: 48, reached: 12, decksUsed: 140, decksTotal: 192, notPlayed: ['perc'], reset: '09:43' };
+// Live war board: posted once, then edited in place. The race is race points (raceOutlook): if today ended now,
+// today's place on medals and what passing the next clan is worth; the projection needs some logged days.
+const { raceOutlook } = await import('../worker/logic.gen.js');
+const liveRace = logs => ({ periodType: 'warDay', periodIndex: 18, sectionIndex: 2, periodLogs: logs, clans: [
+  { tag: '#AAA', name: 'Rival', fame: 3000, periodPoints: 9000, participants: [{ fame: 29000 }] },
+  { tag: '#PPCCR8VU', name: '#WINNING', fame: 1800, periodPoints: 8000, participants: [{ fame: 30000 }] }] });
+const boardOf = race => { const o = raceOutlook(race); return { standings: o.rows, colosseum: o.colosseum, started: o.started, members: 48, reached: 12, decksUsed: 140, decksTotal: 192, notPlayed: ['perc'], reset: '09:43' }; };
+const board = boardOf(liveRace([]));
 const r = { clan: 'PPCCR8VU', week: '138-3', day: 2, target: 1800, board };
 await warBoard(env, r, Date.parse('2026-11-20T14:15:00Z'));
 await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
 assert.equal(calls.filter(c => c.method === 'POST' && /channels\/C\/messages/.test(c.url)).length, 1, 'posted once');
 const edit = calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url));
-assert.ok(edit, 'then edited'); assert.match(edit.body.content, /battle day 2 of 4[\s\S]*2nd of 2 · 21,000 medals · 1,500 behind Rival[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
-assert.doesNotMatch(edit.body.content, /On pace/, 'no reset time known: no projection');
-// Projected finish (the page's projectRace): day 2, 4h47m after a 09:43 reset → 1.2 days in; 21,000 → ~70,000.
-await DB.exec(`INSERT OR REPLACE INTO wars (clan,week,ended_at) VALUES ('PPCCR8VU','138-2','2026-11-16T09:43:00Z')`);
+assert.ok(edit, 'then edited');
+assert.match(edit.body.content, /battle day 2 of 4[\s\S]*Race: \*\*2nd\*\* of 2 · 3,600 race points if today ended now · 2,400 behind Rival[\s\S]*Today: \*\*2nd\*\* on medals \(8,000\) = \+1,800 · 1,001 more medals to pass Rival = \*\*\+1,200\*\*[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
+assert.doesNotMatch(edit.body.content, /recent form/, 'no logged days: no projection');
 calls.length = 0;
-await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
-assert.match(calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url)).body.content, /📈 On pace for \*\*2nd\*\* \(~70,0\d\d\) · Rival on ~75,0\d\d/);
-calls.length = 0;
-await warBoard(env, { ...r, day: 1 }, Date.parse('2026-11-19T14:30:00Z'));
-assert.doesNotMatch(calls.find(c => /channels\/C\/messages/.test(c.url)).body.content, /On pace/, 'too early on day 1');
-await DB.exec(`DELETE FROM wars WHERE week = '138-2'`);
+await warBoard(env, { ...r, board: boardOf(liveRace([{ periodIndex: 17, items: [{ clan: { tag: '#AAA' }, pointsEarned: 20000, progressEarnedFromDefenses: 0 }, { clan: { tag: '#PPCCR8VU' }, pointsEarned: 22000, progressEarnedFromDefenses: 100 }] }])) }, Date.parse('2026-11-20T14:30:00Z'));
+assert.match(calls.find(c => c.method === 'PATCH').body.content, /On recent form: \*\*1st\*\* \(~10,000\) · next Rival ~8,400/, 'usual medals: we win the next days; capped at the 10,000 finish');
 
 // Day summary: medals gained with the change vs the day before, posted once.
 await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES
   ('PPCCR8VU','138-3',1,'2VJ9V2PV','Luke',800,4,4,0,'x'),('PPCCR8VU','138-3',2,'2VJ9V2PV','Luke',1700,8,4,0,'x'),
   ('PPCCR8VU','138-3',1,'YVJRGLCC','perc',500,4,4,0,'x'),('PPCCR8VU','138-3',2,'YVJRGLCC','perc',900,6,2,0,'x');
-  INSERT INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ('PPCCR8VU','138-3',1,'PPCCR8VU','#WINNING',10000,'x'),('PPCCR8VU','138-3',2,'PPCCR8VU','#WINNING',21000,'x'),('PPCCR8VU','138-3',2,'AAA','Rival',22500,'x');`);
+  INSERT INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ('PPCCR8VU','138-3',1,'PPCCR8VU','#WINNING',1000,20000,'x'),('PPCCR8VU','138-3',2,'PPCCR8VU','#WINNING',2800,22000,'x'),('PPCCR8VU','138-3',2,'AAA','Rival',4000,25000,'x');`);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'no results channel yet: nothing posted');
 await DB.prepare("DELETE FROM kv WHERE k LIKE 'dsum:%'").run();
 await here('results', 'R');
@@ -234,7 +234,7 @@ calls.length = 0;
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 1);
 assert.ok(calls.some(c => c.method === 'POST' && /channels\/R\/messages$/.test(c.url)), 'summary went to the results channel');
 const sum = calls.find(c => c.method === 'POST').body.content;
-assert.match(sum, /Battle day 2 summary[\s\S]*\+11,000\*\* \(\+10% vs day 1\)[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*2nd of 2, 1,500 behind Rival[\s\S]*Luke \+900/);
+assert.match(sum, /Battle day 2 summary[\s\S]*\+22,000\*\* \(\+10% vs day 1\) · \*\*2nd\*\* of 2 clans today[\s\S]*Race points: \*\*\+1,800\*\*[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*Race: \*\*2nd\*\* of 2, 2,800 race points, 1,200 behind Rival[\s\S]*Luke \+900/);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
 
 // Rules: posted with /rules, then edited when the rules change.

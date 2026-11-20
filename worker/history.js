@@ -5,7 +5,7 @@
 import { sendAlert, PUSH_SCHEMA } from './push.js';
 import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
-import { raceFame } from './logic.gen.js';
+import { raceOutlook } from './logic.gen.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS periods (clan TEXT, week TEXT, period INTEGER, type T
 CREATE TABLE IF NOT EXISTS race_days (clan TEXT, week TEXT, day INTEGER, tag TEXT, name TEXT, fame INTEGER, decks INTEGER, today INTEGER, boats INTEGER, at TEXT, PRIMARY KEY (clan, week, day, tag));
 CREATE TABLE IF NOT EXISTS notes (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, at TEXT, PRIMARY KEY (clan, week, tag, kind));
 CREATE TABLE IF NOT EXISTS member_stats (clan TEXT, week TEXT, tag TEXT, donations INTEGER, received INTEGER, trophies INTEGER, exp INTEGER, at TEXT, PRIMARY KEY (clan, week, tag));
-CREATE TABLE IF NOT EXISTS race_standings (clan TEXT, week TEXT, day INTEGER, rival TEXT, name TEXT, fame INTEGER, at TEXT, PRIMARY KEY (clan, week, day, rival));
+CREATE TABLE IF NOT EXISTS race_standings (clan TEXT, week TEXT, day INTEGER, rival TEXT, name TEXT, fame INTEGER, at TEXT, medals INTEGER, PRIMARY KEY (clan, week, day, rival));
 CREATE TABLE IF NOT EXISTS war_battles (clan TEXT, tag TEXT, at TEXT, type TEXT, won INTEGER, lost INTEGER, PRIMARY KEY (clan, tag, at));
 CREATE TABLE IF NOT EXISTS note_log (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, by TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS race_events (clan TEXT, week TEXT, tag TEXT, at TEXT, day INTEGER, fame INTEGER, decks INTEGER, today INTEGER, boats INTEGER, PRIMARY KEY (clan, tag, at));
@@ -117,9 +117,15 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   const stats = (members.items || []).map(m => [clan, statWeek, clean(m.tag), m.donations, m.donationsReceived, m.trophies, m.expLevel, now]);
   if (stats.length) sql.push(`INSERT OR REPLACE INTO member_stats (clan,week,tag,donations,received,trophies,exp,at) VALUES ${rows(stats)}`);
 
-  // Rival clans in this race, per battle day
-  if (week && day && race.clans?.length) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,at) VALUES ${
-    rows(race.clans.map(c => [clan, week, day, clean(c.tag), c.name, raceFame(c), now]))}`);
+  // Race standings per battle day: fame = race points at the end of that day (today: if the day ended now; colosseum:
+  // medals), medals = that day's medals. Finished days come from the game's own day log, so they're exact.
+  const outlook = raceOutlook(race);
+  if (week && day && outlook) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ${
+    rows(outlook.rows.map(c => [clan, week, day, c.tag, c.name, c.ifNow, outlook.colosseum ? c.medals : c.today, now]))}`);
+  const season = week && Number(week.split('-')[0]), names = Object.fromEntries((race.clans || []).map(c => [clean(c.tag), c.name]));
+  const logged = season ? (race.periodLogs || []).filter(l => l.periodIndex % 7 >= 3).flatMap(l => (l.items || []).map(it =>
+    [clan, `${season}-${Math.floor(l.periodIndex / 7) + 1}`, (l.periodIndex % 7) - 2, clean(it.clan?.tag), names[clean(it.clan?.tag)] || clean(it.clan?.tag), it.progressEndOfDay || 0, it.pointsEarned || 0, now])) : [];
+  if (logged.length) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ${rows(logged)}`);
 
   // War battles from players' battle logs (each log holds their last 25 battles).
   // A few players per run, in rotation, to stay inside the free plan's per-run limits.
@@ -169,7 +175,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     leftToday: day ? live.filter(p => here.has(clean(p.tag)) && p.decksUsedToday < 4).map(p => ({ tag: clean(p.tag), name: p.name, left: 4 - p.decksUsedToday })).sort((a, b) => b.left - a.left) : [],
     board: day ? (() => {
       const mine = live.filter(p => here.has(clean(p.tag)));
-      return { standings: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, fame: raceFame(c) })).sort((a, b) => b.fame - a.fame),
+      return { standings: outlook ? outlook.rows : [], colosseum: !!outlook?.colosseum, started: !!outlook?.started,
         members: here.size, reached: mine.filter(p => p.fame >= target).length,
         decksUsed: mine.reduce((t, p) => t + Math.min(4, p.decksUsedToday), 0), decksTotal: here.size * 4,
         notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };
@@ -363,7 +369,7 @@ export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
     all('SELECT week,day,tag,fame,decks,today,boats,at FROM race_days WHERE clan = ?1' + recent),
     all('SELECT week,tag,kind,value,at FROM notes WHERE clan = ?'),
     all(full('SELECT week,tag,donations,received,trophies,exp FROM member_stats WHERE clan = ?')),
-    all(full('SELECT week,day,rival,name,fame FROM race_standings WHERE clan = ?1' + recent)),
+    all(full('SELECT week,day,rival,name,fame,medals FROM race_standings WHERE clan = ?1' + recent)),
     all(full('SELECT tag,at,type,won,lost FROM war_battles WHERE clan = ?1' + since)),
     all(full('SELECT week,tag,kind,value,by,at FROM note_log WHERE clan = ? ORDER BY at DESC LIMIT 60')),
     all(full("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')")),
