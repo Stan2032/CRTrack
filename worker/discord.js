@@ -2,7 +2,7 @@
 //   - Slash commands arrive at /api/discord (Discord signs each request; we check the signature).
 //   - We call Discord's REST API with the bot token to post messages, ping people, and set roles/nicknames.
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
-import { readMember, writeNotes, cr } from './history.js';
+import { readMember, writeNotes, cr, ensureSchema } from './history.js';
 import { reliability } from './stats.gen.js';
 import { sanitizeRules, DEFAULT_RULES, RANK_POINTS, cleanName } from './logic.gen.js';
 const FINISH_POINTS = 10000;   // a normal week's race can't pass this; a colosseum's medal totals can
@@ -103,7 +103,7 @@ export async function registerCommands(env) {
 }
 
 // ---- Config and links ----
-async function setupDB(env) { await env.DB.exec(DISCORD_SCHEMA + '\n' + PUSH_SCHEMA); }
+async function setupDB(env) { await ensureSchema(env.DB, DISCORD_SCHEMA + '\n' + PUSH_SCHEMA); }
 async function getConfig(env, guild) {
   const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:' + guild).first();
   return r ? JSON.parse(r.v) : null;
@@ -981,9 +981,11 @@ export async function daySummary(env, clan, week, day) {
   await setupDB(env);
   const once = `dsum:${clan}:${week}:${day}`;
   if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(once).first()) return 0;
-  const rows = d => env.DB.prepare('SELECT tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
-  const stand = d => env.DB.prepare('SELECT rival, name, fame, medals FROM race_standings WHERE clan = ? AND week = ? AND day = ?').bind(clan, week, d).all().then(x => x.results);
-  const [all, before, st, stBefore] = await Promise.all([rows(day), rows(day - 1), stand(day), stand(day - 1)]);
+  // This day and the day before, one query per table (each query counts against the per-run limit).
+  const [dr, sr] = await Promise.all([env.DB.prepare('SELECT day, tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day IN (?, ?)').bind(clan, week, day, day - 1).all(),
+    env.DB.prepare('SELECT day, rival, name, fame, medals FROM race_standings WHERE clan = ? AND week = ? AND day IN (?, ?)').bind(clan, week, day, day - 1).all()]);
+  const all = dr.results.filter(x => x.day === day), before = dr.results.filter(x => x.day === day - 1);
+  const st = sr.results.filter(x => x.day === day), stBefore = sr.results.filter(x => x.day === day - 1);
   if (!all.length) return 0;
   // Joined after this battle day started (seen joining after the day's period was first seen): not counted as missed.
   const dayStart = (await env.DB.prepare("SELECT first_seen FROM periods WHERE clan = ? AND week = ? AND type != 'training' ORDER BY period LIMIT 1 OFFSET ?").bind(clan, week, day - 1).first())?.first_seen;
@@ -1079,8 +1081,10 @@ export async function sendWarReports(env, clan, max = 20) {
   const r = await clanRules(env, clan), T = r.target;
   const all = (await env.DB.prepare('SELECT week, tag, fame, decks FROM war_players WHERE clan = ?').bind(clan).all()).results;
   const thisWar = all.filter(x => x.week === war.week && (x.decks > 0 || x.fame > 0)).sort((a, b) => b.fame - a.fame);
-  for (const x of todo.slice(0, max)) {
-    await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`wr:${clan}:${war.week}:${x.guild}:${x.user_id}`, '1').run();   // once, even if it fails
+  const batch = todo.slice(0, max);
+  // Marked as sent first (once, even if a DM fails), in one batch: one query instead of one per person.
+  await env.DB.batch(batch.map(x => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`wr:${clan}:${war.week}:${x.guild}:${x.user_id}`, '1')));
+  for (const x of batch) {
     await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content: warReportText(x.tag, war.week, all, thisWar, T, r.lookback), allowed_mentions: { parse: [] } }).catch(() => null);
   }
   return Math.max(0, todo.length - max);

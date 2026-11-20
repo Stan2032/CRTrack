@@ -7,6 +7,13 @@ import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, b
 import { seasonRecap, scoutRivals } from './extras.js';
 import { raceOutlook, cleanName } from './logic.gen.js';
 
+// Create-if-missing table setup, once per database connection (each call counts against the per-run query limit).
+const schemaDone = new WeakMap();
+export async function ensureSchema(db, sql) {
+  const done = schemaDone.get(db) || new Set();
+  if (done.has(sql)) return;
+  await db.exec(sql); done.add(sql); schemaDone.set(db, done);
+}
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
 CREATE TABLE IF NOT EXISTS member_events (clan TEXT, tag TEXT, name TEXT, kind TEXT, detail TEXT, at TEXT);
@@ -55,7 +62,7 @@ export async function cr(env, path) {
 
 export async function snapshot(env, clan, now = new Date().toISOString()) {
   const db = env.DB, t = encodeURIComponent('#' + clan);
-  await db.exec(SCHEMA);
+  await ensureSchema(db, SCHEMA);
   const haveWars = (await db.prepare('SELECT week FROM wars WHERE clan = ?').bind(clan).all()).results.map(r => r.week);
   const [members, race, log] = await Promise.all([
     cr(env, `/clans/${t}/members`),
@@ -184,7 +191,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     out = live.filter(p => here.has(clean(p.tag))).filter(p => { const g = goalFor(clean(p.tag)); return g != null && p.fame + TODAY_MAX[Math.max(0, 4 - p.decksUsedToday)] < g; }).map(p => p.name);
   }
   return {
-    clan, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
+    clan, lastEndAt: lastEnd?.ended_at || null, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
     period: race.periodIndex, rivals: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, score: c.clanScore || 0 })),
     joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
     out, target, firstRun,
@@ -267,7 +274,7 @@ async function alertsFor(env, r, now) {
   for (const p of r.promoted || []) await discordPost(env, r.clan, `🎉 Congrats ${cleanName(p.name)} on ${p.role === 'coLeader' ? 'Co-leader' : 'Elder'}!`, p.role === 'elder' ? `Earned by hitting ${r.target}+ war after war. ⭐` : 'Thanks for everything you do for the clan. ⭐', [], 'joins');
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day) {   // every battle-day run: the decks-left message in #war is kept current even once everyone has played
-    const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
+    const st0 = r.lastEndAt ? { ended_at: r.lastEndAt } : null;   // looked up once, in the snapshot
     const reset0 = st0 ? ms(st0.ended_at) : null, left0 = reset0 == null ? 864e5 : (((reset0 - now) % 864e5) + 864e5) % 864e5;
     if (reset0 != null) await dmReminders(env, r.clan, r.week, r.day, left0, r.leftToday, r.board?.reset).catch(() => {});
     // Pings and the leaders' phone alert at times people can act on: an evening nudge and a last call before reset.
@@ -276,7 +283,7 @@ async function alertsFor(env, r, now) {
       (r.notPlayed.length ? `Not played yet: ${list(r.notPlayed)}` : 'Everyone has played at least once') + (r.board?.reset ? ` · resets ${r.board.reset} UK` : ''));
   }
   if (r.day === 4 && r.out.length) {
-    const st = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
+    const st = r.lastEndAt ? { ended_at: r.lastEndAt } : null;
     const reset = st ? ms(st.ended_at) : null, dayMs = 864e5;
     const left = reset == null ? dayMs : (((reset - now) % dayMs) + dayMs) % dayMs;
     const when = left < 4 * 3600e3 ? 'late' : 'start';
@@ -287,7 +294,7 @@ async function alertsFor(env, r, now) {
 
 export async function snapshotAll(env, { force = false, now = Date.now(), only = null } = {}) {
   const out = [];
-  await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);   // once per run, not per check
+  await ensureSchema(env.DB, SCHEMA + '\n' + PUSH_SCHEMA);   // once per run, not per check
   for (const clan of only ? [only] : trackedClans(env)) {
     try {
       // A war ended last run: refresh the stats boards now, in a run of its own (they read the whole history).
@@ -364,7 +371,7 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
 
 // On request from the page: anyone may ask, at most once every 5 minutes per clan.
 export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
-  await env.DB.exec(SCHEMA + '\n' + PUSH_SCHEMA);
+  await ensureSchema(env.DB, SCHEMA + '\n' + PUSH_SCHEMA);
   // Limited by the last request (successful or not) and the last successful pull, whichever is later.
   const r = await env.DB.prepare("SELECT (SELECT max(updated_at) FROM members WHERE clan = ?1) AS ok, (SELECT v FROM kv WHERE k = 'snapreq:' || ?1) AS asked").bind(clan).first();
   const last = Math.max(r?.ok ? Date.parse(r.ok) : 0, r?.asked ? Number(r.asked) : 0);
@@ -378,7 +385,7 @@ export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
 //   lite: only what decisions need (no battles, play times, donations, standings or change log).
 export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
   const db = env.DB;
-  await db.exec(SCHEMA);
+  await ensureSchema(db, SCHEMA);
   const all = s => s ? db.prepare(s).bind(clan).all().then(r => r.results) : Promise.resolve([]);
   const full = s => lite ? null : s;
   // Recent wars, plus the war in progress (not in the wars table yet).
@@ -405,7 +412,7 @@ export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
 // One member's own data for the members' page: no leader notes, decisions or other players.
 export async function readMember(env, clan, tag) {
   const db = env.DB;
-  await db.exec(SCHEMA);
+  await ensureSchema(db, SCHEMA);
   const one = (sql, ...a) => db.prepare(sql).bind(clan, ...a).first();
   const all = (sql, ...a) => db.prepare(sql).bind(clan, ...a).all().then(r => r.results);
   const m = await one('SELECT tag, name, role, in_clan, last_seen_game, updated_at FROM members WHERE clan = ?1 AND tag = ?2', tag);
@@ -432,7 +439,7 @@ export async function readMember(env, clan, tag) {
 // Older wars from RoyaleAPI exports (before tracking started). Only weeks the tracker doesn't already have are added,
 // so nothing tracked is ever overwritten. rows: [{ week: "136-1", tag, name, fame, decks, boats }].
 export async function importWars(env, clan, input, by = null, now = new Date().toISOString()) {
-  await env.DB.exec(SCHEMA);
+  await ensureSchema(env.DB, SCHEMA);
   const have = new Set((await env.DB.prepare('SELECT week FROM wars WHERE clan = ?').bind(clan).all()).results.map(r => r.week));
   const ok = (Array.isArray(input) ? input : []).slice(0, 8000).filter(r => r && /^\d{2,4}-\d$/.test(String(r.week)) && /^[0289PYLQGRJCUV]{3,12}$/.test(clean(r.tag))
     && Number.isFinite(+r.fame) && +r.fame >= 0 && +r.fame <= 6000 && +r.decks >= 0 && +r.decks <= 16);
@@ -462,7 +469,7 @@ export async function writeNotes(env, clan, items, now = new Date().toISOString(
   const logged = ok.filter(i => i.kind !== 'result').map(i => [clan, i.week, clean(i.tag) || '*', i.kind, i.value == null ? null : String(i.value), by, now]);
   if (logged.length) sql.push(`INSERT INTO note_log (clan,week,tag,kind,value,by,at) VALUES ${rows(logged)}`);
   if (del.length) sql.push(`DELETE FROM notes WHERE clan = ${q(clan)} AND (${del.map(i => `(week = ${q(i.week)} AND tag = ${q(clean(i.tag) || '*')} AND kind = ${q(i.kind)})`).join(' OR ')})`);
-  await env.DB.exec(SCHEMA);
+  await ensureSchema(env.DB, SCHEMA);
   if (sql.length) await env.DB.batch(sql.map(s => env.DB.prepare(s)));
   return { saved: put.length, removed: del.length, by };
 }

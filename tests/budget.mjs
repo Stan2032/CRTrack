@@ -59,5 +59,24 @@ await run('last call', '2026-11-21T07:44:00Z');
 cur = race(i => 0, i => 8 + (i % 5)); cur.periodIndex = 19;
 cur.periodLogs.push({ periodIndex: 18, items: cur.periodLogs[0].items });
 await run('first run after the reset (summary, fixes)', '2026-11-21T09:45:00Z');
-assert.ok(db.prepare("SELECT count(*) c FROM kv WHERE k LIKE 'ping:G1:%'").get().c === 2, 'evening ping and last call both sent');
+cur = { ...cur, periodIndex: 20 }; cur.periodLogs.push({ periodIndex: 19, items: cur.periodLogs[0].items });
+await run('battle day 4', '2026-11-22T12:00:00Z');
+// The war ends: training day of the next war, and the finished war appears in the log (result, shout-outs, day 4
+// summary, war-report DMs for everyone opted in, stats board).
+for (const [i] of members.slice(0, 25).entries()) db.exec(`INSERT OR REPLACE INTO discord_warreport (guild,user_id,dm) VALUES ('G1','U${i}','D${i}')`);
+const finished = { seasonId: 138, sectionIndex: 2, createdDate: '20261123T094300.000Z', standings: [{ rank: 2, trophyChange: 10, clan: { tag: '#PPCCR8VU', fame: 7700,
+  participants: members.map((m, i) => ({ tag: m.tag, name: m.name, fame: 1500 + i * 20, decksUsed: 12 + (i % 5), boatAttacks: 0 })) } }] };
+api.log.items.unshift(finished);
+cur = { ...cur, sectionIndex: 3, periodIndex: 21, periodType: 'training', clan: { ...cur.clan, participants: [] } };
+await run('war ends (result, shout-outs, summary, DMs)', '2026-11-23T09:50:00Z');
+// The run after a war ends (as the schedule runs it, not forced): war-report DMs (up to 20) and the stats board.
+{ q = 0; fetches = 0; discord = 0; cr = 0;
+  await snapshotAll(env, { now: Date.parse('2026-11-23T10:05:00Z') });
+  if (process.env.VERBOSE) console.log('war reports + stats board'.padEnd(44), 'D1 calls', String(q).padStart(3), '| external fetches', String(fetches).padStart(3), `(game ${cr}, Discord ${discord})`);
+  assert.ok(discord >= 20, 'war-report DMs sent: ' + discord);
+  assert.ok(q <= 45, `war reports run: ${q} D1 calls (free plan: 50)`); assert.ok(fetches <= 45, `war reports run: ${fetches} requests`); worst = Math.max(worst, q, fetches); }
+for (const t of ['10:20', '10:35', '10:50']) await run('after the war ' + t, `2026-11-23T${t}:00Z`);
+void ('DBG dsum', db.prepare("SELECT k FROM kv WHERE k LIKE 'dsum:%'").all().map(x=>x.k), 'days', db.prepare("SELECT week, day, count(*) n FROM race_days GROUP BY week, day").all().map(x=>x.week+'/'+x.day+':'+x.n), 'wars', db.prepare("SELECT week FROM wars ORDER BY week DESC LIMIT 2").all().map(x=>x.week));
+assert.ok(db.prepare("SELECT count(*) c FROM kv WHERE k LIKE 'dsum:%:138-3:4'").get().c === 1, 'day 4 summary posted');
+assert.ok(db.prepare("SELECT count(*) c FROM kv WHERE k LIKE 'ping:G1:138-3:2:%'").get().c === 2, 'evening ping and last call both sent');
 console.log(`Request budget checks passed (worst battle-day run: ${worst} of 50)`);
