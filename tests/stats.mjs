@@ -108,6 +108,7 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   const list = [mk('A', [4, 1, null, null]), mk('B', [2, 4, null, null]), mk('C', [0, 0, null, null], '1')];
   const ms = L.chatLive(list, r, { day: 2, counts: (p, k) => (/^\d$/.test(p.join || '') ? k > Number(p.join) : true) });
   const missed = ms.find(m => m.title === 'Missed day 1');
-  assert.ok(missed && /B \(2\/4\)/.test(missed.text) && !/\bA \(/.test(missed.text), 'B missed decks on day 1, A played all 4');
-  assert.ok(!/\bC \(/.test(missed.text), 'C joined during day 1: not counted');
+  assert.match(missed.text, /^Missed decks yesterday: 2 unused[\s\S]*B: 2 unused/, 'total, then each name with their unused count');
+  assert.ok(!/\bA: /.test(missed.text), 'A played all 4');
+  assert.ok(!/\bC: /.test(missed.text), 'C joined during day 1: not counted');
   console.log('Missed decks message checks passed'); }

@@ -1003,6 +1003,8 @@ export async function daySummary(env, clan, week, day) {
     `${bar(used / total)} Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
     i >= 0 ? `Race: **${place(i)}** of ${sorted.length}, ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
     `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
+    (() => { const m = today.filter(p => p.today < 4).sort((a, b) => a.today - b.today || cleanName(a.name).localeCompare(cleanName(b.name)));
+      return m.length ? `Missed decks: **${total - used} unused** · ${m.slice(0, 25).map(p => `${cleanName(p.name)} ${4 - p.today}`).join(', ')}${m.length > 25 ? ` +${m.length - 25} more` : ''}` : '✅ No decks missed'; })(),
   ].filter(Boolean).join('\n');
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
   let sent = 0;

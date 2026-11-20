@@ -248,7 +248,7 @@ calls.length = 0;
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 1);
 assert.ok(calls.some(c => c.method === 'POST' && /channels\/R\/messages$/.test(c.url)), 'summary went to the results channel');
 const sum = calls.find(c => c.method === 'POST').body.content;
-assert.match(sum, /Battle day 2 summary[\s\S]*\+22,000\*\* \(\+10% vs day 1\) · \*\*2nd\*\* of 2 clans today[\s\S]*Race points: \*\*\+1,800\*\*[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*Race: \*\*2nd\*\* of 2, 2,800 race points, 1,200 behind Rival[\s\S]*Luke \+900/);
+assert.match(sum, /Battle day 2 summary[\s\S]*\+22,000\*\* \(\+10% vs day 1\) · \*\*2nd\*\* of 2 clans today[\s\S]*Race points: \*\*\+1,800\*\*[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*Race: \*\*2nd\*\* of 2, 2,800 race points, 1,200 behind Rival[\s\S]*Luke \+900[\s\S]*Missed decks: \*\*2 unused\*\* · perc 2/);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
 
 // Rules: posted with /rules, then edited when the rules change.
