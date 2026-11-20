@@ -4,7 +4,7 @@ import * as S from './stats.gen.js';
 import * as L from './logic.gen.js';
 
 const n = x => Number(x).toLocaleString('en-GB');
-const clean = s => String(s ?? '').replace(/<\/?c\d*>/gi, '');
+const clean = L.cleanName;   // in-game colour codes out, e.g. "<c4>Baki"
 const wk = k => { const [a, b] = String(k).split('-').map(Number); return a * 1000 + (b || 0); };
 export const bar = (f, w = 10) => { const k = Math.max(0, Math.min(w, Math.round(f * w))); return '█'.repeat(k) + '░'.repeat(w - k); };
 // The game API's compact times ("20261116T094012.000Z") as well as ISO.

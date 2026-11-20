@@ -5,7 +5,7 @@ import { readHistory, cr } from './history.js';
 import { endDecisions } from './leaders.js';
 
 const n = x => Number(x).toLocaleString('en-GB');
-const clean = s => String(s ?? '').replace(/<\/?c\d*>/gi, '');
+const clean = L.cleanName;
 const place = i => ['1st', '2nd', '3rd', '4th', '5th'][i - 1] || `${i}th`;
 const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
 async function rulesOf(env, clan) {

@@ -4,7 +4,7 @@
 // Secrets: DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, DISCORD_APP_ID; optional DISCORD_GUILD_ID (commands appear instantly there).
 import { readMember, writeNotes, cr } from './history.js';
 import { reliability } from './stats.gen.js';
-import { sanitizeRules, DEFAULT_RULES, RANK_POINTS } from './logic.gen.js';
+import { sanitizeRules, DEFAULT_RULES, RANK_POINTS, cleanName } from './logic.gen.js';
 const FINISH_POINTS = 10000;   // a normal week's race can't pass this; a colosseum's medal totals can
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS discord_guests (guild TEXT, user_id TEXT, since TEXT,
 const TAG = /^[0289PYLQGRJCUV]{3,12}$/;
 const EPHEMERAL = 64;                              // only the person who ran the command sees the reply
 const MANAGE_ROLES = 1n << 28n, ADMIN = 1n << 3n;  // who counts as a leader in Discord
-const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
+
 const cleanTag = t => String(t || '').trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0');
 
 // ---- Commands (registered with /api/discord/register) ----

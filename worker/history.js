@@ -5,7 +5,7 @@
 import { sendAlert, PUSH_SCHEMA } from './push.js';
 import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
-import { raceOutlook } from './logic.gen.js';
+import { raceOutlook, cleanName } from './logic.gen.js';
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT, PRIMARY KEY (clan, tag));
@@ -224,7 +224,7 @@ export function shouldRun({ lastType, lastRun, resetAt }, now) {
 const ms = s => { const m = String(s || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s); };
 
 const ukDay = t => new Date(t).toISOString().slice(0, 10);
-const list = (a, n = 6) => a.slice(0, n).map(x => String(x).replace(/<\/?c\d*>/gi, '')).join(', ') + (a.length > n ? ` +${a.length - n} more` : '');
+const list = (a, n = 6) => a.slice(0, n).map(x => cleanName(x)).join(', ') + (a.length > n ? ` +${a.length - n} more` : '');
 
 async function alertsFor(env, r, now) {
   if (!env.DB || r.firstRun) return;
@@ -243,7 +243,7 @@ async function alertsFor(env, r, now) {
     // Last war of a season (the race has moved on to a new season): season recap.
     if (r.week && r.week.split('-')[0] !== w.week.split('-')[0]) await postToJob(env, r.clan, 'results', await seasonRecap(env, r.clan, Number(w.week.split('-')[0])).catch(() => null)).catch(() => {});
   }
-  for (const p of r.promoted || []) await discordPost(env, r.clan, `🎉 Congrats ${String(p.name).replace(/<\/?c\d*>/gi, '')} on ${p.role === 'coLeader' ? 'Co-leader' : 'Elder'}!`, p.role === 'elder' ? `Earned by hitting ${r.target}+ war after war. ⭐` : 'Thanks for everything you do for the clan. ⭐', [], 'joins');
+  for (const p of r.promoted || []) await discordPost(env, r.clan, `🎉 Congrats ${cleanName(p.name)} on ${p.role === 'coLeader' ? 'Co-leader' : 'Elder'}!`, p.role === 'elder' ? `Earned by hitting ${r.target}+ war after war. ⭐` : 'Thanks for everything you do for the clan. ⭐', [], 'joins');
   // Every battle day, in its last 4 hours: who still has decks to play.
   if (r.day && r.decksLeft) {
     const st0 = await env.DB.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(r.clan).first();
