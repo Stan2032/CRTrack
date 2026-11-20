@@ -762,7 +762,9 @@ export async function busiestHour(env, clan) {
   const off = (ukHourOf(Date.now()) - new Date().getUTCHours() + 24) % 24, hc = Array(24).fill(0);
   for (const x of rows) hc[(x.h + off) % 24] += x.c;
   let best = 19, top = -1;
-  for (let h = 12; h <= 21; h++) { const c = hc[h] + hc[h + 1] + hc[h + 2]; if (c > top) { top = c; best = h; } }   // afternoons and evenings only
+  // Late afternoon to evening only (16:00–20:00 UK starts). Real data (Nov 2026): the clan's busiest hours are right
+  // after the morning reset, when nearly everyone still has all 4 decks; a ping then names almost the whole clan.
+  for (let h = 16; h <= 20; h++) { const c = hc[h] + hc[h + 1] + hc[(h + 2) % 24]; if (c > top) { top = c; best = h; } }
   return best;
 }
 export function pingPlan(cfg, auto) {

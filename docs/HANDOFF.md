@@ -193,7 +193,7 @@ screenshots for absence messages, if wanted.
 ## Added 18 Nov (from looking at other clan bots: CWStats, Canadian War Bot, ClashBot, TrophyCoach, RoyaleAPI)
 
 - **Ping times**: the one battle-day ping used to go out in the last 4 hours (~05:45 UK for a 09:43 reset). Now an
-  evening ping (cfg.pingHour UK, or `busiestHour`: the start of the clan's busiest 3 hours, 12:00–23:00, from
+  evening ping (cfg.pingHour UK, or `busiestHour`: the start of the clan's busiest 3 hours starting 16:00–20:00 UK (mornings after the reset are busiest, but a ping then names nearly everyone), from
   race_events; 19:00 until there's data) and a last call `cfg.lastCall` hours before reset (default 2). `/setup pings`.
   Leaders' phone alerts follow the same times. `battleDayPings` in discord.js.
 - **`/apply #TAG`** (CWStats-style): card in #leaders with recruitCard, war readiness and the clan's trophy requirement,

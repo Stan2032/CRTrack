@@ -188,7 +188,9 @@ await DB.exec(`DELETE FROM discord_reminders WHERE user_id = 'U1'`);
   await battleDayPings(env, r2, ...at2('2026-11-21T08:30:00Z')); assert.equal(posts().length, 1, 'no last call');
   // Auto: the start of the clan's busiest 3 hours, from when decks were played.
   await DB.exec(`INSERT INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${Array.from({ length: 40 }, (_, k) => `('PPCCR8VU','138-3','T${k}','${new Date(Date.now() - 864e5 - k * 6e4).toISOString().slice(0, 11)}${['20', '21', '22'][k % 3]}:1${k % 10}:00.000Z',1,0,1,1,0)`).join(',')}`);
+  await DB.exec(`INSERT INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${Array.from({ length: 60 }, (_, k) => `('PPCCR8VU','138-3','M${k}','${new Date(Date.now() - 864e5 - k * 6e4).toISOString().slice(0, 11)}${['10', '11', '12'][k % 3]}:2${k % 10}:00.000Z',1,0,1,1,0)`).join(',')}`);
   const bh = await busiestHour(env, 'PPCCR8VU');
+  assert.ok(bh >= 16 && bh <= 20, 'busier mornings (just after the reset) are ignored: the ping is for later in the day: ' + bh);
   assert.ok(bh >= 19 && bh <= 21, 'busiest evening hours found: ' + bh);
   assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'pings', options: [{ name: 'auto', value: true }, { name: 'last_call', value: 2 }] }] } })), /auto: start of the clan's busiest hours/);
   await DB.exec(`DELETE FROM race_events WHERE week = '138-3'`); }

@@ -149,7 +149,7 @@ any time with `/setup auto apply:True`.
 | `/leader forget @who` | Delete someone's data on request (`history:True` also removes their stored war history) |
 | `/setup auto` | Set up the whole server (`apply:True` to do it, `fresh:True` to start from nothing) |
 | `/setup show` · `/setup check` | What the bot posts where · what each role can see (read live) |
-| `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours), `last_call:2` (hours before reset; 0 = off) |
+| `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours between 16:00 and 22:00 UK), `last_call:2` (hours before reset; 0 = off) |
 | `/setup tidy 7` | Remove people from the Not in clan waiting room after 7 days (heads-up the day before; 0 = never) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
 | `/setup remove` | Clan Leader only: delete everything War Audit made in the server (asks first) |
