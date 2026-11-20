@@ -7,7 +7,8 @@ import { seasonRecap, scoutRivals, leaderDigest, backupFile } from '../worker/ex
 import { sendDigest, postBackup } from '../worker/discord.js';
 
 const api = fakeApi(), calls = [];
-const rivalLog = (tag, fames) => ({ items: fames.map((f, i) => ({ standings: [{ rank: i % 2 + 1, clan: { tag: '#' + tag, fame: f } }] })) });
+// Like the real log: the clan's own fame is race points (≤ 10,000); its players' medals are the comparable number.
+const rivalLog = (tag, fames) => ({ items: fames.map((f, i) => ({ standings: [{ rank: i % 2 + 1, clan: { tag: '#' + tag, fame: 10000 - i * 1000, participants: [{ fame: f - 500 }, { fame: 500 }] } }] })) });
 globalThis.fetch = async (url, opt = {}) => {
   url = String(url);
   const body = opt.body instanceof FormData ? opt.body : opt.body ? JSON.parse(opt.body) : null;

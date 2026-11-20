@@ -48,7 +48,10 @@ export async function scoutRivals(env, clan, week, rivals) {
   if (!others.length) return null;
   const recentOf = async tag => {
     const log = await cr(env, `/clans/${encodeURIComponent('#' + tag)}/riverracelog?limit=5`).catch(() => null);
-    const rows = (log?.items || []).map(w => { const s = (w.standings || []).find(x => String(x.clan?.tag).replace('#', '') === tag); return s ? { rank: s.rank, fame: s.clan.fame || 0 } : null; }).filter(Boolean);
+    // Medals = their players' medals added up. (A clan's own "fame" in the log is race points in normal weeks but
+    // medals in colosseum weeks, so averaging it mixes two different things.)
+    const rows = (log?.items || []).map(w => { const s = (w.standings || []).find(x => String(x.clan?.tag).replace('#', '') === tag);
+      return s?.clan?.participants?.length ? { rank: s.rank, fame: s.clan.participants.reduce((t, p) => t + (p.fame || 0), 0) } : null; }).filter(Boolean);
     return rows.length ? { fame: avg(rows.map(x => x.fame)), rank: avg(rows.map(x => x.rank)), wins: rows.filter(x => x.rank === 1).length, n: rows.length } : null;
   };
   const [ours, ...theirs] = await Promise.all([recentOf(clan), ...others.map(c => recentOf(c.tag))]);
