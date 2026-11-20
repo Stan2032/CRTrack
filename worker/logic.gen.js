@@ -412,7 +412,8 @@ function chatEnd(list, r) {
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
 
-// opts: { day, reset } — battle day number and the daily reset time ("09:43") for the reminder.
+// opts: { day, reset, counts } — battle day number, the daily reset time ("09:43") for the reminder, and counts(p, k):
+// whether battle day k counted for that player (for the "missed decks" message of each finished day).
 function chatLive(list, r, opts = {}) {
   const here = list.filter(x => !x.gone);
   const left = here.filter(x => x.res.today < 4).sort((a, b) => a.res.today - b.res.today || a.name.localeCompare(b.name));
@@ -423,6 +424,13 @@ function chatLive(list, r, opts = {}) {
     left.map(x => `${x.name} (${4 - x.res.today} left)`)) });
   if (out.length) msgs.push({ title: 'Out', text: lines(`Can't reach ${r.target} now:`, out.map(x => `${x.name} (${x.res.fame})`)) });
   if (close.length) msgs.push({ title: 'Still need', text: lines('Still need:', close.map(x => `${x.name}: +${x.res.need}`)) });
+  // Each finished battle day: who left decks unused (from the war's per-day decks; see warDays on the page).
+  for (let k = 1; k < (opts.day || 0); k++) {
+    const missed = here.filter(x => x.warDays && x.warDays[k - 1] != null && x.warDays[k - 1] < 4 && (!opts.counts || opts.counts(x, k)))
+      .sort((a, b) => a.warDays[k - 1] - b.warDays[k - 1] || a.name.localeCompare(b.name));
+    if (missed.length) msgs.push({ title: `Missed day ${k}`, text: lines(`Battle day ${k}: decks left unused (every deck is 100+ medals, win or lose). Please play all 4 today:`,
+      missed.map(x => `${x.name} (${x.warDays[k - 1]}/4)`)) });
+  }
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
 

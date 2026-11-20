@@ -254,3 +254,15 @@ details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
 .facts .pips { display: inline-flex; gap: 3px; }
 .facts .pips i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); box-sizing: border-box; }
 .facts .pips i.on { background: var(--text); border-color: var(--text); }
+
+/* The war's 16 decks: a group of 4 per battle day; missed decks on past days in red, today's group brighter */
+.facts .pips.war { gap: 6px; align-items: center; }
+.facts .pips.war .pd { display: inline-flex; gap: 2px; opacity: .55; }
+.facts .pips.war .pd.now { opacity: 1; }
+.facts .pips.war .pd.off { opacity: .25; }
+.facts .pips.war i { width: 7px; height: 7px; }
+.facts .pips.war i.miss { border-color: var(--red); }
+.facts .pips.war .pn { font-size: 12px; color: var(--muted); margin-left: 2px; }
+
+.daytabs { display: flex; width: fit-content; margin-bottom: 6px; }
+.daytabs button { padding: 4px 10px; font-size: 12px; }

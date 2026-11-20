@@ -130,6 +130,20 @@ async function addFiles(files) {
   say(have.join('   ') + (bad.length ? '   · not recognised: ' + bad.join(', ') : ''));
 }
 
+// Decks on each battle day of this war: finished days from history, yesterday exact (war total minus today), today
+// live. null = not known. counts(k): whether day k counted for them (not excused; joined before that day).
+function warDays(p) {
+  const out = [null, null, null, null], hist = p.daysLive || [];
+  for (let k = 0; k < day - 1; k++) out[k] = hist[k] ?? null;
+  if (p.race) {
+    out[day - 1] = p.race.today;
+    const earlier = out.slice(0, Math.max(0, day - 2));
+    if (day > 1 && earlier.every(x => x != null)) out[day - 2] = Math.max(0, Math.min(4, p.race.decks - p.race.today - earlier.reduce((t, x) => t + x, 0)));
+  }
+  return out;
+}
+const dayCounts = (p, k) => p.res.status !== 'Excused' && (/^\d$/.test(p.join) ? k > Number(p.join) : true);
+
 function evaluate() {
   const r = rules(), past = mode === 'end' && model.season !== model.latest;
   return model.players.map(p => {
@@ -137,7 +151,7 @@ function evaluate() {
     const manual = note('join', p), auto = p.autoJoinLive;
     const join = manual || auto || 'full';
     const res = judgeLive(p, r, join, day);
-    const out = { ...p, join, joinAuto: !manual && !!auto, res, done: null };
+    const out = { ...p, join, joinAuto: !manual && !!auto, res, done: null, warDays: mode === 'live' ? warDays(p) : null, warDecks: p.race ? p.race.decks : 0 };
     if (mode === 'live' && raceInfo.day && res.status !== 'Excused' && !p.gone)
       out.fc = forecast(p, { target: res.target, day, leftToday: 4 - res.today, fame: res.fame, lookback: r.lookback, clan: clanH() });
     return out;
@@ -199,6 +213,15 @@ function moreControls(p) {
 }
 const joinSelect = p => `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
 
+// This war's 16 decks as four groups of 4 dots, one group per battle day (today's group stands out; a day that didn't
+// count for them is faint), then "used/16".
+function warPips(p) {
+  const ds = p.warDays || [null, null, null, null], used = p.warDecks || 0;
+  const tip = ds.map((n, k) => `day ${k + 1}: ${k + 1 > day ? '–' : n == null ? '?' : n + '/4'}`).join(', ');
+  return `<span class="pips war" title="${used} of 16 decks this war (${tip})" aria-label="${used} of 16 decks this war, ${p.res.today} of 4 today">${ds.map((n, k) =>
+    `<span class="pd ${k + 1 === day ? 'now' : ''} ${k + 1 < day && !dayCounts(p, k + 1) ? 'off' : ''}">${[0, 1, 2, 3].map(j => `<i class="${n != null && j < n ? 'on' : k + 1 < day && n != null && dayCounts(p, k + 1) ? 'miss' : ''}"></i>`).join('')}</span>`).join('')}<span class="pn">${used}/16</span></span>`;
+}
+
 // New to the clan: in this war's view, no finished war with us at all (last war counts as history); for a finished
 // war, none before that war.
 const isNewNow = p => mode === 'live' ? !p.weeks.length : p.isNew;
@@ -219,7 +242,7 @@ function row(p) {
     const x = p.res, pct = Math.min(100, Math.round(100 * x.fame / (r.target || 1)));
     facts = `<span class="med"><b>${x.fame.toLocaleString()}</b><span class="muted"> / ${r.target.toLocaleString()}</span></span>`
       + `<span class="bar" aria-hidden="true"><i class="${x.status === 'Safe' ? 'ok' : ''}" style="width:${pct}%"></i></span>`
-      + `<span class="pips" title="${x.today} of 4 decks played today" aria-label="${x.today} of 4 decks today">${[0, 1, 2, 3].map(k => `<i class="${k < x.today ? 'on' : ''}"></i>`).join('')}</span>`;
+      + warPips(p);
     const b = p.fc && x.status === 'Need' ? band(p.fc.prob) : null, tip = p.fc ? ` title="Expect ~${p.fc.expected.toLocaleString()} (likely ${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()}). Based on ${esc(p.fc.basis)}."` : '';
     right = x.status === 'Safe' ? `<span class="fcb ok">✓ Reached</span>`
       : x.status === 'Out' ? `<span class="fcb bad">Can't reach</span>`
@@ -244,7 +267,7 @@ function resetUK() {
   const w = (hist?.wars || []).map(x => parseTime(x.ended_at)).filter(Boolean).sort((a, b) => b - a)[0];
   return w ? new Date(w).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
 }
-const liveOpts = () => ({ day, reset: resetUK() });
+const liveOpts = () => ({ day, reset: resetUK(), counts: dayCounts });
 
 // The race (raceOutlook in logic.js): race points if today ended now, today's medals and place, what passing the
 // next clan today is worth, and the finish on recent form. Colosseum weeks: total medals decide it.
@@ -395,7 +418,7 @@ async function requestUpdate() {
 }
 
 // ---- Recommended steps: in-game actions first, then what to post ----
-let stepTexts = [];
+let stepTexts = [], msgDay = null;   // msgDay: a finished battle day picked in the decks step (null = today)
 const STEP = id => ({ tag: 'STEP-' + id });
 // The messages are in their steps; the full list stays folded unless the steps aren't shown (e.g. an older war).
 let _stepsShown = null;
@@ -441,8 +464,19 @@ function renderSteps(list, msgs) {
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
     if (free.length) steps.push({ text: `Optional: <b>kick now</b> to free battle slots (can't reach ${rules().target}, no decks today) ${names(free)}`, tick: '<span class="tickbox auto"></span>' });
-    const left = list.filter(p => !p.gone && p.res.today < 4).sort((a, b) => a.res.today - b.res.today);
-    if (left.length) posted('DECKS-' + day, `Remind who still has <b>decks to play today</b> ${names(left)}`, copy('Decks left'));
+    // Decks: today's reminder, or (day buttons) who missed decks on a finished day.
+    const pick = msgDay && msgDay < day ? msgDay : null;
+    const tabs = day > 1 ? `<div class="daytabs seg" role="tablist">${[null, ...Array.from({ length: day - 1 }, (_, k) => k + 1)].map(k =>
+      `<button type="button" role="tab" data-msgday="${k || ''}" aria-selected="${k === pick}" class="${k === pick ? 'on' : ''}">${k ? 'Day ' + k : 'Today'}</button>`).join('')}</div>` : '';
+    if (pick) {
+      const missed = list.filter(p => !p.gone && p.warDays && p.warDays[pick - 1] != null && p.warDays[pick - 1] < 4 && dayCounts(p, pick));
+      if (missed.length) posted('MISSED-' + pick, `${tabs}Post who <b>missed decks on day ${pick}</b> ${names(missed)}`, copy(`Missed day ${pick}`));
+      else steps.push({ text: `${tabs}Everyone played all 4 decks on day ${pick} ✓`, tick: '<span class="tickbox auto on"></span>', done: true });
+    } else {
+      const left = list.filter(p => !p.gone && p.res.today < 4).sort((a, b) => a.res.today - b.res.today);
+      if (left.length) posted('DECKS-' + day, `${tabs}Remind who still has <b>decks to play today</b> ${names(left)}`, copy('Decks left'));
+      else if (tabs) steps.push({ text: `${tabs}Everyone has played all 4 decks today ✓`, tick: '<span class="tickbox auto on"></span>', done: true });
+    }
     posted('REMIND-' + day, 'Post the <b>reminder</b> for players who still need medals', copy('Still need'));
   }
   box.classList.toggle('hidden', !(mode === 'live' ? steps.length : latest));
@@ -712,6 +746,8 @@ document.addEventListener('click', e => {
   if (ex) return copyText(explainTexts[+ex.dataset.explain], ex);
   const st = e.target.closest('[data-step]');
   if (st) { const k = st.dataset.step; return setRule(k, rules()[k] + RULE_SPEC[k].step * Number(st.dataset.dir)); }
+  const md = e.target.closest('[data-msgday]');
+  if (md) { msgDay = Number(md.dataset.msgday) || null; return render(); }
   const cs = e.target.closest('[data-copystep]');
   if (cs) return copyText(stepTexts[+cs.dataset.copystep], cs);
   const ma = e.target.closest('[data-markall]');

@@ -944,6 +944,7 @@ export async function warBoard(env, r, now) {
   const content = [`⚔️ **War ${r.week} · battle day ${r.day} of 4**`, ...raceLines(b, r.clan),
     `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
     `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
+    b.warDecksSoFar && r.day > 1 ? `🗓️ This war: ${b.warDecks}/${b.warDecksSoFar} decks so far (${b.warDecksSoFar - b.warDecks} unused)` : '',
     b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
     `_Updated ${ukClock(now)} UK_`,
   ].filter(Boolean).join('\n');

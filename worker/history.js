@@ -110,6 +110,16 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     if (moved.length) sql.push(`INSERT OR IGNORE INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${
       rows(moved.map(p => [clan, week, clean(p.tag), now, day, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks]))}`);
   }
+  // Yesterday's decks, exactly: the last pull before the reset can miss up to 15 minutes of play, but now the war
+  // total minus today's decks is what each player had used by the reset. Corrected once per player after a reset.
+  if (week && day > 1 && live.length) {
+    const ends = new Map((await db.prepare('SELECT tag, day, decks, today FROM race_days WHERE clan = ? AND week = ? AND day IN (?, ?)').bind(clan, week, day - 1, day - 2).all()).results.map(r => [r.tag + '|' + r.day, r]));
+    const fix = live.map(p => {
+      const t = clean(p.tag), y = ends.get(t + '|' + (day - 1)), endY = p.decksUsed - p.decksUsedToday, before = day > 2 ? ends.get(t + '|' + (day - 2))?.decks ?? null : 0;
+      return y && before != null && (y.decks !== endY || y.today !== endY - before) ? [endY, Math.max(0, Math.min(4, endY - before)), t] : null;
+    }).filter(Boolean);
+    for (const [decks, today, t] of fix) sql.push(db.prepare('UPDATE race_days SET decks = ?, today = ? WHERE clan = ? AND week = ? AND day = ? AND tag = ?').bind(decks, today, clan, week, day - 1, t));
+  }
   if (week && day && live.length) sql.push(`INSERT OR REPLACE INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES ${
     rows(live.map(p => [clan, week, day, clean(p.tag), p.name, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks, now]))}`);
 
@@ -140,7 +150,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   pick.forEach((tag, i) => { for (const b of Array.isArray(logs[i]) ? logs[i] : []) { const x = warBattle(b); if (x) battles.push([clan, tag, b.battleTime, x.type, x.won, x.lost]); } });
   if (battles.length) sql.push(`INSERT OR IGNORE INTO war_battles (clan,tag,at,type,won,lost) VALUES ${rows(battles)}`);
 
-  if (sql.length) await db.batch(sql.map(s => db.prepare(s)));
+  if (sql.length) await db.batch(sql.map(s => typeof s === 'string' ? db.prepare(s) : s));   // strings, or prepared statements with values
   // For alerts: who joined/left this run, finished wars, and (on battle day 4) who can no longer reach the target.
   // For the Discord war board: the daily reset time (UK), and the battle day of the previous snapshot.
   const lastEnd = await db.prepare('SELECT ended_at FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 1').bind(clan).first();
@@ -181,6 +191,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
       return { standings: outlook ? outlook.rows : [], colosseum: !!outlook?.colosseum, started: !!outlook?.started,
         members: here.size, reached: mine.filter(p => p.fame >= target).length,
         decksUsed: mine.reduce((t, p) => t + Math.min(4, p.decksUsedToday), 0), decksTotal: here.size * 4,
+        warDecks: mine.reduce((t, p) => t + Math.min(16, p.decksUsed), 0), warDecksSoFar: here.size * 4 * day,
         notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };
     })() : null,
     prevDay: prevDay?.day || 0, prevWeek: prevDay?.week || null,
