@@ -212,19 +212,27 @@ function row(p) {
       : AUTO_CHECKED.includes(p.res.status) ? (p.gone || model.season !== model.latest ? '' : '<span class="tick wait">Waiting for game</span>')
       : `<button class="tick ${p.done.manual ? 'done' : ''}" data-done="${esc(p.tag)}" aria-pressed="${p.done.manual}">${p.done.manual ? '✓ Done' : 'Mark done'}</button>`;
   } else {
-    facts = `<span>${p.res.fame} medals</span><span>${p.res.today}/4 decks today</span>`;
+    // Live: medals toward the target (number + bar), today's decks as 4 dots, and one status badge by the name.
+    const x = p.res, pct = Math.min(100, Math.round(100 * x.fame / (r.target || 1)));
+    facts = `<span class="med"><b>${x.fame.toLocaleString()}</b><span class="muted"> / ${r.target.toLocaleString()}</span></span>`
+      + `<span class="bar" aria-hidden="true"><i class="${x.status === 'Safe' ? 'ok' : ''}" style="width:${pct}%"></i></span>`
+      + `<span class="pips" title="${x.today} of 4 decks played today" aria-label="${x.today} of 4 decks today">${[0, 1, 2, 3].map(k => `<i class="${k < x.today ? 'on' : ''}"></i>`).join('')}</span>`;
+    const b = p.fc && x.status === 'Need' ? band(p.fc.prob) : null, tip = p.fc ? ` title="Expect ~${p.fc.expected.toLocaleString()} (likely ${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()}). Based on ${esc(p.fc.basis)}."` : '';
+    right = x.status === 'Safe' ? `<span class="fcb ok">✓ Reached</span>`
+      : x.status === 'Out' ? `<span class="fcb bad">Can't reach</span>`
+      : b ? `<span class="fcb ${{ Likely: 'ok', 'At risk': 'risk', Unlikely: 'bad' }[b]}"${tip}>${b === 'Likely' ? 'On track' : `${b} · ${Math.round(p.fc.prob * 100)}%`}</span>` : '';
   }
+  // The second line only when there's something to act on (or an away note).
+  const b2 = mode !== 'end' && p.fc && p.res.status === 'Need' ? band(p.fc.prob) : null;
   const why = mode === 'end' ? p.res.why
-    : p.res.status === 'Out' ? `Most possible ${p.res.fame + p.res.max}` + (p.res.today === 0 ? ' · no decks today, kicking frees a slot' : '')
-    : p.res.status === 'Need' ? `Needs ${p.res.need} more · up to ${p.res.max} still possible` : '';
-  const fcBand = p.fc ? [band(p.fc.prob), { Likely: 'ok', 'At risk': 'risk', Unlikely: 'bad' }[band(p.fc.prob)]] : null;
-  const fcText = p.fc && p.res.status === 'Need' ? `${fcBand[0]} ${Math.round(p.fc.prob * 100)}%` : '';
+    : [p.res.why, p.res.status === 'Out' ? `At most ${(p.res.fame + p.res.max).toLocaleString()} now` + (p.res.today === 0 ? ' · no decks today' : '')
+      : p.res.status === 'Need' && b2 && b2 !== 'Likely' ? `Expected ~${p.fc.expected.toLocaleString()} by the end of the war` : ''].filter(Boolean).join(' · ');
   const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
   const isDone = p.done && (p.done.auto || p.done.manual);
   return `<div class="p ${isDone ? 'is-done' : ''}">
     <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
-    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${fcText ? `<div class="why"><span class="fcb ${fcBand[1]}" title="Expect ~${p.fc.expected.toLocaleString()} (likely ${p.fc.low.toLocaleString()}–${p.fc.high.toLocaleString()}). Based on ${esc(p.fc.basis)}.">${esc(fcText)}</span> <span class="muted">expect ~${p.fc.expected.toLocaleString()}</span></div>` : ''}${ask}
+    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${ask}
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
 }
 
