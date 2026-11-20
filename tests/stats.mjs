@@ -102,3 +102,12 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.ok(fp.prob > 0.08 && fp.prob < 0.45, 'about 1 in 5, not ~3%: ' + fp.prob);
   assert.ok(Math.abs(fp.expected - (450 + 12 * 100)) <= 100, 'average kept: ' + fp.expected);
   console.log(`Forecast spread checks passed (steady player ${f0.low}–${f0.high}; low scorer ${Math.round(fp.prob * 100)}%)`); }
+
+// Missed decks on finished days: one message per day, only for days that counted for the player.
+{ const r = { target: 1800, chatLimit: 256 }, mk = (name, days, join) => ({ name, gone: false, warDays: days, join, res: { today: days[1] ?? 0, status: 'Need', need: 900 } });
+  const list = [mk('A', [4, 1, null, null]), mk('B', [2, 4, null, null]), mk('C', [0, 0, null, null], '1')];
+  const ms = L.chatLive(list, r, { day: 2, counts: (p, k) => (/^\d$/.test(p.join || '') ? k > Number(p.join) : true) });
+  const missed = ms.find(m => m.title === 'Missed day 1');
+  assert.ok(missed && /B \(2\/4\)/.test(missed.text) && !/\bA \(/.test(missed.text), 'B missed decks on day 1, A played all 4');
+  assert.ok(!/\bC \(/.test(missed.text), 'C joined during day 1: not counted');
+  console.log('Missed decks message checks passed'); }

@@ -247,3 +247,12 @@ console.log('History checks passed');
   const col = raceOutlook({ ...race, periodType: 'colosseum' });
   assert.equal(col.colosseum, true); assert.deepEqual(col.rows.map(r => r.ifNow), [25350, 21750, 21150, 18200, 12600]);
   console.log('Race points checks passed'); }
+
+// Yesterday's decks are corrected after the reset: the last pull of day 1 saw Ninja on 3, but they played a 4th
+// before the reset. On day 2 the war total (5) minus today's decks (1) says 4 by the reset.
+{ DB.raw.exec("UPDATE race_days SET decks = 3, today = 3 WHERE week = '138-3' AND day = 1 AND tag = '9R2UUCVY'");
+  state.race = { ...state.race, periodIndex: 18, clan: { ...state.race.clan, participants: [{ tag: '#9R2UUCVY', name: 'Ninja', fame: 1100, decksUsed: 5, decksUsedToday: 1, boatAttacks: 0 }] } };
+  await snapshot(env, 'PPCCR8VU', '2026-11-20T10:00:00.000Z');
+  const d1 = DB.raw.prepare("SELECT decks, today FROM race_days WHERE week = '138-3' AND day = 1 AND tag = '9R2UUCVY'").get();
+  assert.deepEqual({ ...d1 }, { decks: 4, today: 4 }, 'day 1 corrected to the decks used by the reset');
+  console.log('Yesterday correction checks passed'); }
