@@ -30,6 +30,8 @@ jobs:
         run: node --no-warnings tests/leaders.mjs
       - name: Season recap, scouting, digest, backup
         run: node --no-warnings tests/extras.mjs
+      - name: Request budget per run
+        run: node --no-warnings tests/budget.mjs
       - name: Worker builds (as Cloudflare deploys it)
         run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/build
       - name: Browser checks (both pages)
