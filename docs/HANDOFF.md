@@ -23,7 +23,7 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `site/index.html`, `site/app.js` | Leaders' page |
 | `site/me.html`, `site/me.js` | Members' page |
 | `site/logic.js` | Decisions: building players from data, `judgeEnd` / `judgeLive`, chat messages, rule limits (`RULE_SPEC`) |
-| `site/stats.js` | Forecasts, reliability, play times, battle types, race projection, forecast accuracy, seasons |
+| `site/stats.js` | Forecasts, reliability, play times, battle types, forecast accuracy, seasons |
 | `site/ui.js` | Shared by both pages: escaping, UK dates, charts (`spark`, `bars`), `rulesExplained` |
 | `site/sw.js`, `site/manifest.webmanifest`, `site/icons/` | Installable app, offline page, phone notifications |
 | `worker/index.js` | Worker entry: `/api/*`, static files, the 15-minute schedule |
@@ -66,7 +66,7 @@ pulls at once (anyone, 5-minute limit per clan, counted from the last request ev
 | `periods` | when each training/battle day was first seen (to tell which day someone joined) |
 | `race_days` | each player's medals and decks per battle day (last snapshot before the reset) |
 | `race_events` | a row each time a player's deck count rises (when they play, to 15 min) |
-| `race_standings` | every clan in the race, per battle day |
+| `race_standings` | every clan in the race, per battle day: `fame` = race points at the end of the day (today: if it ended now; colosseum: medals), `medals` = that day's medals. Finished days are copied from the game's own day log |
 | `war_battles` | war battles from battle logs (3 players per run in rotation). Checked: rebuilds iccyman2511's 138-2 exactly (2,850 / 16 decks) |
 | `member_stats` | donations, trophies, level per war week |
 | `notes` | shared choices: `join`, `over`, `result` (saved automatically), `done` (ticked), `rules` (only changed rules) |
@@ -103,7 +103,12 @@ Battle days (`judgeLive`): most medals possible today by decks left (4→900, 3�
 - **Forecast:** Monte Carlo (2,000 runs, seeded) from the player's own habits: share of decks played, medals per deck and its spread; new players use the clan's. Bands: Likely ≥80%, At risk ≥20%, Unlikely.
 - **Forecast accuracy:** reruns past battle-day forecasts with only what was known then; Brier score vs guessing the usual pass rate.
 - **Reliability (0–100):** 40% wars at target, 30% decks used, 20% medals vs target (1.5× = full), 10% recent trend.
-- **Race projection:** each clan's pace so far carried to day 4 (the roughest estimate here).
+- **The race** (`raceOutlook` in logic.js, worked out from 9 logged battle days, all consistent): each battle day
+  the clans are ranked by **that day's medals**; places earn 3,000 / 1,800 / 1,000 / 600 / 400 race points, plus a
+  bonus for boat defences left. Most race points after day 4 wins (10,000 = the finish). The API's clan `fame` is race
+  points as of the last reset; `periodPoints` is today's medals. **Colosseum weeks: total medals decide it** (wars
+  136-4 and 137-4 ended on the members' medal totals). Projection: each clan's usual daily medals (from the day log)
+  → its places on the remaining days.
 - **Best battle type:** medals per deck from duel 250/100, 1v1 200/100, boats 125/75 (needs 5+ games in two types).
 
 ## Alerts and Discord
@@ -163,7 +168,8 @@ screenshots for absence messages, if wanted.
 
 ## Open
 
-- First real battle day (Thu 19 Nov): check snapshots, race data, battle-log coverage (raise `BATTLELOGS_PER_RUN` to 5 if patchy).
+- Checked on battle day 1 (19–20 Nov): snapshots, race points, medal values per battle type (exact on 32 of 34 players;
+  the other 2 each missed one battle, so battle logs are now fetched first for players who just played).
 - GitHub Actions: jobs fail in 1 s with no log (account/billing setting on GitHub, not the tests). Workflow verified locally.
 - Older RoyaleAPI exports (before 7 Sep 2026) can be imported if Stan has them.
 - The members' page shows anyone's numbers to whoever types their tag (same data RoyaleAPI shows publicly).
@@ -195,7 +201,7 @@ screenshots for absence messages, if wanted.
   person; re-apply after a day.
 - **War readiness** (RoyaleAPI's recruit advice): game level = API level + 16 − maxLevel; the best 32 cards (4 war decks,
   no repeats): average and how many at 14+. Checked on real members (all maxed at the top; Bob 14.3 with 19/32 at 14+).
-- **Projected finish** on the war board (CWStats' /race): `projectRace` from stats.js, shown from half a battle day in.
+- **Projected finish** on the war board: on recent form (see The race above), once any day is logged.
 
 ## Privacy (18 Nov)
 

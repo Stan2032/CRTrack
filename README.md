@@ -41,7 +41,7 @@ follow the game.
 ## Stats and forecasts
 
 - **Forecast** (This war): each player's chance of reaching the target, from their own habits (share of decks they play, medals per deck, how much that varies), simulated 2,000 times. New players use the clan's typical habits.
-- **Race**: every clan's medals, the gap to yours and how it moved since yesterday, plus a projected finish at today's pace.
+- **Race**: every clan's race points (each day's place on medals earns 3,000 / 1,800 / 1,000 / 600 / 400), today's medals, what passing the next clan is worth, and the finish on recent form.
 - **Player panel** (tap a name): medals chart, reliability score with its breakdown, when they usually play, win rates and medals per deck by battle type, and which type earns them most.
 - **Clan stats**: medals and pass rate per war, most and least reliable, battle types clan-wide, when the clan plays (UK time), top donors, offline 7+ days.
 

@@ -160,7 +160,7 @@ any time with `/setup auto apply:True`.
 
 | When | What | Where |
 |---|---|---|
-| Every 15 min on battle days | War board (edited in place), with the projected finish from half a day in | War |
+| Every 15 min on battle days | War board (edited in place): race points, today's place on medals and what passing the next clan is worth, the finish on recent form | War |
 | Battle days, evening (busiest hours, or `/setup pings`) and a last call 2 h before reset | Pings linked members with decks left (people with `/remind` get their DM instead) | War |
 | Reset, from each member's `/remind` | Private reminder | DMs |
 | After each daily reset | Battle day summary (+/- % vs the day before) | Results |
