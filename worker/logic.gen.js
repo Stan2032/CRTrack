@@ -428,8 +428,9 @@ function chatLive(list, r, opts = {}) {
   for (let k = 1; k < (opts.day || 0); k++) {
     const missed = here.filter(x => x.warDays && x.warDays[k - 1] != null && x.warDays[k - 1] < 4 && (!opts.counts || opts.counts(x, k)))
       .sort((a, b) => a.warDays[k - 1] - b.warDays[k - 1] || a.name.localeCompare(b.name));
-    if (missed.length) msgs.push({ title: `Missed day ${k}`, text: lines(`Battle day ${k}: decks left unused (every deck is 100+ medals, win or lose). Please play all 4 today:`,
-      missed.map(x => `${x.name} (${x.warDays[k - 1]}/4)`)) });
+    const unused = missed.reduce((t, x) => t + 4 - x.warDays[k - 1], 0), when = k === opts.day - 1 ? 'yesterday' : `on battle day ${k}`;
+    if (missed.length) msgs.push({ title: `Missed day ${k}`, text: lines(`Missed decks ${when}: ${unused} unused (every deck is 100+ medals, win or lose). Please play all 4 today:`,
+      missed.map(x => `${x.name}: ${4 - x.warDays[k - 1]} unused`)) });
   }
   return msgs.flatMap(m => split(m.text, r.chatLimit).map((t, i, a) => ({ title: a.length > 1 ? `${m.title} ${i + 1}/${a.length}` : m.title, text: t })));
 }
