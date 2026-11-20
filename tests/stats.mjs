@@ -93,3 +93,15 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.equal(S.seasonSummary(log, [], 999, 1800), null);
   console.log(`Season checks passed (season 137 top: ${ss.top[0].name} ${ss.top[0].total}, ${ss.perfect.length} at 1800+ every war)`);
 }
+
+// Forecast spread matches real wars (checked 20 Nov 2026 on the clan's 10 wars: a player's full-war total varies by
+// ~±260 medals; the old model said ~±66, so it showed 0% / 100% far too often).
+{ const steady = { wars: 5, use: 1, perDeck: 150, sd: 16 };
+  const f0 = S.forecast({ tag: 'X1', weeks: [] }, { target: 1800, day: 1, leftToday: 4, fame: 0, habits: steady });
+  assert.ok(f0.high - f0.low >= 300, 'a war\'s total can swing by hundreds: ' + f0.low + '–' + f0.high);
+  // perc's real case: ~105 a deck, plays everything, 450 after day 1 → reached 1,800 in 1 of their last 5 wars.
+  const low = { wars: 5, use: 1, perDeck: 105, sd: 12 };
+  const fp = S.forecast({ tag: 'X2', weeks: [] }, { target: 1800, day: 1, leftToday: 0, fame: 450, habits: low });
+  assert.ok(fp.prob > 0.08 && fp.prob < 0.45, 'about 1 in 5, not ~3%: ' + fp.prob);
+  assert.ok(Math.abs(fp.expected - (450 + 12 * 100)) <= 100, 'average kept: ' + fp.expected);
+  console.log(`Forecast spread checks passed (steady player ${f0.low}–${f0.high}; low scorer ${Math.round(fp.prob * 100)}%)`); }

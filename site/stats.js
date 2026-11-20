@@ -39,26 +39,30 @@ function clanHabits(players, lookback) {
   return { use: median(hs.map(h => h.use)) ?? 0.8, perDeck: median(hs.map(h => h.perDeck)) ?? 140, sd: median(hs.map(h => h.sd)) ?? 25 };
 }
 
-// Chance of reaching the target by the end of this war (Monte Carlo, 2,000 runs).
-//   Each remaining deck is played with the player's usual chance; each played deck earns
-//   their usual medals per deck, varied by their usual spread (clipped to the game's 75–250).
-//   New players use the clan's typical habits. Capped at the game's daily maximum (900).
+// Chance of reaching the target by the end of this war (Monte Carlo, 2,000 runs). Checked against the clan's real
+// wars (tests/stats.mjs): players' totals really vary by ~±260 medals from war to war, so each run draws:
+//   1. this war's form: their usual medals per deck, shifted by how much that changes between wars;
+//   2. each remaining day: played in full with their usual chance (people skip whole days, not single battles);
+//   3. each battle: a win or a loss (100 medals, 200 a win; 250 for players who average over 200) at the rate that
+//      gives their form on average; at most 900 a day.
+//   New players use the clan's typical habits.
+const BATTLE_SD = 50;   // typical spread of one battle's medals (a loss is 100, a win 200–250)
 function forecast(p, ctx) {
   const { target, day, leftToday, fame, clan } = ctx;
   if (fame >= target) return { prob: 1, expected: fame, low: fame, high: fame, basis: 'already reached' };
   const own = ctx.habits !== undefined ? ctx.habits : habits(p, ctx.lookback), h = own || clan;
   const daysAfter = Math.max(0, 4 - day);
   const r = rng(p.tag + ':' + day + ':' + leftToday), runs = ctx.runs || 2000, finals = [];
-  const sd = Math.max(15, h.sd || 25);
+  const sdWar = h.sd || 25, sdForm = Math.max(8, Math.sqrt(Math.max(0, sdWar ** 2 - BATTLE_SD ** 2 / 16)));
+  const gauss = () => Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(2 * Math.PI * r());
   for (let i = 0; i < runs; i++) {
+    const form = clamp(h.perDeck + gauss() * sdForm, 75, 250);   // this war's medals per deck
     let total = fame;
     for (const n of [leftToday, ...Array(daysAfter).fill(4)]) {
+      if (!n || r() >= h.use) continue;
       let dayGain = 0;
-      for (let d = 0; d < n; d++) {
-        if (r() >= h.use) continue;
-        const z = Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(2 * Math.PI * r());
-        dayGain += clamp(h.perDeck + z * sd, 75, 250);
-      }
+      const hi = form > 200 ? 250 : 200, win = clamp((form - 100) / (hi - 100), 0, 1);
+      for (let d = 0; d < n; d++) dayGain += form < 100 ? form : r() < win ? hi : 100;
       total += Math.min(900, dayGain);
     }
     finals.push(total);
