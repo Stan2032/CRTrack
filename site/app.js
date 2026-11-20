@@ -190,7 +190,7 @@ function more(p) {
 }
 function moreControls(p) {
   const ctl = [];
-  if (!p.gone && (p.isNew || note('join', p))) ctl.push(joinSelect(p));
+  if (!p.gone && (isNewNow(p) || note('join', p))) ctl.push(joinSelect(p));
   if (mode === 'end') {
     const o = note('over', p) || 'Auto';
     ctl.push(`<select data-over="${esc(p.tag)}" aria-label="Change result"><option value="Auto">Suggested: ${esc(label(p.res.auto))}</option>${GROUPS_END.filter(s => s !== 'Left').map(s => `<option value="${s}" ${o === s ? 'selected' : ''}>Change to: ${esc(label(s))}</option>`).join('')}</select>`);
@@ -199,9 +199,12 @@ function moreControls(p) {
 }
 const joinSelect = p => `<select data-join="${esc(p.tag)}" aria-label="Joined">${JOIN.map(([v, l]) => `<option value="${v}" ${p.join === v ? 'selected' : ''}>${l}${p.joinAuto && p.join === v ? ' (auto)' : ''}</option>`).join('')}</select>`;
 
+// New to the clan: in this war's view, no finished war with us at all (last war counts as history); for a finished
+// war, none before that war.
+const isNewNow = p => mode === 'live' ? !p.weeks.length : p.isNew;
 function row(p) {
   const r = rules(), role = p.roleNow || p.role;
-  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${p.isNew && !p.gone ? '<span class="new">NEW</span>' : ''}`;
+  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${isNewNow(p) && !p.gone ? '<span class="new">NEW</span>' : ''}`;
   let facts, right = '';
   if (mode === 'end') {
     const w = p.cur, ws = recent(p, r).slice().reverse(), miss = missCount(p, r);
@@ -227,7 +230,7 @@ function row(p) {
   const why = mode === 'end' ? p.res.why
     : [p.res.why, p.res.status === 'Out' ? `At most ${(p.res.fame + p.res.max).toLocaleString()} now` + (p.res.today === 0 ? ' · no decks today' : '')
       : p.res.status === 'Need' && b2 && b2 !== 'Likely' ? `Expected ~${p.fc.expected.toLocaleString()} by the end of the war` : ''].filter(Boolean).join(' · ');
-  const ask = p.isNew && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
+  const ask = isNewNow(p) && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
   const isDone = p.done && (p.done.auto || p.done.manual);
   return `<div class="p ${isDone ? 'is-done' : ''}">
