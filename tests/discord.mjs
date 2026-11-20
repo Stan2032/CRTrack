@@ -164,6 +164,11 @@ await DB.exec(`DELETE FROM discord_reminders WHERE user_id = 'U1'`);
   calls.length = 0;
   res = await battleDayPings(env, r, ...at('2026-11-20T07:50:00Z'));
   assert.ok(res.lastCall); assert.match(posts()[0], /Last call: battle day 1 ends in about 2 hours/);
+  // With the race on the board, pings say what today's medals are worth.
+  const { raceStake } = await import('../worker/discord.js');
+  assert.equal(raceStake({ standings: [{ tag: 'AAA', name: 'Rival', today: 9000, place: 0, next: null }, { tag: 'PPCCR8VU', name: '#WINNING', today: 8000, place: 1, next: 'AAA' }], started: true }, 'PPCCR8VU'),
+    "📅 We're **2nd** on medals today (+1,800 race points). **1,001** more passes Rival: **+1,200**.");
+  assert.equal(raceStake({ standings: [], started: true }, 'PPCCR8VU'), '', 'nothing known: no line');
   // Leaders set their own time and turn the last call off.
   assert.match(await text(await interaction({ type: 2, guild_id: 'G', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'pings', options: [{ name: 'hour', value: 21 }, { name: 'last_call', value: 0 }] }] } })),
     /Evening: \*\*21:00 UK\*\*[\s\S]*Last call: off/);

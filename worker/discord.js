@@ -785,7 +785,8 @@ export async function battleDayPings(env, r, now, msLeft) {
       await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, String(now)).run();
       const h = Math.max(1, Math.round(msLeft / 3600e3));
       const title = kind === 'eve' ? `⚔️ Battle day ${r.day}: decks still to play${r.board?.reset ? ` (resets ${r.board.reset} UK)` : ''}` : `⏰ Last call: battle day ${r.day} ends in about ${h} hour${h === 1 ? '' : 's'}`;
-      if (await postPings(env, cfg, title, `${r.decksLeft} decks left:`, list)) out.sent++;
+      const stake = raceStake(r.board, r.clan);
+      if (await postPings(env, cfg, title, `${stake ? stake + '\n' : ''}${r.decksLeft} decks left:`, list)) out.sent++;
     }
   }
   return out;
@@ -924,6 +925,15 @@ export function raceLines(b, clan) {
   const top = Math.max(1, ...st.map(c => b.colosseum ? c.medals : c.ifNow));
   out.push('```\n' + (b.colosseum ? '' : '    race pts  medals today\n') + st.map((c, j) => `${j + 1}. ${bar((b.colosseum ? c.medals : c.ifNow) / top, 6)} ${n(b.colosseum ? c.medals : c.ifNow).padStart(6)}${b.colosseum ? '' : n(c.today).padStart(8)}  ${name(c)}${c.tag === clan ? ' ◀' : ''}`).join('\n') + '\n```');
   return out;
+}
+
+// One line for pings: where today's medals put us and what the next place is worth (normal weeks only).
+export function raceStake(b, clan) {
+  const st = b?.standings || [], me = st.find(c => c.tag === clan);
+  if (!me || b.colosseum || !b.started || me.place == null) return '';
+  const up = st.find(c => c.tag === me.next);
+  return `📅 We're **${place(me.place)}** on medals today (+${n(RANK_POINTS[me.place])} race points).`
+    + (up ? ` **${n(up.today - me.today + 1)}** more passes ${cleanName(up.name)}: **+${n(RANK_POINTS[up.place] - RANK_POINTS[me.place])}**.` : ' Keep it!');
 }
 
 // The live war board: one message per war, edited after every pull on battle days.

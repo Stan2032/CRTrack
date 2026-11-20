@@ -103,9 +103,10 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   if (week) sql.push(`INSERT OR IGNORE INTO periods (clan,week,period,type,first_seen) VALUES ${rows([[clan, week, race.periodIndex, race.periodType, now]])}`);
   const live = (race.clan?.participants || []).filter(p => here.has(clean(p.tag)) || p.decksUsed > 0);
   // Every time a player's deck count goes up, keep a timestamped row: when they played, and how it went.
+  let moved = [];
   if (week && day && live.length) {
     const prev = new Map((await db.prepare('SELECT tag, max(decks) AS d FROM race_events WHERE clan = ? AND week = ? GROUP BY tag').bind(clan, week).all()).results.map(r => [r.tag, r.d]));
-    const moved = live.filter(p => p.decksUsed > (prev.get(clean(p.tag)) ?? 0));
+    moved = live.filter(p => p.decksUsed > (prev.get(clean(p.tag)) ?? 0));
     if (moved.length) sql.push(`INSERT OR IGNORE INTO race_events (clan,week,tag,at,day,fame,decks,today,boats) VALUES ${
       rows(moved.map(p => [clan, week, clean(p.tag), now, day, p.fame, p.decksUsed, p.decksUsedToday, p.boatAttacks]))}`);
   }
@@ -127,11 +128,13 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     [clan, `${season}-${Math.floor(l.periodIndex / 7) + 1}`, (l.periodIndex % 7) - 2, clean(it.clan?.tag), names[clean(it.clan?.tag)] || clean(it.clan?.tag), it.progressEndOfDay || 0, it.pointsEarned || 0, now])) : [];
   if (logged.length) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ${rows(logged)}`);
 
-  // War battles from players' battle logs (each log holds their last 25 battles).
-  // A few players per run, in rotation, to stay inside the free plan's per-run limits.
+  // War battles from players' battle logs (each log holds only their last 25 battles, so someone who plays a lot of
+  // other modes can push war battles out within hours). First whoever just played war decks (up to 5), then a few
+  // in rotation; at most 7 a run to stay inside the free plan's per-run limits.
   const tags = [...here].sort(), per = Number(env.BATTLELOGS_PER_RUN || 3);
   const slot = Math.floor(Date.parse(now) / (15 * 60 * 1000)) % Math.max(1, Math.ceil(tags.length / per));
-  const pick = tags.slice(slot * per, slot * per + per);
+  const fresh = moved.map(p => clean(p.tag)).filter(t => here.has(t)).slice(0, 5);
+  const pick = [...new Set([...fresh, ...tags.slice(slot * per, slot * per + per)])].slice(0, Math.max(per, fresh.length + 2));
   const logs = await Promise.all(pick.map(tag => cr(env, `/players/${encodeURIComponent('#' + tag)}/battlelog`).catch(() => [])));
   const battles = [];
   pick.forEach((tag, i) => { for (const b of Array.isArray(logs[i]) ? logs[i] : []) { const x = warBattle(b); if (x) battles.push([clan, tag, b.battleTime, x.type, x.won, x.lost]); } });
