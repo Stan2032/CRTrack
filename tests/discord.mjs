@@ -159,11 +159,20 @@ await DB.exec(`DELETE FROM discord_reminders WHERE user_id = 'U1'`);
   assert.ok(!res.evening && !res.lastCall && !posts().length, 'afternoon: nothing yet');
   res = await battleDayPings(env, r, ...at('2026-11-19T19:05:00Z'));
   assert.ok(res.evening); assert.match(posts()[0], /Battle day 1: decks still to play \(resets 09:43 UK\)[\s\S]*6 decks left:[\s\S]*perc \(2 left\)/);
-  await battleDayPings(env, r, ...at('2026-11-19T19:20:00Z'));
+  await battleDayPings(env, { ...r, leftToday: [{ tag: 'YVJRGLCC', name: 'perc', left: 1 }] }, ...at('2026-11-19T19:20:00Z'));
   assert.equal(posts().length, 1, 'evening once');
+  const ed = calls.filter(c => c.method === 'PATCH' && /channels\/C\/messages\//.test(c.url)).pop();
+  assert.ok(ed && /perc \(1 left\)/.test(ed.body.content) && /decks still to play/.test(ed.body.content), 'in between: the same message is edited as people play');
   calls.length = 0;
   res = await battleDayPings(env, r, ...at('2026-11-20T07:50:00Z'));
   assert.ok(res.lastCall); assert.match(posts()[0], /Last call: battle day 1 ends in about 2 hours/);
+  assert.ok(calls.some(c => c.method === 'DELETE' && /channels\/C\/messages\//.test(c.url)), 'last call replaces the evening message (a new post notifies)');
+  calls.length = 0;
+  await battleDayPings(env, { ...r, leftToday: [] }, ...at('2026-11-20T08:05:00Z'));
+  assert.match(calls.find(c => c.method === 'PATCH').body.content, /Everyone has played all 4 decks today/);
+  calls.length = 0;
+  { const t = Date.parse('2026-11-20T10:00:00Z'); await battleDayPings(env, { ...r, day: 2 }, t, Date.parse('2026-11-21T09:43:00Z') - t); }
+  assert.ok(calls.some(c => c.method === 'DELETE') && !posts().length, 'next battle day: yesterday\'s list is removed');
   // With the race on the board, pings say what today's medals are worth.
   const { raceStake } = await import('../worker/discord.js');
   assert.equal(raceStake({ standings: [{ tag: 'AAA', name: 'Rival', today: 9000, place: 0, next: null }, { tag: 'PPCCR8VU', name: '#WINNING', today: 8000, place: 1, next: 'AAA' }], started: true }, 'PPCCR8VU'),

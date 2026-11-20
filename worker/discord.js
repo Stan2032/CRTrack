@@ -730,7 +730,7 @@ export async function discordPost(env, clan, title, body, pings = [], job = 'war
 }
 
 // One server: title, body, and a list where linked members are mentioned (people with /remind on get their DM instead).
-async function postPings(env, cfg, title, body, pings = [], job = 'war') {
+async function pingContent(env, cfg, title, body, pings = []) {
   const links = new Map((await env.DB.prepare('SELECT tag, user_id FROM discord_links WHERE guild = ?').bind(cfg.guild).all()).results.map(r => [r.tag, r.user_id]));
   const dmed = pings.length ? new Set((await env.DB.prepare('SELECT user_id FROM discord_reminders WHERE guild = ? AND hours > 0').bind(cfg.guild).all()).results.map(r => r.user_id)) : new Set();
   const users = [], parts = pings.map(p => {
@@ -740,7 +740,10 @@ async function postPings(env, cfg, title, body, pings = [], job = 'war') {
   });
   if (parts.some(x => x.endsWith('📩'))) parts.push('📩 = reminded by DM');
   const content = [`**${title}**`, body, parts.length ? parts.map(x => '• ' + x).join('\n') : ''].filter(Boolean).join('\n').slice(0, 1990);
-  return dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } }).then(() => true, () => false);
+  return { content, allowed_mentions: { parse: [], users: users.slice(0, 100) } };
+}
+async function postPings(env, cfg, title, body, pings = [], job = 'war') {
+  return dapi(env, 'POST', `/channels/${chan(cfg, job)}/messages`, await pingContent(env, cfg, title, body, pings)).then(m => m?.id || true, () => false);
 }
 
 // ---- Battle-day pings at times people can act on ----
@@ -773,21 +776,37 @@ export async function battleDayPings(env, r, now, msLeft) {
     return { evening: eveAt != null && now >= eveAt && (!lastAt || eveAt < lastAt), lastCall: !!lastAt && now >= lastAt };
   };
   Object.assign(out, due(pingPlan(null, auto)));   // for the leaders' phone alerts
-  if (!discordReady(env) || !r.leftToday?.length) return out;
+  if (!discordReady(env) || !r.leftToday) return out;
   await setupDB(env);
   const list = r.leftToday.map(p => ({ tag: p.tag, name: p.name, text: `(${p.left} left)` }));
+  // One decks-left message per server, kept current: a ping posts it new (that's what notifies people; the last call
+  // deletes the evening one and posts again), and every run in between edits the list as people play (edits don't
+  // notify). The next day's first ping replaces the day before's.
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && chan(c, 'war'))) {
-    const d = due(pingPlan(cfg, auto));
+    const d = due(pingPlan(cfg, auto)), mk = `pingmsg:${cfg.guild}`;
+    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(mk).first().then(x => x && JSON.parse(x.v)).catch(() => null);
+    const stake = raceStake(r.board, r.clan), body = `${stake ? stake + '\n' : ''}${r.decksLeft} decks left:`;
+    let posted = false;
     for (const [kind, on] of [['eve', d.evening], ['last', d.lastCall]]) {
-      if (!on) continue;
+      if (!on || !list.length) continue;
       const key = `ping:${cfg.guild}:${r.week}:${r.day}:${kind}`;
       if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(key).first()) continue;
       await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, String(now)).run();
       const h = Math.max(1, Math.round(msLeft / 3600e3));
       const title = kind === 'eve' ? `⚔️ Battle day ${r.day}: decks still to play${r.board?.reset ? ` (resets ${r.board.reset} UK)` : ''}` : `⏰ Last call: battle day ${r.day} ends in about ${h} hour${h === 1 ? '' : 's'}`;
-      const stake = raceStake(r.board, r.clan);
-      if (await postPings(env, cfg, title, `${stake ? stake + '\n' : ''}${r.decksLeft} decks left:`, list)) out.sent++;
+      if (saved?.id) await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).catch(() => {});
+      const id = await postPings(env, cfg, title, body, list);
+      if (id) { out.sent++; posted = true; await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(mk, JSON.stringify({ channel: chan(cfg, 'war'), id: id === true ? null : id, week: r.week, day: r.day, title })).run(); }
+      break;   // one post per run
     }
+    if (posted || !saved?.id) continue;
+    if (saved.week !== r.week || saved.day !== r.day) {   // a new battle day: yesterday's list is out of date (the summary is in results)
+      await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).catch(() => {});
+      await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(mk).run();
+      continue;
+    }
+    const msg = list.length ? await pingContent(env, cfg, saved.title, body, list) : { content: `**${saved.title}**\n✅ Everyone has played all 4 decks today.`, allowed_mentions: { parse: [] } };
+    await dapi(env, 'PATCH', `/channels/${saved.channel}/messages/${saved.id}`, msg).catch(() => {});
   }
   return out;
 }

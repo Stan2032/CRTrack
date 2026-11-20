@@ -161,7 +161,7 @@ any time with `/setup auto apply:True`.
 | When | What | Where |
 |---|---|---|
 | Every 15 min on battle days | War board (edited in place): race points, today's place on medals and what passing the next clan is worth, the finish on recent form | War |
-| Battle days, evening (busiest hours, or `/setup pings`) and a last call 2 h before reset | Pings linked members with decks left (people with `/remind` get their DM instead) | War |
+| Battle days, evening (busiest hours, or `/setup pings`) and a last call 2 h before reset | Pings linked members with decks left (people with `/remind` get their DM instead). One message per battle day: names drop off as people play (edits don't notify), the last call replaces it so it notifies again, and the next day removes it | War |
 | Reset, from each member's `/remind` | Private reminder | DMs |
 | After each daily reset | Battle day summary (+/- % vs the day before) | Results |
 | War ends | Result; shout-outs (top 3, streaks); stats board refresh ~15 min later (who to act on: the website) | Results, Welcomes, Leaders, Rules |
