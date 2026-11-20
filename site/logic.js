@@ -469,7 +469,8 @@ const RANK_POINTS = [3000, 1800, 1000, 600, 400], FINISH = 10000;
 function raceOutlook(race) {
   const day = raceDay(race);
   if (!day || !race.clans?.length) return null;
-  const colosseum = race.periodType === 'colosseum', sum = a => a.reduce((t, x) => t + x, 0);
+  // Colosseum: the API says so; as a fallback, a normal race can't pass 10,000 (the finish), colosseum totals can.
+  const colosseum = race.periodType === 'colosseum' || race.clans.some(c => Number(c.fame) > FINISH), sum = a => a.reduce((t, x) => t + x, 0);
   const past = {};   // each clan's logged battle days (this season's logs): medals and defence bonus
   for (const l of race.periodLogs || []) for (const it of l.items || []) (past[cleanTag(it.clan?.tag)] ||= []).push({ medals: it.pointsEarned || 0, bonus: it.progressEarnedFromDefenses || 0 });
   const rows = race.clans.map(c => {

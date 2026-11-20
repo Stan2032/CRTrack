@@ -97,6 +97,16 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   }
   if (wars.length) sql.push(`INSERT OR REPLACE INTO wars (clan,week,ended_at,rank,fame,trophy_change) VALUES ${rows(wars)}`);
   if (players.length) sql.push(`INSERT OR REPLACE INTO war_players (clan,week,tag,name,fame,decks,boats) VALUES ${rows(players)}`);
+  // Day 4's decks, exactly: the war ends at the last reset, so there's no "tomorrow" to correct it from (see below);
+  // the finished war's final deck count minus each player's decks by the end of day 3 is what they played on day 4.
+  for (const week of haveWars.length ? [...new Set(wars.map(w => w[1]))] : []) {   // not on the first run (10 old wars, no day rows)
+    const d3 = new Map((await db.prepare('SELECT tag, decks FROM race_days WHERE clan = ? AND week = ? AND day = 3').bind(clan, week).all()).results.map(r => [r.tag, r.decks]));
+    const d4 = new Map((await db.prepare('SELECT tag, decks, today FROM race_days WHERE clan = ? AND week = ? AND day = 4').bind(clan, week).all()).results.map(r => [r.tag, r]));
+    for (const p of players.filter(x => x[1] === week && d4.has(x[2]) && d3.has(x[2]))) {
+      const fin = p[5], today = Math.max(0, Math.min(4, fin - d3.get(p[2]))), was = d4.get(p[2]);
+      if (was.decks !== fin || was.today !== today) sql.push(db.prepare('UPDATE race_days SET decks = ?, today = ? WHERE clan = ? AND week = ? AND day = 4 AND tag = ?').bind(fin, today, clan, week, p[2]));
+    }
+  }
 
   // Current race: when each period started, and each player's decks per battle day
   const week = weekOf(race, log.items), day = battleDay(race);

@@ -246,6 +246,7 @@ console.log('History checks passed');
   // Colosseum: total medals decide it (the clan's own wars 136-4 and 137-4 ended on 90,250 and 106,200 = the members' medals).
   const col = raceOutlook({ ...race, periodType: 'colosseum' });
   assert.equal(col.colosseum, true); assert.deepEqual(col.rows.map(r => r.ifNow), [25350, 21750, 21150, 18200, 12600]);
+  assert.equal(raceOutlook({ ...race, clans: clans.map((c, i) => ({ ...c, fame: 30000 - i * 1000 })) }).colosseum, true, 'totals over 10,000: colosseum even if the period type says otherwise');
   console.log('Race points checks passed'); }
 
 // Yesterday's decks are corrected after the reset: the last pull of day 1 saw Ninja on 3, but they played a 4th
@@ -256,3 +257,14 @@ console.log('History checks passed');
   const d1 = DB.raw.prepare("SELECT decks, today FROM race_days WHERE week = '138-3' AND day = 1 AND tag = '9R2UUCVY'").get();
   assert.deepEqual({ ...d1 }, { decks: 4, today: 4 }, 'day 1 corrected to the decks used by the reset');
   console.log('Yesterday correction checks passed'); }
+
+// Day 4 is corrected from the finished war: Ninja had 12 decks by the end of day 3, the last pull of day 4 saw 3 more,
+// and the war log's final count is 16 → 4 on day 4.
+{ DB.raw.exec(`INSERT OR REPLACE INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES
+    ('PPCCR8VU','139-1',3,'9R2UUCVY','Ninja',2000,12,4,0,'x'),('PPCCR8VU','139-1',4,'9R2UUCVY','Ninja',2600,15,3,0,'x')`);
+  const realFetch = globalThis.fetch, entry = { seasonId: 139, sectionIndex: 0, createdDate: '20261130T094300.000Z', standings: [{ rank: 1, trophyChange: 20, clan: { tag: '#PPCCR8VU', fame: 10000, participants: [{ tag: '#9R2UUCVY', name: 'Ninja', fame: 2800, decksUsed: 16, boatAttacks: 0 }] } }] };
+  globalThis.fetch = async (url, o) => decodeURIComponent(url).includes('/riverracelog') ? new Response(JSON.stringify({ items: [entry, ...api.log.items] }), { status: 200 }) : realFetch(url, o);
+  await snapshot(env, 'PPCCR8VU', '2026-11-30T10:00:00.000Z');
+  globalThis.fetch = realFetch;
+  assert.deepEqual({ ...DB.raw.prepare("SELECT decks, today FROM race_days WHERE week = '139-1' AND day = 4 AND tag = '9R2UUCVY'").get() }, { decks: 16, today: 4 }, 'day 4 from the final count');
+  console.log('Day 4 correction checks passed'); }
