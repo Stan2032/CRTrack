@@ -40,7 +40,8 @@ async function page(b, path = '') {
     const f = 'site' + (u.pathname === '/' ? '/index.html' : u.pathname);
     return existsSync(f) ? r.fulfill({ status: 200, contentType: types[f.split('.').pop()] || 'text/plain', body: readFileSync(f) }) : r.fulfill({ status: 404, body: '' });
   });
-  await p.goto(site + path); await p.waitForTimeout(1200);
+  // Wait for the page to finish loading its data (network quiet), not a fixed time: fixed waits failed under load.
+  await p.goto(site + path); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
   return p;
 }
 
