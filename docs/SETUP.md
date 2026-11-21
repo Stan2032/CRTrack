@@ -123,7 +123,9 @@ Co-Leader can use leader commands. Each channel also gets a short pinned note sa
 
 Without `fresh`, it reuses channels it recognises (by name, or because they already have a job) and only adds what's
 missing. Later: **`/setup show`** shows what goes where; **`/setup refresh clean:True`** (tap **Continue ▶** until it says *Refreshed ✅* — it works in small steps to stay inside Cloudflare's free limits) clears the bot's old posts and re-posts
-everything.
+everything. Without `clean`, refresh re-posts and then removes the bot's out-of-date messages (old pings or boards) from #war,
+#bot-commands, rules, stats and how-to-link; history channels (results, general, leaders) are left alone. #war is also
+swept automatically once each battle day, and a new war's board replaces the last war's.
 
 **To remove it all:** **`/setup remove`** (clan Leader or server admin only, not Co-Leaders) shows what will go and a red
 **Delete everything** button: War Audit's channels, categories and roles, and its saved settings for the server.

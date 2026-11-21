@@ -786,6 +786,12 @@ export async function battleDayPings(env, r, now, msLeft) {
   // notify). The next day's first ping replaces the day before's.
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && chan(c, 'war'))) {
     const d = due(pingPlan(cfg, auto)), mk = `pingmsg:${cfg.guild}`;
+    // Once a battle day: clear any out-of-date bot messages from #war (old pings, a board deleted and re-posted, etc.).
+    const tk = `tidy:${cfg.guild}:${r.week}:${r.day}`;
+    if (!(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(tk).first())) {
+      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(tk, String(now)).run();
+      await tidyLive(env, cfg.guild, cfg, [chan(cfg, 'war')], 10).catch(() => null);
+    }
     const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(mk).first().then(x => x && JSON.parse(x.v)).catch(() => null);
     const stake = raceStake(r.board, r.clan), body = `${stake ? stake + '\n' : ''}${r.decksLeft} decks left:`;
     let posted = false;
@@ -972,6 +978,10 @@ export async function warBoard(env, r, now) {
   let sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === r.clan && chan(c, 'war'))) {
     if (await upsert(env, `discord:board:${cfg.guild}:${r.week}`, chan(cfg, 'war'), content).catch(() => null)) sent++;
+    if (r.day === 1) {   // a new war: the previous war's board is history (the result is in #results)
+      const old = (await env.DB.prepare('SELECT k, v FROM kv WHERE k LIKE ? AND k != ?').bind(`discord:board:${cfg.guild}:%`, `discord:board:${cfg.guild}:${r.week}`).all()).results;
+      for (const o of old) { const x = JSON.parse(o.v); if (x.id) await dapi(env, 'DELETE', `/channels/${x.channel}/messages/${x.id}`).catch(() => null); await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(o.k).run(); }
+    }
   }
   return sent;
 }
@@ -1467,6 +1477,32 @@ async function postNotes(env, guild, cfg, from, max = 5, extraBot = null) {
 }
 
 const refreshButton = label => [{ type: 1, components: [{ type: 2, style: 1, label, custom_id: 'refresh|next' }] }];
+// Bot messages still in use in a server: rules, privacy, how-to-link, stats, channel notes, war boards and today's
+// decks-left message. Anything else the bot posted in a "live" channel is out of date.
+async function keptIds(env, guild) {
+  const rows = (await env.DB.prepare('SELECT v FROM kv WHERE k LIKE ? OR k LIKE ? OR k = ?').bind(`discord:%:${guild}`, `discord:%:${guild}:%`, 'pingmsg:' + guild).all()).results;
+  return new Set(rows.map(r => { try { return JSON.parse(r.v).id; } catch (e) { return null; } }).filter(Boolean));
+}
+// Channels that should hold only what the bot keeps up to date (history channels like results and general are left alone).
+async function liveChannels(env, guild, cfg) {
+  const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v).channel : null).catch(() => null);
+  return [...new Set([chan(cfg, 'war'), chan(cfg, 'bot'), await kv('discord:rules:' + guild), await kv('discord:welcome:' + guild), await kv('discord:stats:' + guild)].filter(Boolean))];
+}
+// Delete the bot's out-of-date messages in those channels (newest 50 in each), at most `max` per call (request budget).
+export async function tidyLive(env, guild, cfg, channels = null, max = 15) {
+  const keep = await keptIds(env, guild), list = channels || await liveChannels(env, guild, cfg);
+  let removed = 0, more = false;
+  for (const ch of list) {
+    if (removed >= max) { more = true; break; }
+    const msgs = await dapi(env, 'GET', `/channels/${ch}/messages?limit=50`).catch(() => []);
+    for (const m of (Array.isArray(msgs) ? msgs : []).filter(m => m.author?.id === env.DISCORD_APP_ID && !keep.has(m.id))) {
+      if (removed >= max) { more = true; break; }
+      if (await dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`).then(() => true, () => false)) removed++;
+    }
+  }
+  return { removed, more };
+}
+
 export async function refreshAll(env, guild, cfg, clan, clean) {
   await setupDB(env);
   const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
@@ -1512,8 +1548,15 @@ export async function refreshNext(env, guild, clan) {
   if (run.stage === 'notes') {
     const r = await postNotes(env, guild, cfg, run.note || 0);
     if (r.next != null) { await save({ note: r.next }); return { content: [...r.done, '', 'More notes to go.'].join('\n'), components: refreshButton('Continue ▶ (more notes)') }; }
+    await save({ stage: 'tidy', notesDone: r.done });
+    return { content: [...r.done, '', 'Next: remove out-of-date bot messages (old pings and boards).'].join('\n'), components: refreshButton('Continue ▶ (tidy up)') };
+  }
+  if (run.stage === 'tidy') {   // after re-posting, so the kept messages are the current ones
+    const t = await tidyLive(env, guild, cfg, null, 20);
+    run.tidied = (run.tidied || 0) + t.removed;
+    if (t.more) { await save({ tidied: run.tidied }); return { content: `🧹 Removed ${run.tidied} out-of-date messages so far. More to go.`, components: refreshButton('Continue ▶ (tidy up)') }; }
     await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('refresh:' + guild).run();
-    return { content: ['**Refreshed ✅**', ...r.done, chan(cfg, 'war') ? '➖ War board: posts itself at the next pull on a battle day' : ''].filter(Boolean).join('\n'), components: [] };
+    return { content: ['**Refreshed ✅**', ...(run.notesDone || []), run.tidied ? `🧹 Removed ${run.tidied} out-of-date message${run.tidied === 1 ? '' : 's'}` : '', chan(cfg, 'war') ? '➖ War board: posts itself at the next pull on a battle day' : ''].filter(Boolean).join('\n'), components: [] };
   }
   return { content: 'Nothing to do.', components: [] };
 }

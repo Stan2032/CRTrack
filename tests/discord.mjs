@@ -238,6 +238,13 @@ assert.match(edit.body.content, /🗓️ Day 1: 150\/192 decks played \(42 misse
 calls.length = 0;
 await warBoard(env, { ...r, board: boardOf(liveRace([{ periodIndex: 17, items: [{ clan: { tag: '#AAA' }, pointsEarned: 20000, progressEarnedFromDefenses: 0 }, { clan: { tag: '#PPCCR8VU' }, pointsEarned: 22000, progressEarnedFromDefenses: 100 }] }])) }, Date.parse('2026-11-20T14:30:00Z'));
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /On recent form: \*\*1st\*\* \(~10,000\) · next Rival ~8,400/, 'usual medals: we win the next days; capped at the 10,000 finish');
+// A new war's board replaces the last war's: the old one is deleted (its result is in #results).
+{ const oldId = JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k LIKE 'discord:board:%:138-3'").first()).v).id;
+  calls.length = 0;
+  await warBoard(env, { ...r, week: '139-1', day: 1 }, Date.parse('2026-11-26T10:00:00Z'));
+  assert.ok(calls.some(c => c.method === 'DELETE' && c.url.endsWith('/messages/' + oldId)), 'last war\'s board removed');
+  assert.equal(await DB.prepare("SELECT 1 FROM kv WHERE k LIKE 'discord:board:%:138-3'").first(), null);
+  await DB.exec("DELETE FROM kv WHERE k LIKE 'discord:board:%:139-1'"); }
 
 // Day summary: medals gained with the change vs the day before, posted once.
 await DB.exec(`INSERT INTO race_days (clan,week,day,tag,name,fame,decks,today,boats,at) VALUES
@@ -396,7 +403,10 @@ assert.ok(calls.some(c => c.method === 'DELETE' && /messages\/NOTE$/.test(c.url)
 assert.match(rf, /What appears here → <#C>/, 'a note in the war channel');
 calls.length = 0;
 assert.match(await runRefresh('G', cfgG, false), /Refreshed/);
-assert.ok(!calls.some(c => c.method === 'DELETE' && !/messages\/NOTE$/.test(c.url)), 'without clean: nothing deleted but pin notices');
+{ const d2 = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').pop());
+  assert.ok(d2.includes('OLD1'), 'without clean: the bot\'s out-of-date messages in live channels are tidied');
+  assert.ok(!d2.includes('USER1'), 'people\'s own messages are never touched');
+  assert.ok(!d2.some(id => /^M\d+$/.test(id)), 'what the bot keeps current (rules, notes, boards) stays'); }
 assert.match(await runRefresh('NONE', null, true), /Nothing set up yet/);
 
 // /autosetup: preview, then step by step (Continue button): roles, categories, channels, posts; fresh deletes old channels last.
