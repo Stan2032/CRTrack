@@ -15,5 +15,7 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "crtrack-history", "database_id": "513fad6e-908f-4a83-b3c4-b142df48b364" }
   ],
-  "triggers": { "crons": ["*/15 * * * *"] }
+  "triggers": { "crons": ["*/15 * * * *"] },
+  // Worker logs (Cloudflare dashboard → Workers → crtrack → Logs): errors and what each run did, kept a few days.
+  "observability": { "enabled": true }
 }

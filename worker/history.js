@@ -365,6 +365,12 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push({ clan, error: String(e.message || e) });
       // Tell leaders once every 6 hours while pulls keep failing.
       await sendAlert(env, clan, `err:${clan}:${Math.floor(now / (6 * 3600e3))}`, 'Data pull failing', `Couldn't update ${clan}: ${String(e.message || e).slice(0, 80)}. Check the Clash Royale key.`).catch(() => {});
+      // Also in the leaders' Discord channel (most leaders don't use phone alerts), once per 6 hours.
+      const ek = `errpost:${clan}:${Math.floor(now / (6 * 3600e3))}`;
+      if (!(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(ek).first().catch(() => null))) {
+        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(ek, '1').run().catch(() => {});
+        await postToJob(env, clan, 'leaders', `⚠️ **War Audit couldn't update the clan's data** (${String(e.message || e).slice(0, 120)}). It keeps retrying every 15 minutes. If this repeats for hours, check the Clash Royale API key in Cloudflare (see docs/SETUP.md).`).catch(() => {});
+      }
     }
   }
   return out;

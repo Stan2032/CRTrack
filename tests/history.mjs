@@ -268,3 +268,16 @@ console.log('History checks passed');
   globalThis.fetch = realFetch;
   assert.deepEqual({ ...DB.raw.prepare("SELECT decks, today FROM race_days WHERE week = '139-1' AND day = 4 AND tag = '9R2UUCVY'").get() }, { decks: 16, today: 4 }, 'day 4 from the final count');
   console.log('Day 4 correction checks passed'); }
+
+// A failing data pull is reported in the leaders' channel too (once per 6 hours), not only as a phone alert.
+{ const { snapshotAll } = await import('../worker/history.js');
+  const realFetch = globalThis.fetch, posts = [];
+  DB.raw.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:GX', '{"clan":"PPCCR8VU","channels":{"leaders":"LC"},"roles":{}}')`);
+  globalThis.fetch = async (url, o = {}) => { const u = String(url); if (u.includes('discord.com')) { if (o.method === 'POST') posts.push(JSON.parse(o.body).content); return Response.json({ id: 'P' }); } return new Response('{}', { status: 503 }); };
+  const env2 = { ...env, DISCORD_PUBLIC_KEY: 'x', DISCORD_BOT_TOKEN: 't', DISCORD_APP_ID: 'A' }, t0 = Date.parse('2026-11-22T12:00:00Z');
+  await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 });
+  await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 + 15 * 60e3 });
+  globalThis.fetch = realFetch;
+  assert.equal(posts.filter(p => /couldn't update the clan's data/.test(p)).length, 1, 'posted once, not every 15 minutes: ' + posts.length);
+  DB.raw.exec("DELETE FROM kv WHERE k = 'discord:GX'");
+  console.log('Failure alert checks passed'); }
