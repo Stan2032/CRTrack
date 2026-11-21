@@ -208,7 +208,8 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
       return { standings: outlook ? outlook.rows : [], colosseum: !!outlook?.colosseum, started: !!outlook?.started,
         members: here.size, reached: mine.filter(p => p.fame >= target).length,
         decksUsed: mine.reduce((t, p) => t + Math.min(4, p.decksUsedToday), 0), decksTotal: here.size * 4,
-        warDecks: mine.reduce((t, p) => t + Math.min(16, p.decksUsed), 0), warDecksSoFar: here.size * 4 * day,
+        // finished days only: today's unplayed decks aren't "missed" yet
+        doneDecks: mine.reduce((t, p) => t + Math.max(0, Math.min(16, p.decksUsed) - Math.min(4, p.decksUsedToday)), 0), doneDecksTotal: here.size * 4 * (day - 1),
         notPlayed: mine.filter(p => p.decksUsedToday === 0).map(p => p.name), reset: resetLabel };
     })() : null,
     prevDay: prevDay?.day || 0, prevWeek: prevDay?.week || null,

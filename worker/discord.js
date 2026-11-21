@@ -965,7 +965,7 @@ export async function warBoard(env, r, now) {
   const content = [`⚔️ **War ${r.week} · battle day ${r.day} of 4**`, ...raceLines(b, r.clan),
     `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
     `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
-    b.warDecksSoFar && r.day > 1 ? `🗓️ This war: ${b.warDecks}/${b.warDecksSoFar} decks so far (${b.warDecksSoFar - b.warDecks} unused)` : '',
+    b.doneDecksTotal ? `🗓️ ${r.day > 2 ? `Days 1–${r.day - 1}` : 'Day 1'}: ${b.doneDecks}/${b.doneDecksTotal} decks played (${Math.max(0, b.doneDecksTotal - b.doneDecks)} missed)` : '',
     b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
     `_Updated ${ukClock(now)} UK_`,
   ].filter(Boolean).join('\n');
@@ -1178,7 +1178,7 @@ function overwritesFor(access, guild, roles, botId, voice = false) {
 }
 
 const INTROS = {
-  war: `⚔️ **This channel:** the **war board** on battle days (updated every 15 minutes) and **pings** for anyone with decks left in a battle day's last 4 hours. Chat about the war here too.`,
+  war: `⚔️ **This channel:** the **war board** on battle days (updated every 15 minutes), and **one decks-left message** a day: posted in the evening, kept up to date as people play, and posted again as a last call 2 hours before reset. Chat about the war here too.`,
   joins: `💬 **Clan chat.** War Audit posts a welcome when someone joins the clan in game, congrats on promotions, and shout-outs after each war.`,
   results: `🏆 **This channel:** a **battle day summary** after each daily reset, the **war result** when a war ends, and a **season recap** at the end of each season.`,
   scout: `🔭 **This channel:** when a new war starts, **who we're racing** and how they've done in their last 5 wars, against our own form.`,

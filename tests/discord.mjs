@@ -224,7 +224,7 @@ const { raceOutlook } = await import('../worker/logic.gen.js');
 const liveRace = logs => ({ periodType: 'warDay', periodIndex: 18, sectionIndex: 2, periodLogs: logs, clans: [
   { tag: '#AAA', name: 'Rival', fame: 3000, periodPoints: 9000, participants: [{ fame: 29000 }] },
   { tag: '#PPCCR8VU', name: '#WINNING', fame: 1800, periodPoints: 8000, participants: [{ fame: 30000 }] }] });
-const boardOf = race => { const o = raceOutlook(race); return { standings: o.rows, colosseum: o.colosseum, started: o.started, members: 48, reached: 12, decksUsed: 140, decksTotal: 192, notPlayed: ['perc'], reset: '09:43' }; };
+const boardOf = race => { const o = raceOutlook(race); return { standings: o.rows, colosseum: o.colosseum, started: o.started, members: 48, reached: 12, decksUsed: 140, decksTotal: 192, notPlayed: ['perc'], reset: '09:43', doneDecks: 150, doneDecksTotal: 192 }; };
 const board = boardOf(liveRace([]));
 const r = { clan: 'PPCCR8VU', week: '138-3', day: 2, target: 1800, board };
 await warBoard(env, r, Date.parse('2026-11-20T14:15:00Z'));
@@ -234,6 +234,7 @@ const edit = calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.
 assert.ok(edit, 'then edited');
 assert.match(edit.body.content, /battle day 2 of 4[\s\S]*Race: \*\*2nd\*\* of 2 · 3,600 race points if today ended now · 2,400 behind Rival[\s\S]*Today: \*\*2nd\*\* on medals \(8,000\) = \+1,800 · 1,001 more medals to pass Rival = \*\*\+1,200\*\*[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
 assert.doesNotMatch(edit.body.content, /recent form/, 'no logged days: no projection');
+assert.match(edit.body.content, /🗓️ Day 1: 150\/192 decks played \(42 missed\)/, 'missed counts finished days only');
 calls.length = 0;
 await warBoard(env, { ...r, board: boardOf(liveRace([{ periodIndex: 17, items: [{ clan: { tag: '#AAA' }, pointsEarned: 20000, progressEarnedFromDefenses: 0 }, { clan: { tag: '#PPCCR8VU' }, pointsEarned: 22000, progressEarnedFromDefenses: 100 }] }])) }, Date.parse('2026-11-20T14:30:00Z'));
 assert.match(calls.find(c => c.method === 'PATCH').body.content, /On recent form: \*\*1st\*\* \(~10,000\) · next Rival ~8,400/, 'usual medals: we win the next days; capped at the 10,000 finish');
