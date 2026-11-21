@@ -210,3 +210,8 @@ or tag: every Discord link to that tag, their settings, optionally `history:True
 member_events, war_players, race_days, race_events, war_battles, member_stats, notes, note_log; the deletion itself is
 logged without the data). Notice pinned next to the rules, a line in the how-to-link message, and `site/privacy.html`
 linked from both pages' footers. Supercell's unofficial notice is on both pages, the README and the rules message.
+
+- **Extra chance for linked members** (rule `linkBonus`, on by default): a kick for a member linked on Discord becomes a
+  final warning once (`res.extra`); it's remembered as note kind `extra` with the result and counts as used when the
+  warning is ticked done; it comes back after `warnClear` wars in a row at the target. Demotions are unchanged.
+  `readHistory` returns `linked` (player tags only).

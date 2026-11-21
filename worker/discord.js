@@ -890,6 +890,7 @@ export function rulesText(r) {
     `🎯 **${n(r.target)}+ medals every war.** 4 battle days × 4 decks. Every battle earns medals, win or lose: lose all 16 and you still get 1,600, so 2 wins is enough if you play every deck.`,
     `📅 **Joined mid-war?** ${n(r.perDay)} per battle day left after the day you joined (day 1 = ${n(r.perDay * 3)}, day 2 = ${n(r.perDay * 2)}, day 3 = ${n(r.perDay)}). Joined on day 4: excused.${r.effortNet ? ' Played every deck you could? You pass either way.' : ''}`,
     `⚠️ **Miss once:** a first & only warning. It stays until you reach ${n(r.target)}+ ${r.warnClear} wars in a row. **Miss again before then:** kicked${r.demoteElders ? ' (Elders demoted)' : ''}. Two misses in a row is also a kick.`,
+    r.linkBonus ? `🔗 **Linked here on Discord?** You get **one extra chance**: a final warning instead of your first kick (demotions still happen).` : '',
     `⚔️ **Duels pay most** (250 a game won), then 1v1 (200), boats least (125).${r.spareBoats ? ` Mostly on boats and under? Warning plus a tip${r.boatRepeatKick ? '; still under on boats next war: kick' : ''}.` : ''}`,
     `💬 **Going away?** Use \`/away\` (or tell a leader). Regulars (${r.holdWeeks}+ wars in a row at target) who go quiet ${r.holdOffline}+ days get a check-in, not a kick.`,
     `⭐ **Elder:** ${r.promoWeeks}+ wars in the clan, at most ${r.promoMisses} miss, average ${n(r.promoAvg)}+.`,
@@ -903,6 +904,8 @@ export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see th
 **1.** Type \`/link\` and tap the one from **War Audit**.
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
 **3.** It asks you to play one battle with 2 of your cards in your deck (proof it's your account; a friendly battle counts). Then tap **Done: check it**, and your clan role and nickname are set.
+
+**Why link?** War reminders that tag you, your own war stats with \`/mystats\`, and **one extra chance before a kick**.
 
 Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.
 _What we keep and how to delete it: \`/privacy\`_`;

@@ -407,7 +407,9 @@ export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
     all(full("SELECT week,tag,at,day,fame,decks,today,boats FROM race_events WHERE clan = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-70 days')")),
   ]);
   const lastRun = members.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '') || null;
-  return { clan, lastRun, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents };
+  // Player tags linked on Discord (tags only: who has the extra chance). No table yet = nobody.
+  const linked = (await db.prepare('SELECT DISTINCT tag FROM discord_links WHERE clan = ?').bind(clan).all().catch(() => ({ results: [] }))).results.map(r => r.tag);
+  return { clan, lastRun, linked, members, events, wars, players, periods, days, notes, stats, standings, battles, noteLog, raceEvents };
 }
 
 // One member's own data for the members' page: no leader notes, decisions or other players.
@@ -457,7 +459,7 @@ export async function importWars(env, clan, input, by = null, now = new Date().t
   return { imported: weeks.sort(), rows: fresh.length, skipped: skipped.sort(), invalid: Math.max(0, (Array.isArray(input) ? Math.min(input.length, 8000) : 0) - ok.length) };
 }
 
-const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done', 'away'];
+const NOTE_KINDS = ['join', 'over', 'result', 'rules', 'done', 'away', 'extra'];
 
 export async function writeNotes(env, clan, items, now = new Date().toISOString(), by = null) {
   const ok = (items || []).filter(i => i && NOTE_KINDS.includes(i.kind) && typeof i.week === 'string' && typeof i.tag === 'string'

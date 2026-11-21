@@ -112,3 +112,22 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.ok(!/\bA: /.test(missed.text), 'A played all 4');
   assert.ok(!/\bC: /.test(missed.text), 'C joined during day 1: not counted');
   console.log('Missed decks message checks passed'); }
+
+// Linked on Discord: one extra chance before a kick (a final warning), once until cleared; demotions unchanged.
+{ const r = L.sanitizeRules({}).rules, wk = (key, fame) => ({ key, fame, decks: 16, boats: 0 });
+  const mk = (extra = {}) => { const before = [wk('138-2', 1000), wk('138-1', 2000), wk('137-4', 2000)];
+    return { tag: 'X', name: 'Xavi', role: 'member', cur: wk('138-3', 900), before, prev: before[0], weeks: [wk('138-3', 900), ...before], isNew: false, offlineDays: 0, ...extra }; };
+  assert.equal(L.judgeEnd(mk(), r, 'full').status, 'Kick', 'not linked: second miss in a row is a kick');
+  const fin = L.judgeEnd(mk({ linked: true }), r, 'full');
+  assert.equal(fin.status, 'Warn'); assert.ok(fin.extra); assert.match(fin.why, /^Final warning: linked on Discord[\s\S]*second miss in a row/);
+  assert.equal(L.judgeEnd(mk({ linked: true, extraIn: '138-2' }), r, 'full').status, 'Kick', 'extra chance already used (and not cleared): kick');
+  const cleared = mk({ linked: true, extraIn: '137-1' });   // then 137-4, 138-1 at the target... and 138-2 under: not 3 in a row
+  assert.equal(L.judgeEnd(cleared, r, 'full').status, 'Kick', 'used in 137-1, not cleared since (only 2 in a row): kick');
+  const ok3 = mk({ linked: true, extraIn: '137-1' }); ok3.before = [wk('138-2', 1000), wk('138-1', 2000), wk('137-4', 2000), wk('137-3', 2000), wk('137-2', 2000)]; ok3.prev = ok3.before[0];
+  assert.ok(L.judgeEnd(ok3, r, 'full').extra, 'cleared (3 wars in a row at the target since): the extra chance is back');
+  assert.equal(L.judgeEnd(mk({ linked: true, role: 'elder' }), r, 'full').status, 'Demote', 'demotions still happen');
+  assert.equal(L.judgeEnd(mk({ linked: true }), { ...r, linkBonus: false }, 'full').status, 'Kick', 'rule switched off');
+  const msgs = L.chatEnd([{ ...mk({ linked: true }), res: fin }, { ...mk(), name: 'Yan', res: { status: 'Warn', why: 'First miss' } }], r);
+  assert.match(msgs.find(m => m.title === 'Final warnings').text, /linked on our Discord[\s\S]*Xavi/);
+  assert.match(msgs.find(m => m.title === 'Warnings').text, /Yan/); assert.doesNotMatch(msgs.find(m => m.title === 'Warnings').text, /Xavi/);
+  console.log('Discord extra chance checks passed'); }

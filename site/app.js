@@ -164,8 +164,11 @@ const clanH = () => _clanH || (_clanH = clanHabits(model.players, rules().lookba
 let saving = false;
 async function autoSave(list) {
   if (!codeOk || saving || mode !== 'end' || !model.season || model.season !== model.latest) return;
-  const items = list.filter(p => !p.gone && serverNotes()[`result|${model.season}|${p.tag}`] !== p.res.status)
-    .map(p => ({ week: model.season, tag: p.tag, kind: 'result', value: p.res.status }));
+  const sn = serverNotes(), extra = p => (p.res.extra ? '1' : undefined);
+  const items = [...list.filter(p => !p.gone && sn[`result|${model.season}|${p.tag}`] !== p.res.status)
+    .map(p => ({ week: model.season, tag: p.tag, kind: 'result', value: p.res.status })),
+    // The extra chance for being linked on Discord: remembered with the result (used once the warning is posted).
+    ...list.filter(p => !p.gone && sn[`extra|${model.season}|${p.tag}`] !== extra(p)).map(p => ({ week: model.season, tag: p.tag, kind: 'extra', value: p.res.extra ? '1' : null }))];
   if (!items.length) return;
   saving = true;
   try { await postNotes(items); } finally { saving = false; }
@@ -227,7 +230,7 @@ function warPips(p) {
 const isNewNow = p => mode === 'live' ? !p.weeks.length : p.isNew;
 function row(p) {
   const r = rules(), role = p.roleNow || p.role;
-  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${isNewNow(p) && !p.gone ? '<span class="new">NEW</span>' : ''}`;
+  const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${isNewNow(p) && !p.gone ? '<span class="new">NEW</span>' : ''}${p.linked ? '<span class="linked" title="Linked on Discord" aria-label="Linked on Discord">🔗</span>' : ''}`;
   let facts, right = '';
   if (mode === 'end') {
     const w = p.cur, ws = recent(p, r).slice().reverse(), miss = missCount(p, r);
@@ -456,7 +459,7 @@ function renderSteps(list, msgs) {
     auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder', copy('Promotions'));
     players(rv, 'Review', `<b>Decide with the other leaders</b> ${names(rv)}`, '');
     if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
-    players(w, 'Warn', `Post the <b>first &amp; only warnings</b> ${names(w)}`, copy('First & only'));
+    players(w, 'Warn', `Post the <b>${w.some(p => p.res.extra) ? 'warnings' : 'first &amp; only warnings'}</b> ${names(w)}`, copy('Final warnings') + copy('First & only'));
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
     posted('RECAP', 'Post the <b>war recap</b> (optional)', copy('Recap'));
     posted('SEASON', 'Post the <b>season recap</b> (optional, last war of the season)', copy('Season'));

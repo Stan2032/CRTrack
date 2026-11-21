@@ -52,7 +52,8 @@ function rulesExplained(r, opts = {}) {
     ['⚠️ Missing the target', [
       `First miss: a <b>first & only warning</b>.`,
       `It stays until you reach ${n(r.target)}+ <b>${r.warnClear} wars in a row</b>. Miss again before then: <b>members are kicked</b>` + (r.demoteElders ? `, <b>Elders are demoted</b>.` : '.'),
-      `Two misses in a row is also a kick` + (r.demoteElders ? ` (Elders: demoted)` : '') + `. New members who miss their first full war are kicked.`]],
+      `Two misses in a row is also a kick` + (r.demoteElders ? ` (Elders: demoted)` : '') + `. New members who miss their first full war are kicked.`,
+      r.linkBonus ? `<b>Linked on our Discord?</b> You get <b>one extra chance</b>: a final warning instead of your first kick. Demotions still happen.` : '']],
     ['⚔️ Duels, 1v1 and boats', [
       `Medals per battle: <b>duels 250</b> a game won (100 lost), <b>1v1 200</b> (100), <b>boat attacks 125</b> (75). Duels first, boats last.`,
       r.spareBoats ? `Mostly on boats and under? You get the warning plus a tip. ` + (r.boatRepeatKick ? `Still under on boats next war: kick.` : '') : '']],
@@ -65,7 +66,7 @@ function rulesExplained(r, opts = {}) {
   ];
   const chat = [
     `📜 War rules: ${n(r.target)}+ medals every war (play all 16 decks; 2 wins is enough). Joined mid-war? ${n(r.perDay)} per battle day left.`,
-    `Miss once: first & only warning, until you hit ${n(r.target)}+ ${r.warnClear} wars in a row. Miss again before then: kicked${r.demoteElders ? ' (Elders demoted)' : ''}.`,
+    `Miss once: first & only warning, until you hit ${n(r.target)}+ ${r.warnClear} wars in a row. Miss again before then: kicked${r.demoteElders ? ' (Elders demoted)' : ''}.` + (r.linkBonus ? ` Linked on our Discord? 1 extra chance before a kick.` : ''),
     `Duels pay most, boats least 🚤❌ Away? Tell a leader 💬 ${r.promoWeeks}+ wars, max ${r.promoMisses} miss, avg ${n(r.promoAvg)}+ gets Elder ⭐`,
   ].flatMap(t => split(t, r.chatLimit))
     // fewer messages: join parts while they still fit one chat message

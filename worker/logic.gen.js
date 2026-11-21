@@ -9,6 +9,7 @@ const DEFAULT_RULES = {
   elderWarnFirst: true,  // elders get a warning before demotion
   boatRepeatKick: true,  // boat attackers still under after a warning are kicked
   warnClear: 3,      // a first & only warning clears after this many wars in a row at the target
+  linkBonus: true,   // members linked on Discord get one extra chance (a final warning) before a kick
   spareBoats: true,  // active boat users get a warning, not a kick
   boatShare: 50,     // % of decks on boats to count as a boat user
   holdWeeks: 3,      // passed this many wars in a row before...
@@ -30,6 +31,7 @@ const RULE_SPEC = {
   effortNet:      { group: 'Late joiners', label: 'Pass anyway if they used every deck they could' },
   warnClear:      { group: 'Warnings', label: 'A warning clears after this many wars in a row at the target', min: 1, max: 10, step: 1, unit: 'wars' },
   demoteElders:   { group: 'Warnings', label: 'Elders who miss are demoted, not kicked' },
+  linkBonus:      { group: 'Warnings', label: 'Members linked on Discord get one extra chance before a kick (a final warning)' },
   elderWarnFirst: { group: 'Warnings', label: 'Elders get a first & only warning before demotion' },
   spareBoats:     { group: 'Boat attackers', label: 'Mostly-boat players get a warning and a tip, not a kick' },
   boatShare:      { group: 'Boat attackers', label: 'Counts as a boat attacker from this share of decks on boats', min: 10, max: 100, step: 5, unit: '%' },
@@ -219,12 +221,12 @@ function avgMedals(p, r) { const w = recent(p, r); return w.length ? Math.round(
 // Is a first & only warning still active for this war?
 //   warnedIn: the latest war before this one where a leader posted (ticked) a warning for them.
 //   It clears once they reach the target r.warnClear wars in a row after it.
-function warnState(p, r) {
-  if (!p.warnedIn) return null;
-  const after = p.before.filter(w => cmpKey(w.key, p.warnedIn) > 0).sort((a, b) => cmpKey(a.key, b.key));
+function warnState(p, r, since = p.warnedIn) {
+  if (!since) return null;
+  const after = p.before.filter(w => cmpKey(w.key, since) > 0).sort((a, b) => cmpKey(a.key, b.key));
   let run = 0, cleared = false;
   for (const w of after) { run = w.fame >= r.target ? run + 1 : 0; if (run >= r.warnClear) { cleared = true; break; } }
-  return { week: p.warnedIn, active: !cleared, run };
+  return { week: since, active: !cleared, run };
 }
 
 function judgeEnd(p, r, join, override) {
@@ -264,6 +266,11 @@ function judgeEnd(p, r, join, override) {
     else if (p.prev && p.prev.fame < r.target) res = out('Kick', 'Second miss in a row');
     else if (!p.prev) res = out('Review', `Back after leaving, under ${r.target}`);
     else res = out('Warn', 'First miss');
+  }
+  // Linked on Discord: one extra chance. A kick becomes a final warning, once; it counts as used when the leaders
+  // post it (tick it done), and comes back after they clear it like a warning (warnClear wars in a row at the target).
+  if (res.status === 'Kick' && r.linkBonus && p.linked && !p.gone && !warnState(p, r, p.extraIn)?.active) {
+    res = { ...out('Warn', `Final warning: linked on Discord, so one extra chance before a kick (${res.why.charAt(0).toLowerCase() + res.why.slice(1)})`), extra: true };
   }
   if (w && p.days) {
     const missed = p.days.map((d, i) => d === 0 ? i + 1 : null).filter(Boolean);
@@ -386,7 +393,9 @@ function chatEnd(list, r) {
   ].filter(Boolean);
   if (update.length > 1) msgs.push({ title: 'Update', text: update.join('\n\n') });
 
-  const warn = by('Warn');
+  const finals = by('Warn').filter(x => x.res && x.res.extra);
+  if (finals.length) msgs.push({ title: 'Final warnings', text: lines(`Final warnings: you'd have been kicked, but you're linked on our Discord, so you get one more chance. ${r.target}+ next war:`, finals.map(x => x.name)) });
+  const warn = by('Warn').filter(x => !(x.res && x.res.extra));
   if (warn.length) {
     const rows = warn.map(x => ({ x, n: recent(x, r).length, m: missCount(x, r) }))
       .sort((a, b) => b.m - a.m || b.m / b.n - a.m / a.n)
@@ -517,11 +526,12 @@ const _idx = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 function idx(h) {
   let x = _idx && _idx.get(h);
   if (x) return x;
-  x = { ev: {}, days: {}, warned: {}, periods: {} };
+  x = { ev: {}, days: {}, warned: {}, extra: {}, periods: {} };
   for (const e of h.events || []) (x.ev[e.tag] ||= []).push({ ...e, t: ms(e.at) });
   for (const d of h.days || []) (x.days[d.week + '|' + d.tag] ||= []).push(d);
   for (const p of h.periods || []) (x.periods[p.week] ||= []).push(p);
   for (const n of h.notes || []) if (n.kind === 'result' && n.value === 'Warn') (x.warned[n.tag] ||= []).push(n.week);
+  for (const n of h.notes || []) if (n.kind === 'extra' && n.value === '1') (x.extra[n.tag] ||= []).push(n.week);
   if (_idx) _idx.set(h, x);
   return x;
 }
@@ -589,6 +599,10 @@ function applyHistory(model, h, liveWeek) {
     p.lastResult = prevRes === 'Warn' && notes[`done|${model.prevSeason}|${p.tag}`] !== '1' ? 'WarnNotPosted' : prevRes;
     // Latest war before this one where a first & only warning was given and posted (ticked done).
     p.warnedIn = (idx(h).warned[p.tag] || []).filter(w => model.season && cmpKey(w, model.season) < 0 && notes[`done|${w}|${p.tag}`] === '1')
+      .sort(cmpKey).pop() || null;
+    // Linked on Discord (any server set up for this clan), and the latest war their extra chance was used (posted).
+    p.linked = (h.linked || []).includes(p.tag);
+    p.extraIn = (idx(h).extra[p.tag] || []).filter(w => model.season && cmpKey(w, model.season) < 0 && notes[`done|${w}|${p.tag}`] === '1')
       .sort(cmpKey).pop() || null;
     const mine = idx(h).ev[p.tag] || [];
     p.roleEvents = mine.filter(e => e.kind === 'role').map(e => ({ at: e.t, detail: String(e.detail) }));
