@@ -476,7 +476,7 @@ export async function handleDiscord(request, env, ctx) {
       const ch = i.channel_id || i.channel?.id, what = opt.what;
       const next = { clan, channels: channelsOf(cfg), roles: cfg?.roles || await findRoles(env, guild, {}, cfg) };
       if (what === 'rules' || what === 'welcome' || what === 'stats') {
-        const text = what === 'rules' ? rulesText(await clanRules(env, clan)) : what === 'stats' ? await statsBoard(env, clan) : WELCOME;
+        const text = what === 'rules' ? rulesText(await clanRules(env, clan)) : what === 'stats' ? await statsBoard(env, clan) : welcomeText(await clanRules(env, clan));
         const err = await upsert(env, `discord:${what}:${guild}`, ch, text).then(() => '', e => e.message);
         if (err) return Response.json(reply(cantPost(ch, err)));
         return Response.json(reply(`Posted. Long-press it → **Pin**. I'll keep it up to date${what === 'rules' ? ' when the rules change on the site' : what === 'stats' ? ' after every war' : ''}.`));
@@ -899,16 +899,18 @@ export function rulesText(r) {
 }
 
 // Edit a remembered message, or post a new one if it's gone. Remembers the message id under `key`.
-export const WELCOME = `**👋 Welcome! Link your Clash Royale account to see the rest of the server.**
+// How-to-link message; the "Why link?" line follows the clan's rules (the extra chance only when that rule is on).
+export const welcomeText = (r = {}) => `**👋 Welcome! Link your Clash Royale account to see the rest of the server.**
 
 **1.** Type \`/link\` and tap the one from **War Audit**.
 **2.** Enter your player tag: in Clash Royale, tap your name; it's the code starting with **#** (e.g. \`#ABC123\`).
 **3.** It asks you to play one battle with 2 of your cards in your deck (proof it's your account; a friendly battle counts). Then tap **Done: check it**, and your clan role and nickname are set.
 
-**Why link?** War reminders that tag you, your own war stats with \`/mystats\`, and **one extra chance before a kick**.
+**Why link?** War reminders that tag you${r.linkBonus === false ? ' and' : ','} your own war stats with \`/mystats\`${r.linkBonus === false ? '' : ', and **one extra chance before a kick**'}.
 
 Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.
 _What we keep and how to delete it: \`/privacy\`_`;
+export const WELCOME = welcomeText();   // with the default rules
 
 // Plain-language reason when Discord refuses a post.
 function cantPost(channel, err) {
@@ -1403,7 +1405,7 @@ export async function autoSetupNext(env, guild, clan) {
     const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
     const [rules, welcome, stats] = await Promise.all([kv('discord:rules:' + guild), kv('discord:welcome:' + guild), kv('discord:stats:' + guild)]);
     if (rules) { await post('discord:rules:' + guild, rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await post('discord:privacy:' + guild, rules.channel, PRIVACY, 'Privacy'); }
-    if (welcome) await post('discord:welcome:' + guild, welcome.channel, WELCOME, 'How to link');
+    if (welcome) await post('discord:welcome:' + guild, welcome.channel, welcomeText(await clanRules(env, clan)), 'How to link');
     if (stats) await post('discord:stats:' + guild, stats.channel, await statsBoard(env, clan), 'Clan stats');
     const info = await dapi(env, 'GET', `/guilds/${guild}`).catch(() => null);
     if (info && !info.icon && env.ASSETS) {
@@ -1543,7 +1545,7 @@ export async function refreshNext(env, guild, clan) {
   if (run.stage === 'kept') {
     const k = run.kept || {};
     if (k.rules) { await postKept(env, done, 'discord:rules:' + guild, k.rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await postKept(env, done, 'discord:privacy:' + guild, k.rules.channel, PRIVACY, 'Privacy'); }
-    if (k.welcome) await postKept(env, done, 'discord:welcome:' + guild, k.welcome.channel, WELCOME, 'How to link');
+    if (k.welcome) await postKept(env, done, 'discord:welcome:' + guild, k.welcome.channel, welcomeText(await clanRules(env, clan)), 'How to link');
     if (k.stats) await postKept(env, done, 'discord:stats:' + guild, k.stats.channel, await statsBoard(env, clan), 'Clan stats board');
     await save({ stage: 'notes', note: 0 });
     return { content: [`**Re-posted**`, ...done, '', 'Next: the note in each channel.'].join('\n'), components: refreshButton('Continue ▶ (channel notes)') };
@@ -1582,11 +1584,14 @@ export async function updateStatsBoards(env, clan) {
 export async function updateRulesMessages(env, clan) {
   if (!discordReady(env)) return 0;
   await setupDB(env);
-  const text = rulesText(await clanRules(env, clan));
+  const r = await clanRules(env, clan), text = rulesText(r), welcome = welcomeText(r);
   let n2 = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
     const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:rules:' + cfg.guild).first();
     if (saved && await upsert(env, 'discord:rules:' + cfg.guild, JSON.parse(saved.v).channel, text).catch(() => null)) n2++;
+    // The how-to-link message mentions the extra chance only while that rule is on.
+    const w = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:welcome:' + cfg.guild).first();
+    if (w) await upsert(env, 'discord:welcome:' + cfg.guild, JSON.parse(w.v).channel, welcome).catch(() => null);
   }
   return n2;
 }

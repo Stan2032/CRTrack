@@ -688,4 +688,10 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   await removeAll(envR, 'GR', null, true); assert.equal(links[0], 'GR', 'links:True deletes links too');
   assert.ok(COMMANDS.find(c => c.name === 'setup').options.some(o => o.name === 'remove'), '/setup remove exists'); }
 
+// The how-to-link message follows the extra-chance rule.
+{ const { welcomeText } = await import('../worker/discord.js');
+  assert.match(welcomeText({ linkBonus: true }), /Why link\?\*\* War reminders that tag you, your own war stats with `\/mystats`, and \*\*one extra chance before a kick\*\*\./);
+  assert.match(welcomeText({ linkBonus: false }), /Why link\?\*\* War reminders that tag you and your own war stats with `\/mystats`\./);
+  assert.doesNotMatch(welcomeText({ linkBonus: false }), /extra chance/); }
+
 console.log('Discord checks passed');
