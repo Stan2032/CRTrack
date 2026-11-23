@@ -151,7 +151,7 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   console.log('Last warning wording checks passed'); }
 
 // The results message says what actually happened in game from the start of the last battle day: suggested kicks that
-// left are "kicked", anyone else who went is "out of the clan", and only demotions/promotions seen in game are listed.
+// left are "kicked", anyone else who went "left the clan", and only demotions/promotions seen in game are listed.
 { const r = L.sanitizeRules({}).rules, from = Date.parse('2026-11-22T09:43:00Z'), cur = f => ({ key: '138-3', fame: f, decks: 16, boats: 0 });
   const p = (name, status, extra = {}) => ({ name, cur: cur(900), weeks: [cur(900)], before: [], res: { status, why: '' }, ...extra });
   const list = [
@@ -163,6 +163,6 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   ];
   const t = L.chatEnd(list, r, { from }).find(m => m.title.startsWith('Update')).text;
   assert.match(t, /Kicked:\n- Kicked1 \(900 medals, 2nd miss in a row\)/);
-  assert.match(t, /Out of the clan:\n- Went \(900 medals, under target\)/);
+  assert.match(t, /Left the clan:\n- Went \(900 medals, under target\)/);
   assert.match(t, /Demoted:\n- Dem/); assert.doesNotMatch(t, /NotYet|LongGone/);
   console.log('Actual-results message checks passed'); }

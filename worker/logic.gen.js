@@ -387,7 +387,7 @@ function shortReason(x, r) {
 // opts.from / opts.until: when given (the page, for a war it has history for), the results message says what actually
 // happened in game in that time (from the start of the last battle day), not what was suggested: everyone who left
 // or was removed, and rank changes seen. The game doesn't say who removed someone, so only suggested kicks are
-// called "kicked"; anyone else who went is "out of the clan".
+// called "kicked"; anyone else who went "left the clan" (true either way).
 function chatEnd(list, r, opts = {}) {
   const here = list.filter(x => !x.gone || x.res.status === 'Kick');
   const by = s => here.filter(x => x.res.status === s);
@@ -399,7 +399,7 @@ function chatEnd(list, r, opts = {}) {
     const out = list.filter(x => x.gone && inTime(x.leftAt));
     update = ['War update:',
       lines('Kicked:', out.filter(x => (x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
-      lines('Out of the clan:', out.filter(x => !(x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
+      lines('Left the clan:', out.filter(x => !(x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
       lines('Demoted:', by('Demote').filter(done).map(line)),
       lines('Promoted to Elder:', by('Promote').filter(done).map(line)),
     ].filter(Boolean);
