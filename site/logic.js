@@ -396,9 +396,11 @@ function chatEnd(list, r, opts = {}) {
   if (opts.from != null) {
     const inTime = t => t && t >= opts.from && t <= (opts.until ?? Infinity), done = x => x.done && x.done.auto;
     const out = list.filter(x => x.gone && inTime(x.leftAt));
+    // Kicked: suggested and gone, or seen to be removed (offline when they went); otherwise they may have left themselves.
+    const kicked = x => x.removed || x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick';
     update = ['War update:',
-      lines('Kicked:', out.filter(x => (x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
-      lines('Left the clan:', out.filter(x => !(x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
+      lines('Kicked:', out.filter(kicked).map(line)),
+      lines('Left the clan:', out.filter(x => !kicked(x)).map(line)),
       lines('Demoted:', by('Demote').filter(done).map(line)),
       lines('Promoted to Elder:', by('Promote').filter(done).map(line)),
     ].filter(Boolean);
@@ -628,8 +630,10 @@ function applyHistory(model, h, liveWeek) {
       .sort(cmpKey).pop() || null;
     const mine = idx(h).ev[p.tag] || [];
     p.roleEvents = mine.filter(e => e.kind === 'role').map(e => ({ at: e.t, detail: String(e.detail) }));
-    const left = mine.filter(e => e.kind === 'leave').map(e => e.t);
+    const leaves = mine.filter(e => e.kind === 'leave').sort((a, b) => a.t - b.t), left = leaves.map(e => e.t);
     p.leftAt = left.length ? Math.max(...left) : null;
+    // Removed by a leader (they were offline when they went; see the tracker), not left by themselves.
+    p.removed = leaves.length ? /:removed$/.test(String(leaves[leaves.length - 1].detail || '')) : false;
     p.away = parseAway(notes[`away|*|${p.tag}`]);
     p.awayWar = war ? awayDuring(p.away, ms(war.ended_at) - 4 * 864e5, ms(war.ended_at)) : null;
     p.awayLive = p.away && p.away.from <= Date.now() && p.away.until > Date.now() ? p.away : null;

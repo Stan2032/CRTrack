@@ -74,7 +74,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   if (!(members.items || []).length) throw new Error('empty member list');
 
   // Members: joins, leaves, role changes
-  const known = (await db.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ?').bind(clan).all()).results;
+  const known = (await db.prepare('SELECT tag, name, role, in_clan, last_seen_game, updated_at FROM members WHERE clan = ?').bind(clan).all()).results;
   const byTag = new Map(known.map(r => [r.tag, r]));
   const firstRun = !known.length;
   const events = [], upserts = [], here = new Set();
@@ -86,7 +86,15 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
     upserts.push([clan, tag, m.name, m.role, 1, now, m.lastSeen || null, now]);
   }
   const gone = known.filter(k => k.in_clan && !here.has(k.tag));
-  for (const k of gone) events.push([clan, k.tag, k.name, 'leave', k.role, now]);
+  // Removed by a leader, or left? The game doesn't say. But nobody can leave while offline: if they'd already been offline
+  // 30+ minutes when we last saw them in the clan, and that was recently (so they had little time to come back on and
+  // leave), a leader removed them. Recorded as "<role>:removed"; anything else stays just "<role>" (could be either).
+  const nowMs = Date.parse(now);
+  for (const k of gone) {
+    const seenIn = Date.parse(k.updated_at || ''), online = ms(k.last_seen_game);
+    const removed = seenIn && online && nowMs - seenIn <= 3 * 3600e3 && seenIn - online >= 30 * 60e3;
+    events.push([clan, k.tag, k.name, 'leave', removed ? `${k.role}:removed` : k.role, now]);
+  }
   if (upserts.length) sql.push(`INSERT INTO members (clan,tag,name,role,in_clan,first_seen,last_seen_game,updated_at) VALUES ${rows(upserts)}
     ON CONFLICT(clan,tag) DO UPDATE SET name=excluded.name, role=excluded.role, in_clan=1, last_seen_game=excluded.last_seen_game, updated_at=excluded.updated_at`);
   if (gone.length) sql.push(`UPDATE members SET in_clan = 0, updated_at = ${q(now)} WHERE clan = ${q(clan)} AND tag IN (${gone.map(k => q(k.tag)).join(',')})`);

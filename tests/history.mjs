@@ -287,3 +287,19 @@ console.log('History checks passed');
   assert.ok(posts.some(p => /updating again/.test(p)), 'recovery announced');
   DB.raw.exec("DELETE FROM kv WHERE k = 'discord:GX'");
   console.log('Failure alert checks passed'); }
+
+// Removed vs left: nobody can leave while offline, so someone already offline 30+ minutes when last seen in the clan
+// (recently) was removed by a leader. Someone online at the time could have left themselves.
+{ const realFetch = globalThis.fetch, t1 = '2026-12-01T10:00:00.000Z', t2 = '2026-12-01T10:15:00.000Z';
+  state.race = { ...state.race, periodType: 'training', periodIndex: 21 };
+  const [off, on] = state.members.items.slice(-2);
+  off.lastSeen = '20261130T080000.000Z';   // offline since yesterday
+  on.lastSeen = '20261201T095500.000Z';    // online 5 minutes before we last saw them
+  await snapshot(env, 'PPCCR8VU', t1);
+  state.members.items = state.members.items.filter(m => m !== off && m !== on);
+  await snapshot(env, 'PPCCR8VU', t2);
+  const d = tag => DB.raw.prepare("SELECT detail FROM member_events WHERE kind = 'leave' AND tag = ? ORDER BY at DESC LIMIT 1").get(tag.slice(1))?.detail;
+  assert.match(d(off.tag), /:removed$/, 'offline when they went: removed');
+  assert.doesNotMatch(d(on.tag), /:removed$/, 'online then: could have left themselves');
+  globalThis.fetch = realFetch;
+  console.log('Removed-or-left checks passed'); }

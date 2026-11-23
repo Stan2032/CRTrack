@@ -157,12 +157,14 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   const list = [
     p('Kicked1', 'Kick', { gone: true, leftAt: from + 3600e3, res: { status: 'Kick', why: 'Second miss in a row' } }),
     p('Went', 'Left', { gone: true, leftAt: from + 3600e3, res: { status: 'Left', why: 'Left', before: { status: 'Warn', why: 'First miss' } } }),
+    p('Removed', 'Left', { gone: true, removed: true, leftAt: from + 3600e3, res: { status: 'Left', why: 'Left', before: { status: 'Warn', why: 'First miss' } } }),
     p('LongGone', 'Left', { gone: true, leftAt: from - 30 * 864e5, res: { status: 'Left', why: 'Left', before: { status: 'Kick', why: 'x' } } }),
     p('Dem', 'Demote', { done: { auto: true }, res: { status: 'Demote', why: 'Demoted after this war' } }),
     p('NotYet', 'Demote', { done: { auto: false } }),
   ];
   const t = L.chatEnd(list, r, { from }).find(m => m.title.startsWith('Update')).text;
   assert.match(t, /Kicked:\n- Kicked1 \(900 medals, 2nd miss in a row\)/);
+  assert.match(t, /Kicked:\n- Kicked1[^\n]*\n- Removed \(900 medals, under target\)/, 'seen to be removed while offline: kicked');
   assert.match(t, /Left the clan:\n- Went \(900 medals, under target\)/);
   assert.match(t, /Demoted:\n- Dem/); assert.doesNotMatch(t, /NotYet|LongGone/);
   console.log('Actual-results message checks passed'); }
