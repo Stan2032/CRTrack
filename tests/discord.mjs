@@ -232,7 +232,7 @@ await warBoard(env, r, Date.parse('2026-11-20T14:30:00Z'));
 assert.equal(calls.filter(c => c.method === 'POST' && /channels\/C\/messages/.test(c.url)).length, 1, 'posted once');
 const edit = calls.find(c => c.method === 'PATCH' && /channels\/C\/messages\/M/.test(c.url));
 assert.ok(edit, 'then edited');
-assert.match(edit.body.content, /battle day 2 of 4[\s\S]*Race: \*\*2nd\*\* of 2 · 3,600 race points if today ended now · 2,400 behind Rival[\s\S]*Today: \*\*2nd\*\* on medals \(8,000\) = \+1,800 · 1,001 more medals to pass Rival = \*\*\+1,200\*\*[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today: perc/);
+assert.match(edit.body.content, /battle day 2 of 4[\s\S]*Race: \*\*2nd\*\* of 2 · 3,600 race points if today ended now · 2,400 behind Rival[\s\S]*Today: \*\*2nd\*\* on medals \(8,000\) = \+1,800 · 1,001 more medals to pass Rival = \*\*\+1,200\*\*[\s\S]*12 of 48[\s\S]*140\/192 \(73%\)[\s\S]*Not played today \(1\):\*\* perc/);
 assert.doesNotMatch(edit.body.content, /recent form/, 'no logged days: no projection');
 assert.match(edit.body.content, /🗓️ Day 1: 150\/192 decks played \(42 missed\)/, 'missed counts finished days only');
 calls.length = 0;
@@ -261,7 +261,7 @@ calls.length = 0;
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 1);
 assert.ok(calls.some(c => c.method === 'POST' && /channels\/R\/messages$/.test(c.url)), 'summary went to the results channel');
 const sum = calls.find(c => c.method === 'POST').body.content;
-assert.match(sum, /Battle day 2 summary[\s\S]*\+22,000\*\* \(\+10% vs day 1\) · \*\*2nd\*\* of 2 clans today[\s\S]*Race points: \*\*\+1,800\*\*[\s\S]*Decks used: 6\/8 \(75%\)[\s\S]*Race: \*\*2nd\*\* of 2, 2,800 race points, 1,200 behind Rival[\s\S]*Luke \+900[\s\S]*Missed decks: \*\*2 unused\*\* · perc 2/);
+assert.match(sum, /Battle day 2 · war 138-3\*\*\n\*\*\+22,000 medals\*\* · 2nd of 2 clans today \(\+1,800 race points\)\n📈 10% more than day 1\n🏁 \*\*Race:\*\* 2nd of 2 · 2,800 race points · 1,200 behind Rival\n🃏 \*\*Decks:\*\* 6 of 8 played \(75%\)\n\n🏅 \*\*Top today:\*\* Luke 900 · perc 400\n\n❌ \*\*Missed decks: 2\*\*\n\*\*2:\*\* perc$/);
 assert.equal(await daySummary(env, 'PPCCR8VU', '138-3', 2), 0, 'only once');
 await DB.exec(`DELETE FROM race_days WHERE tag = 'LATE1'; DELETE FROM member_events WHERE tag = 'LATE1'; DELETE FROM periods WHERE week = '138-3' AND period IN (17, 18);`);
 
@@ -703,5 +703,10 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   assert.ok(del.some(u => u.endsWith('/messages/PM4')), 'last day\'s decks-left message deleted');
   assert.equal(await DB.prepare("SELECT 1 FROM kv WHERE k = 'pingmsg:GT'").first(), null);
   await DB.exec("DELETE FROM kv WHERE k = 'discord:GT'"); }
+
+// Missed decks: everyone, grouped by how many they missed.
+{ const { missedBlock } = await import('../worker/discord.js');
+  assert.equal(missedBlock([{ name: 'Zed', today: 0 }, { name: 'amy', today: 0 }, { name: 'Bob', today: 2 }, { name: '<c4>Mike', today: 3 }]),
+    '❌ **Missed decks: 11**\n**All 4:** amy, Zed\n**2:** Bob\n**1:** Mike'); }
 
 console.log('Discord checks passed');

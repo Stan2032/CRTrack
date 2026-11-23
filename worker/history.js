@@ -359,18 +359,28 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('digest:due:' + clan, '1').run();
       }
       await warBoard(env, res, now).catch(() => {});
+      // Working again after failures: clear the count, and say so if the leaders were told it was failing.
+      const errs = Number((await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('errcount:' + clan).first().catch(() => null))?.v || 0);
+      if (errs) {
+        await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('errcount:' + clan).run().catch(() => {});
+        if (errs >= 2) await postToJob(env, clan, 'leaders', `✅ **War Audit is updating again** (it was down for about ${errs * 15} minutes; nothing was lost).`).catch(() => {});
+      }
       // A new battle day began: summarise the one that ended. A war ended: summarise its day 4.
       if (res.day > 1 && res.prevDay === res.day - 1) await daySummary(env, clan, res.week, res.day - 1).catch(() => {});
       for (const w of res.wars || []) await daySummary(env, clan, w.week, 4).catch(() => {});
     } catch (e) {
       out.push({ clan, error: String(e.message || e) });
-      // Tell leaders once every 6 hours while pulls keep failing.
+      // One failed pull is usually a blip at the proxy (e.g. a 525 that's fine 15 minutes later). Alert from the second
+      // failure in a row, then at most once every 6 hours while it keeps failing.
+      const ck = 'errcount:' + clan, fails = Number((await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(ck).first().catch(() => null))?.v || 0) + 1;
+      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(ck, String(fails)).run().catch(() => {});
+      if (fails < 2) continue;
       await sendAlert(env, clan, `err:${clan}:${Math.floor(now / (6 * 3600e3))}`, 'Data pull failing', `Couldn't update ${clan}: ${String(e.message || e).slice(0, 80)}. Check the Clash Royale key.`).catch(() => {});
       // Also in the leaders' Discord channel (most leaders don't use phone alerts), once per 6 hours.
       const ek = `errpost:${clan}:${Math.floor(now / (6 * 3600e3))}`;
       if (!(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(ek).first().catch(() => null))) {
         await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(ek, '1').run().catch(() => {});
-        await postToJob(env, clan, 'leaders', `⚠️ **War Audit couldn't update the clan's data** (${String(e.message || e).slice(0, 120)}). It keeps retrying every 15 minutes. If this repeats for hours, check the Clash Royale API key in Cloudflare (see docs/SETUP.md).`).catch(() => {});
+        await postToJob(env, clan, 'leaders', `⚠️ **War Audit hasn't been able to update the clan's data for ${fails * 15} minutes** (${String(e.message || e).slice(0, 120)}). It keeps retrying every 15 minutes and will say here when it's working again. If this lasts for hours, check the Clash Royale API key in Cloudflare (see docs/SETUP.md).`).catch(() => {});
       }
     }
   }

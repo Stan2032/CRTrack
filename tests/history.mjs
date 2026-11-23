@@ -277,7 +277,13 @@ console.log('History checks passed');
   const env2 = { ...env, DISCORD_PUBLIC_KEY: 'x', DISCORD_BOT_TOKEN: 't', DISCORD_APP_ID: 'A' }, t0 = Date.parse('2026-11-22T12:00:00Z');
   await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 });
   await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 + 15 * 60e3 });
+  await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 + 30 * 60e3 });
   globalThis.fetch = realFetch;
-  assert.equal(posts.filter(p => /couldn't update the clan's data/.test(p)).length, 1, 'posted once, not every 15 minutes: ' + posts.length);
+  assert.equal(posts.filter(p => /hasn't been able to update the clan's data for 30 minutes/.test(p)).length, 1, 'a single blip says nothing; from the second failure in a row, once: ' + posts.join(' | '));
+  // Working again: the leaders are told.
+  globalThis.fetch = async (url, o = {}) => { const u = String(url); if (u.includes('discord.com')) { if (o.method === 'POST') posts.push(JSON.parse(o.body).content); return Response.json({ id: 'P' }); } return realFetch(url, o); };
+  await snapshotAll(env2, { force: true, only: 'PPCCR8VU', now: t0 + 45 * 60e3 });
+  globalThis.fetch = realFetch;
+  assert.ok(posts.some(p => /updating again/.test(p)), 'recovery announced');
   DB.raw.exec("DELETE FROM kv WHERE k = 'discord:GX'");
   console.log('Failure alert checks passed'); }

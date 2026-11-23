@@ -977,7 +977,7 @@ export async function warBoard(env, r, now) {
     `🎯 ${bar(b.members ? b.reached / b.members : 0)} ${b.reached} of ${b.members} have reached ${n(r.target)}`,
     `🃏 ${bar(pct / 100)} Decks today: ${b.decksUsed}/${b.decksTotal} (${pct}%)${b.reset ? ` · resets ${b.reset} UK` : ''}`,
     b.doneDecksTotal ? `🗓️ ${r.day > 2 ? `Days 1–${r.day - 1}` : 'Day 1'}: ${b.doneDecks}/${b.doneDecksTotal} decks played (${Math.max(0, b.doneDecksTotal - b.doneDecks)} missed)` : '',
-    b.notPlayed.length ? `⏳ Not played today: ${b.notPlayed.slice(0, 20).map(cleanName).join(', ')}${b.notPlayed.length > 20 ? ` +${b.notPlayed.length - 20} more` : ''}` : '✅ Everyone has played today',
+    b.notPlayed.length ? `⏳ **Not played today (${b.notPlayed.length}):** ${b.notPlayed.map(cleanName).sort((a, c) => a.localeCompare(c)).join(', ')}` : '✅ Everyone has played today',
     `_Updated ${ukClock(now)} UK_`,
   ].filter(Boolean).join('\n');
   let sent = 0;
@@ -989,6 +989,13 @@ export async function warBoard(env, r, now) {
     }
   }
   return sent;
+}
+
+// Every player who missed decks, grouped by how many: "All 4: a, b, c" / "2: d" / "1: e".
+export function missedBlock(missed) {
+  const by = k => missed.filter(p => 4 - p.today === k).map(p => cleanName(p.name)).sort((a, b) => a.localeCompare(b));
+  const total = missed.reduce((t, p) => t + 4 - p.today, 0);
+  return [`❌ **Missed decks: ${total}**`, ...[4, 3, 2, 1].filter(k => by(k).length).map(k => `**${k === 4 ? 'All 4' : k}:** ${by(k).join(', ')}`)].join('\n');
 }
 
 // Summary of a finished battle day (posted once): medals gained and the change vs the day before,
@@ -1020,16 +1027,20 @@ export async function daySummary(env, clan, week, day) {
   const dayRank = st.slice().sort((a, b) => (b.medals || 0) - (a.medals || 0)).findIndex(x => x.rival === clan);
   const earned = me && !colosseum ? me.fame - (ours(stBefore)?.fame ?? 0) : null;
   const sorted = st.slice().sort((a, b) => b.fame - a.fame), i = sorted.findIndex(x => x.rival === clan);
+  // Laid out in sections, with every name (grouped), rather than cut-off run-on lists.
+  const missed = today.filter(p => p.today < 4), missedN = missed.reduce((t, p) => t + 4 - p.today, 0);
+  const behind = i > 0 ? ` · ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? ` · ${n(sorted[0].fame - sorted[1].fame)} ahead` : '';
   const content = [
-    `📊 **Battle day ${day} summary · war ${week}**`,
-    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}${dayRank >= 0 && st.some(x => x.medals > 0) ? ` · **${place(dayRank)}** of ${st.length} clans today` : ''}`,
-    earned != null && earned > 0 ? `Race points: **+${n(earned)}** for the day` : '',
-    `${bar(used / total)} Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
-    i >= 0 ? `Race: **${place(i)}** of ${sorted.length}, ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
-    `Top today: ${gains.slice(0, 3).map(x => `${cleanName(x.name)} +${n(x.gain)}`).join(', ')}`,
-    (() => { const m = today.filter(p => p.today < 4).sort((a, b) => a.today - b.today || cleanName(a.name).localeCompare(cleanName(b.name)));
-      return m.length ? `Missed decks: **${m.reduce((t, p) => t + 4 - p.today, 0)} unused** · ${m.slice(0, 25).map(p => `${cleanName(p.name)} ${4 - p.today}`).join(', ')}${m.length > 25 ? ` +${m.length - 25} more` : ''}` : '✅ No decks missed'; })(),
-  ].filter(Boolean).join('\n');
+    `📊 **Battle day ${day} · war ${week}**`,
+    `**+${n(gain)} medals**${dayRank >= 0 && st.some(x => x.medals > 0) ? ` · ${place(dayRank)} of ${st.length} clans today` : ''}${earned != null && earned > 0 ? ` (+${n(earned)} race points)` : ''}`,
+    change != null ? `${change >= 0 ? '📈' : '📉'} ${Math.abs(change)}% ${change >= 0 ? 'more' : 'fewer'} than day ${day - 1}` : null,
+    i >= 0 ? `🏁 **Race:** ${place(i)} of ${sorted.length} · ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${behind}` : null,
+    `🃏 **Decks:** ${used} of ${total} played (${Math.round(100 * used / total)}%)`,
+    '',
+    `🏅 **Top today:** ${gains.slice(0, 3).map(x => `${cleanName(x.name)} ${n(x.gain)}`).join(' · ')}`,
+    '',
+    missed.length ? missedBlock(missed) : '✅ **No decks missed today**',
+  ].filter(x => x != null && x !== false).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1990);
   await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
   let sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'results'))) {
