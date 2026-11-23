@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports, endOfWarTidy } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 import { raceOutlook, cleanName } from './logic.gen.js';
 
@@ -149,7 +149,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   // medals), medals = that day's medals. Finished days come from the game's own day log, so they're exact.
   const outlook = raceOutlook(race);
   if (week && day && outlook) sql.push(`INSERT OR REPLACE INTO race_standings (clan,week,day,rival,name,fame,medals,at) VALUES ${
-    rows(outlook.rows.map(c => [clan, week, day, c.tag, c.name, c.ifNow, outlook.colosseum ? c.medals : c.today, now]))}`);
+    rows(outlook.rows.map(c => [clan, week, day, c.tag, c.name, c.ifNow, c.today, now]))}`);   // medals = today's, in both kinds of week
   const season = week && Number(week.split('-')[0]), names = Object.fromEntries((race.clans || []).map(c => [clean(c.tag), c.name]));
   const logged = season ? (race.periodLogs || []).filter(l => l.periodIndex % 7 >= 3).flatMap(l => (l.items || []).map(it =>
     [clan, `${season}-${Math.floor(l.periodIndex / 7) + 1}`, (l.periodIndex % 7) - 2, clean(it.clan?.tag), names[clean(it.clan?.tag)] || clean(it.clan?.tag), it.progressEndOfDay || 0, it.pointsEarned || 0, now])) : [];
@@ -262,6 +262,7 @@ async function alertsFor(env, r, now) {
     await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
     if (r.joined.length) await discordPost(env, r.clan, `👋 Welcome ${list(r.joined)}!`, 'Link your account with `/link #YOURTAG` so you get war reminders. Check the pinned rules.', [], 'joins');
   }
+  if (r.wars?.length) await endOfWarTidy(env, r.clan).catch(() => {});   // the last day's decks-left message goes
   for (const w of r.wars) {
     const place = w.rank > 0 ? ` · ${['1st', '2nd', '3rd', '4th', '5th'][w.rank - 1] || w.rank + 'th'} place` : '';
     const trophies = w.trophies ? `, ${w.trophies > 0 ? '+' : ''}${w.trophies} trophies` : '';

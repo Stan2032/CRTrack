@@ -42,7 +42,7 @@ globalThis.fetch = async (url, opt = {}) => {
   if (/proxy\.royaleapi\.dev\/v1\/players\/%23YVJRGLCC\/battlelog$/.test(url)) return Response.json([{ type: 'riverRacePvP', battleTime: '20261116T120000.000Z', team: [{ crowns: 2 }], opponent: [{ crowns: 1 }] }, { type: 'boatBattle' }]);
   if (/\/users\/@me\/channels$/.test(url)) return JSON.parse(opt.body).recipient_id === 'BLOCKED' ? new Response('{}', { status: 403 }) : Response.json({ id: 'DM-' + JSON.parse(opt.body).recipient_id });
   if (/\/channels\/\w+\/messages\?limit=5$/.test(url)) return Response.json([{ id: 'NOTE', type: 6, message_reference: { message_id: url.includes('/pins/') ? '' : calls.filter(c => c.method === 'PUT' && /\/pins\//.test(c.url)).pop()?.url.split('/').pop() } }]);
-  if (/\/channels\/C\/messages\?limit=50$/.test(url)) return Response.json([{ id: 'OLD1', author: { id: 'A' } }, { id: 'USER1', author: { id: 'U1' } }, { id: 'OLD2', author: { id: 'A' } }]);
+  if (/\/channels\/C\/messages\?limit=50$/.test(url)) return Response.json([{ id: 'OLD1', author: { id: 'A' } }, { id: 'USER1', author: { id: 'U1' } }, { id: 'OLD2', author: { id: 'A' } }, { id: 'CMD1', type: 20, author: { id: 'A' }, interaction_metadata: { id: 'I' } }]);
   if (/\/channels\/(C|R|LC|J)\/messages$/.test(url) && opt.method === 'POST') return Response.json({ id: 'M' + calls.length });
   return new Response('{}', { status: 200 });
 };
@@ -406,6 +406,7 @@ assert.match(await runRefresh('G', cfgG, false), /Refreshed/);
 { const d2 = calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/').pop());
   assert.ok(d2.includes('OLD1'), 'without clean: the bot\'s out-of-date messages in live channels are tidied');
   assert.ok(!d2.includes('USER1'), 'people\'s own messages are never touched');
+  assert.ok(!d2.includes('CMD1'), 'replies to commands people used (e.g. /mystats share) are kept');
   assert.ok(!d2.some(id => /^M\d+$/.test(id)), 'what the bot keeps current (rules, notes, boards) stays'); }
 assert.match(await runRefresh('NONE', null, true), /Nothing set up yet/);
 
@@ -693,5 +694,14 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   assert.match(welcomeText({ linkBonus: true }), /Why link\?\*\* War reminders that tag you, your own war stats with `\/mystats`, and \*\*one extra chance before a kick\*\*\./);
   assert.match(welcomeText({ linkBonus: false }), /Why link\?\*\* War reminders that tag you and your own war stats with `\/mystats`\./);
   assert.doesNotMatch(welcomeText({ linkBonus: false }), /extra chance/); }
+
+// When the war ends, the last battle day's decks-left message is removed (training days follow).
+{ const { endOfWarTidy } = await import('../worker/discord.js');
+  await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:GT', '{"clan":"PPCCR8VU","channels":{"war":"C"},"roles":{}}'), ('pingmsg:GT', '{"channel":"C","id":"PM4","week":"138-3","day":4}')`);
+  const del = []; globalThis.fetch = async (url, o = {}) => { if (o.method === 'DELETE') del.push(String(url)); return new Response(null, { status: 204 }); };
+  assert.ok(await endOfWarTidy(env, 'PPCCR8VU') >= 1);
+  assert.ok(del.some(u => u.endsWith('/messages/PM4')), 'last day\'s decks-left message deleted');
+  assert.equal(await DB.prepare("SELECT 1 FROM kv WHERE k = 'pingmsg:GT'").first(), null);
+  await DB.exec("DELETE FROM kv WHERE k = 'discord:GT'"); }
 
 console.log('Discord checks passed');

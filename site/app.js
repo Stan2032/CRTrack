@@ -466,7 +466,7 @@ function renderSteps(list, msgs) {
     auto(k, 'kick'); auto(d, 'demote'); auto(pr, 'promote to Elder', copy('Promotions'));
     players(rv, 'Review', `<b>Decide with the other leaders</b> ${names(rv)}`, '');
     if (k.length || d.length || pr.length) posted('RESULTS', 'Post the <b>results</b> in clan chat', copy('Results'));
-    players(w, 'Warn', `Post the <b>${w.some(p => p.res.extra) ? 'warnings' : 'first &amp; only warnings'}</b> ${names(w)}`, copy('Final warnings') + copy('First & only'));
+    players(w, 'Warn', `Post the <b>${w.some(p => p.res.extra) ? 'warnings' : 'first &amp; only warnings'}</b> ${names(w)}`, copy('Final warnings') + copy('Last warnings') + copy('First & only'));
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
     posted('RECAP', 'Post the <b>war recap</b> (optional)', copy('Recap'));
     posted('SEASON', 'Post the <b>season recap</b> (optional, last war of the season)', copy('Season'));

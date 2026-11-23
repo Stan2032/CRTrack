@@ -139,3 +139,13 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.equal(L.roleAt(h, 'M', 'member', end), 'member', '(at the very end he was already a member)');
   assert.ok(L.autoDone({ roleEvents: [{ at: Date.parse('2026-11-23T08:45:00Z'), detail: 'elder>member' }] }, 'Demote', end - 864e5), 'the demotion on day 4 counts as done');
   console.log('Last-day decision checks passed'); }
+
+// Kept on a warning while already on one (a leader's choice): "last warning" wording, not "first & only".
+{ const r = L.sanitizeRules({}).rules, wk = (key, fame) => ({ key, fame, decks: 16, boats: 0 });
+  const before = [wk('138-2', 1500), wk('138-1', 2000)];
+  const perc = { name: 'perc', before, weeks: [wk('138-3', 1750), ...before], warnedIn: '138-2', res: { status: 'Warn', why: 'Changed by a leader' } };
+  const fresh = { name: 'Vasi', before, weeks: [wk('138-3', 1400), ...before], warnedIn: null, res: { status: 'Warn', why: 'First miss' } };
+  const ms = L.chatEnd([perc, fresh], r);
+  assert.match(ms.find(m => m.title === 'Last warnings').text, /already warned[\s\S]*perc/);
+  assert.match(ms.find(m => m.title === 'Warnings').text, /Vasi/); assert.doesNotMatch(ms.find(m => m.title === 'Warnings').text, /perc/);
+  console.log('Last warning wording checks passed'); }

@@ -1013,7 +1013,8 @@ export async function daySummary(env, clan, week, day) {
   const used = today.reduce((t, p) => t + Math.min(4, p.today), 0), total = today.length * 4;
   // Standings rows: fame = race points at the end of the day (colosseum: medals), medals = that day's medals.
   const ours = rs => rs.find(x => x.rival === clan), me = ours(st);
-  const gain = me?.medals ?? gains.reduce((t, x) => t + x.gain, 0), prevGain = day > 1 ? ours(stBefore)?.medals : null;
+  // The day's medals; our players' gains if they weren't recorded.
+  const gain = me?.medals || gains.reduce((t, x) => t + x.gain, 0), prevGain = day > 1 ? ours(stBefore)?.medals : null;
   const change = prevGain ? Math.round(100 * (gain - prevGain) / prevGain) : null;
   const colosseum = st.length > 0 && st.every(x => x.medals != null && x.fame >= x.medals) && st.some(x => x.fame > FINISH_POINTS);   // colosseum: points are medals
   const dayRank = st.slice().sort((a, b) => (b.medals || 0) - (a.medals || 0)).findIndex(x => x.rival === clan);
@@ -1021,7 +1022,7 @@ export async function daySummary(env, clan, week, day) {
   const sorted = st.slice().sort((a, b) => b.fame - a.fame), i = sorted.findIndex(x => x.rival === clan);
   const content = [
     `📊 **Battle day ${day} summary · war ${week}**`,
-    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}${dayRank >= 0 && me?.medals != null ? ` · **${place(dayRank)}** of ${st.length} clans today` : ''}`,
+    `Medals: **+${n(gain)}**${change != null ? ` (${change >= 0 ? '+' : ''}${change}% vs day ${day - 1})` : ''}${dayRank >= 0 && st.some(x => x.medals > 0) ? ` · **${place(dayRank)}** of ${st.length} clans today` : ''}`,
     earned != null && earned > 0 ? `Race points: **+${n(earned)}** for the day` : '',
     `${bar(used / total)} Decks used: ${used}/${total} (${Math.round(100 * used / total)}%)`,
     i >= 0 ? `Race: **${place(i)}** of ${sorted.length}, ${n(sorted[i].fame)} ${colosseum ? 'medals' : 'race points'}${i > 0 ? `, ${n(sorted[i - 1].fame - sorted[i].fame)} behind ${cleanName(sorted[i - 1].name)}` : sorted[1] ? `, ${n(sorted[0].fame - sorted[1].fame)} ahead` : ''}` : '',
@@ -1482,6 +1483,19 @@ async function postNotes(env, guild, cfg, from, max = 5, extraBot = null) {
 }
 
 const refreshButton = label => [{ type: 1, components: [{ type: 2, style: 1, label, custom_id: 'refresh|next' }] }];
+// When a war ends: the last battle day's decks-left message is out of date (the training days follow).
+export async function endOfWarTidy(env, clan) {
+  if (!discordReady(env)) return 0;
+  let n2 = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const k = 'pingmsg:' + cfg.guild, saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v)).catch(() => null);
+    if (!saved) continue;
+    if (saved.id) await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).then(() => n2++, () => null);
+    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(k).run();
+  }
+  return n2;
+}
+
 // Bot messages still in use in a server: rules, privacy, how-to-link, stats, channel notes, war boards and today's
 // decks-left message. Anything else the bot posted in a "live" channel is out of date.
 async function keptIds(env, guild) {
@@ -1500,7 +1514,8 @@ export async function tidyLive(env, guild, cfg, channels = null, max = 15) {
   for (const ch of list) {
     if (removed >= max) { more = true; break; }
     const msgs = await dapi(env, 'GET', `/channels/${ch}/messages?limit=50`).catch(() => []);
-    for (const m of (Array.isArray(msgs) ? msgs : []).filter(m => m.author?.id === env.DISCORD_APP_ID && !keep.has(m.id))) {
+    // Only the bot's own automatic posts (type 0); replies to commands people used (e.g. /mystats share) are theirs.
+    for (const m of (Array.isArray(msgs) ? msgs : []).filter(m => m.author?.id === env.DISCORD_APP_ID && !keep.has(m.id) && (m.type ?? 0) === 0 && !m.interaction_metadata && !m.interaction)) {
       if (removed >= max) { more = true; break; }
       if (await dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`).then(() => true, () => false)) removed++;
     }

@@ -394,7 +394,10 @@ function chatEnd(list, r) {
 
   const finals = by('Warn').filter(x => x.res && x.res.extra);
   if (finals.length) msgs.push({ title: 'Final warnings', text: lines(`Final warnings: you'd have been kicked, but you're linked on our Discord, so you get one more chance. ${r.target}+ next war:`, finals.map(x => x.name)) });
-  const warn = by('Warn').filter(x => !(x.res && x.res.extra));
+  // Already on an active warning and kept on another (a leader's choice): a last warning, not a "first & only".
+  const again = by('Warn').filter(x => !(x.res && x.res.extra) && warnState(x, r)?.active);
+  if (again.length) msgs.push({ title: 'Last warnings', text: lines(`Last warnings (already warned; under ${r.target} next war = kick):`, again.map(x => x.name)) });
+  const warn = by('Warn').filter(x => !(x.res && x.res.extra) && !again.includes(x));
   if (warn.length) {
     const rows = warn.map(x => ({ x, n: recent(x, r).length, m: missCount(x, r) }))
       .sort((a, b) => b.m - a.m || b.m / b.n - a.m / a.n)
