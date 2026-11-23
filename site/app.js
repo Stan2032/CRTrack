@@ -256,8 +256,15 @@ function row(p) {
   const why = mode === 'end' ? p.res.why
     : [p.res.why, p.res.status === 'Out' ? `At most ${(p.res.fame + p.res.max).toLocaleString()} now` + (p.res.today === 0 ? ' · no decks today' : '')
       : p.res.status === 'Need' && b2 && b2 !== 'Likely' ? `Expected ~${p.fc.expected.toLocaleString()} by the end of the war` : ''].filter(Boolean).join(' · ');
+  // A day after the war: suggested a kick or demotion, but it hasn't happened in game and nobody's recorded a choice.
+  // (Leaders sometimes decide differently in chat; record it here so next war's warnings and "second miss" are right.)
+  const undecided = mode === 'end' && model.season === model.latest && !p.gone && ['Kick', 'Demote'].includes(p.res.status)
+    && !(p.done && (p.done.auto || p.done.manual)) && !note('over', p) && model.endedAt && Date.now() - model.endedAt > 864e5;
+  const decide = undecided ? `<div class="ask decide">${p.res.status === 'Kick' ? 'Still in the clan' : 'Not demoted'}: what did you decide?
+    <button type="button" class="tick" data-decide="${esc(p.tag)}|Warn">Kept on a warning</button>
+    <button type="button" class="tick" data-decide="${esc(p.tag)}|OK">Kept, no action</button></div>` : '';
   const ask = isNewNow(p) && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
-    ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : '';
+    ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : decide;
   const isDone = p.done && (p.done.auto || p.done.manual);
   return `<div class="p ${isDone ? 'is-done' : ''}">
     <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
@@ -749,6 +756,15 @@ document.addEventListener('click', e => {
   if (ex) return copyText(explainTexts[+ex.dataset.explain], ex);
   const st = e.target.closest('[data-step]');
   if (st) { const k = st.dataset.step; return setRule(k, rules()[k] + RULE_SPEC[k].step * Number(st.dataset.dir)); }
+  const dc = e.target.closest('[data-decide]');
+  if (dc) {   // record what the leaders decided instead: a warning (posted) or no action
+    const [tag, value] = dc.dataset.decide.split('|'), items = [{ week: weekKey(), tag, kind: 'over', value }];
+    if (value === 'Warn') items.push({ week: weekKey(), tag, kind: 'done', value: '1' });
+    return postNotes(items).then(shared => {
+      if (!shared) for (const i of items) local.notes[`${i.kind}|${i.week}|${i.tag}`] = i.value;
+      saveLocal(); render(); say(shared ? 'Saved for everyone' : 'Saved on this device');
+    });
+  }
   const md = e.target.closest('[data-msgday]');
   if (md) { msgDay = Number(md.dataset.msgday) || null; return render(); }
   const cs = e.target.closest('[data-copystep]');

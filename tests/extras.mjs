@@ -58,6 +58,7 @@ assert.match(dg, /Leaders' weekly digest[\s\S]*On a first & only warning|Nobody 
 assert.match(dg, /Close to Elder:\*\* James \(needs average 2,175 → 2,200\)/);
 assert.match(dg, /Slipping\*\* \(last 3 wars vs before\): Pirate Steve -988/);
 assert.match(dg, /\d+\/50 members/);
+assert.match(dg, /📝 \*\*War [\d-]+: \d+ decisions? not recorded on the website\*\*[\s\S]*\((kick|demote|warning|check-in|decide|promote)\)|✅ War [\d-]+: every decision is recorded/, 'unrecorded decisions are listed');
 calls.length = 0;
 assert.equal(await sendDigest(env, 'PPCCR8VU'), 1);
 assert.match(calls.find(c => /channels\/LC\/messages$/.test(c.url)).body.content, /Not linked on Discord \(48\)/, 'nobody opted in: leaders channel');

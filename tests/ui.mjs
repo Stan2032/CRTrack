@@ -59,6 +59,12 @@ try {
   await p.click('button[data-help="stats"]');
   assert.match(await p.textContent('#chips'), /To do:/);
   assert.match(await p.textContent('#groups'), /Kick/);
+  // A day after the war, a suggested kick that hasn't happened asks what was decided; one tap records it.
+  { const n0 = await p.locator('[data-decide]').count();
+    assert.ok(n0 > 0, 'undecided kicks/demotions ask what was decided');
+    const who = (await p.locator('[data-decide]').first().getAttribute('data-decide')).split('|')[0];
+    await p.locator(`[data-decide="${who}|Warn"]`).click(); await p.waitForTimeout(300);
+    assert.equal(await p.locator(`[data-decide^="${who}|"]`).count(), 0, 'answered: the question goes away'); }
   // Recommended steps and copy
   assert.ok(await p.$('#steps li'), 'recommended steps');
   await p.click('[data-copystep]'); assert.match(await p.evaluate(() => navigator.clipboard.readText()), /War update|First & only|Switch boats|Holding|Congrats/);

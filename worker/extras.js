@@ -89,8 +89,13 @@ export async function leaderDigest(env, clan, guild = null) {
   const linked = guild ? await env.DB.prepare('SELECT tag FROM discord_links WHERE guild = ?').bind(guild).all().then(x => new Set(x.results.map(y => y.tag)), () => null) : null;
   const unlinked = linked ? here.filter(p => !linked.has(p.tag)) : [];
   const nm = p => clean(p.name);
+  // Last war's decisions not recorded on the site yet (not done in game, not ticked): without them, warnings and
+  // "second miss" don't count next war. The site can't see clan chat, so a leader has to tick or change these.
+  const open = here.filter(p => L.ACTIONS.includes(p.res.status) && !(p.done && (p.done.auto || p.done.manual)));
+  const label = { Kick: 'kick', Demote: 'demote', Warn: 'warning', Check: 'check-in', Review: 'decide', Promote: 'promote' };
   return [
     `🗞️ **Leaders' weekly digest** · battle days start soon`,
+    open.length ? `📝 **War ${d.week}: ${open.length} decision${open.length === 1 ? '' : 's'} not recorded on the website** (open Last war, tick what was done, or change it to what you decided): ${open.slice(0, 12).map(p => `${nm(p)} (${label[p.res.status]})`).join(', ')}${open.length > 12 ? ` +${open.length - 12} more` : ''}` : `✅ War ${d.week}: every decision is recorded on the website.`,
     warned.length ? `⚠️ **On a first & only warning (${warned.length}):** ${warned.map(nm).join(', ')}` : '⚠️ Nobody on a warning.',
     close.length ? `⭐ **Close to Elder:** ${close.map(x => `${nm(x.p)} (needs ${x.need.join(', ')})`).join(' · ')}` : '',
     down.length ? `📉 **Slipping** (last 3 wars vs before): ${down.map(x => `${nm(x.p)} ${n(x.rel.trend)}`).join(' · ')}` : '📈 Nobody slipping badly.',

@@ -215,3 +215,10 @@ linked from both pages' footers. Supercell's unofficial notice is on both pages,
   final warning once (`res.extra`); it's remembered as note kind `extra` with the result and counts as used when the
   warning is ticked done; it comes back after `warnClear` wars in a row at the target. Demotions are unchanged.
   `readHistory` returns `linked` (player tags only).
+
+- **When leaders act without the site** (war 138-3: kicks and demotions done in game on day 4, warnings given in
+  chat instead of the suggested kicks): rank is judged going into the last battle day, and changes made that day
+  count as done; a day after the war, a suggested Kick/Demote that hasn't happened asks "what did you decide?"
+  (Kept on a warning / Kept, no action); the leaders' weekly digest lists decisions not yet recorded. Warnings only
+  count when recorded, so these keep next war's "second miss" and "on a warning" right.
+
