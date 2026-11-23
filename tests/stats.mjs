@@ -131,3 +131,11 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.match(msgs.find(m => m.title === 'Final warnings').text, /linked on our Discord[\s\S]*Xavi/);
   assert.match(msgs.find(m => m.title === 'Warnings').text, /Yan/); assert.doesNotMatch(msgs.find(m => m.title === 'Warnings').text, /Xavi/);
   console.log('Discord extra chance checks passed'); }
+
+// Rank changes made on the last battle day are that war's decisions: judged by the rank going into day 4, and a
+// demotion made then counts as done (real case, war 138-3: demoted at 08:45, an hour before the war ended).
+{ const end = Date.parse('2026-11-23T09:43:00Z'), h = { events: [{ tag: 'M', kind: 'role', detail: 'elder>member', at: '2026-11-23T08:45:00Z' }] };
+  assert.equal(L.roleAt(h, 'M', 'member', end - 864e5), 'elder', 'Elder going into day 4');
+  assert.equal(L.roleAt(h, 'M', 'member', end), 'member', '(at the very end he was already a member)');
+  assert.ok(L.autoDone({ roleEvents: [{ at: Date.parse('2026-11-23T08:45:00Z'), detail: 'elder>member' }] }, 'Demote', end - 864e5), 'the demotion on day 4 counts as done');
+  console.log('Last-day decision checks passed'); }

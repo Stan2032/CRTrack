@@ -324,7 +324,7 @@ function endResult(p, model, r, note, past, fmt = ukDay) {
     if (demoted && res.status !== 'Demote') { res.status = 'Demote'; res.why = 'Demoted after this war'; }
   }
   const done = ACTIONS.includes(res.status)
-    ? { auto: autoDone(p, res.status, model.endedAt), manual: !AUTO_CHECKED.includes(res.status) && note('done', p.tag) === '1' } : null;
+    ? { auto: autoDone(p, res.status, model.endedAt && model.endedAt - 864e5), manual: !AUTO_CHECKED.includes(res.status) && note('done', p.tag) === '1' } : null;
   return { join, joinAuto: !manual && !!auto, res, done };
 }
 
@@ -588,7 +588,9 @@ function applyHistory(model, h, liveWeek) {
   const war = (h.wars || []).find(x => x.week === model.season);
   for (const p of model.players) {
     p.roleNow = p.role;
-    if (war) p.role = roleAt(h, p.tag, p.role, ms(war.ended_at));
+    // Rank as it was going into the last battle day: leaders often act on day 4, once it's clear who can't make it,
+    // and those changes are this war's decisions, not the rank to judge from.
+    if (war) p.role = roleAt(h, p.tag, p.role, ms(war.ended_at) - 864e5);
     p.autoJoin = model.season ? autoJoin(h, model.season, p.tag) : null;
     p.autoJoinLive = liveWeek ? autoJoin(h, liveWeek, p.tag) : null;
     p.days = model.season ? dayDecks(h, model.season, p.tag) : null;
@@ -634,6 +636,7 @@ function applyHistory(model, h, liveWeek) {
 }
 
 // Was the action already carried out in game? (left the clan, or role changed after the war ended)
+// endMs: from when in-game changes count as done for this war (the start of its last battle day).
 function autoDone(p, status, endMs) {
   if (status === 'Kick') return !!p.gone;
   const after = (p.roleEvents || []).filter(e => !endMs || e.at > endMs).map(e => e.detail);
