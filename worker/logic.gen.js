@@ -314,11 +314,13 @@ function endResult(p, model, r, note, past, fmt = ukDay) {
   const res = judgeEnd(p, r, join, note('over', p.tag) || saved);
   if (saved && !note('over', p.tag)) res.why = res.why.replace(/^Changed by a leader/, 'Saved result');
   // Gone: counts as a kick only if they left after the war ended (seen by the tracker); otherwise they just left.
-  const keptAfterWar = p.gone && p.leftAt && model.endedAt && p.leftAt > model.endedAt;
-  if (p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmt(p.leftAt) : 'Left during or before this war'; }
+  // (From the start of the last battle day: leaders often act on day 4.)
+  const from = model.endedAt ? model.endedAt - 864e5 : null;
+  const keptAfterWar = p.gone && p.leftAt && from && p.leftAt > from;
+  if (p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.before = { status: res.status, why: res.why }; res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmt(p.leftAt) : 'Left during or before this war'; }
   // A promotion or demotion seen in game after this war counts as this war's action, whatever was suggested.
-  if (!p.gone && model.endedAt) {
-    const after = (p.roleEvents || []).filter(e => e.at > model.endedAt).map(e => e.detail);
+  if (!p.gone && from) {
+    const after = (p.roleEvents || []).filter(e => e.at > from).map(e => e.detail);
     const promoted = after.some(d => /^member>(elder|coLeader)$/.test(d)), demoted = after.some(d => /^(elder>member|coLeader>(elder|member))$/.test(d));
     if (promoted && res.status !== 'Promote') { res.status = 'Promote'; res.why = 'Promoted after this war'; }
     if (demoted && res.status !== 'Demote') { res.status = 'Demote'; res.why = 'Demoted after this war'; }
@@ -378,18 +380,34 @@ function shortReason(x, r) {
     : /boats/i.test(why) ? 'still on boats'
     : /second miss|2nd miss/i.test(why) ? '2nd miss in a row'
     : /new member/i.test(why) ? 'new, under target'
-    : s === 'Demote' ? 'missed as Elder' : 'under target';
+    : s === 'Demote' && !/after this war/.test(why) ? 'missed as Elder' : 'under target';
   return [fame && fame + ' medals', reason].filter(Boolean).join(', ');
 }
 
-function chatEnd(list, r) {
-  const by = s => list.filter(x => x.res.status === s);
+// opts.from / opts.until: when given (the page, for a war it has history for), the results message says what actually
+// happened in game in that time (from the start of the last battle day), not what was suggested: everyone who left
+// or was removed, and rank changes seen. The game doesn't say who removed someone, so only suggested kicks are
+// called "kicked"; anyone else who went is "out of the clan".
+function chatEnd(list, r, opts = {}) {
+  const here = list.filter(x => !x.gone || x.res.status === 'Kick');
+  const by = s => here.filter(x => x.res.status === s);
   const msgs = [];
-  const update = [
+  const line = x => `${x.name} (${shortReason(x.res.before ? { ...x, res: x.res.before } : x, r)})`;
+  let update;
+  if (opts.from != null) {
+    const inTime = t => t && t >= opts.from && t <= (opts.until ?? Infinity), done = x => x.done && x.done.auto;
+    const out = list.filter(x => x.gone && inTime(x.leftAt));
+    update = ['War update:',
+      lines('Kicked:', out.filter(x => (x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
+      lines('Out of the clan:', out.filter(x => !(x.res.status === 'Kick' || (x.res.before || {}).status === 'Kick')).map(line)),
+      lines('Demoted:', by('Demote').filter(done).map(line)),
+      lines('Promoted to Elder:', by('Promote').filter(done).map(line)),
+    ].filter(Boolean);
+  } else update = [
     'War update:',
-    lines('Kicked:', by('Kick').map(x => `${x.name} (${shortReason(x, r)})`)),
-    lines('Demoted:', by('Demote').map(x => `${x.name} (${shortReason(x, r)})`)),
-    lines('Promoted to Elder:', by('Promote').map(x => `${x.name} (${shortReason(x, r)})`)),
+    lines('Kicked:', by('Kick').map(line)),
+    lines('Demoted:', by('Demote').map(line)),
+    lines('Promoted to Elder:', by('Promote').map(line)),
   ].filter(Boolean);
   if (update.length > 1) msgs.push({ title: 'Update', text: update.join('\n\n') });
 

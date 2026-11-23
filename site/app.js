@@ -357,7 +357,9 @@ function render() {
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
 
-  const msgs = (mode === 'end' ? chatEnd(all.filter(p => !p.gone || p.res.status === 'Kick'), r) : chatLive(list, r, liveOpts())).map(m => ({ ...m, title: titleFor(m.title) }));
+  // After a war: what actually happened in game from the start of its last battle day (up to a week on, for older wars).
+  const endOpts = model.endedAt ? { from: model.endedAt - 864e5, until: model.season === model.latest ? Infinity : model.endedAt + 7 * 864e5 } : {};
+  const msgs = (mode === 'end' ? chatEnd(all, r, endOpts) : chatLive(list, r, liveOpts())).map(m => ({ ...m, title: titleFor(m.title) }));
   if (mode === 'end') { const rc = recap(all, r); if (rc) msgs.push({ title: 'Recap', text: rc }); }
   if (mode === 'end' && model.season) {
     const [sid, sec] = model.season.split('-').map(Number), ss = sec >= 4 ? seasonSummary(data.log || [], hist?.wars, sid, r.target) : null;

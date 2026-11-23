@@ -149,3 +149,20 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.match(ms.find(m => m.title === 'Last warnings').text, /already warned[\s\S]*perc/);
   assert.match(ms.find(m => m.title === 'Warnings').text, /Vasi/); assert.doesNotMatch(ms.find(m => m.title === 'Warnings').text, /perc/);
   console.log('Last warning wording checks passed'); }
+
+// The results message says what actually happened in game from the start of the last battle day: suggested kicks that
+// left are "kicked", anyone else who went is "out of the clan", and only demotions/promotions seen in game are listed.
+{ const r = L.sanitizeRules({}).rules, from = Date.parse('2026-11-22T09:43:00Z'), cur = f => ({ key: '138-3', fame: f, decks: 16, boats: 0 });
+  const p = (name, status, extra = {}) => ({ name, cur: cur(900), weeks: [cur(900)], before: [], res: { status, why: '' }, ...extra });
+  const list = [
+    p('Kicked1', 'Kick', { gone: true, leftAt: from + 3600e3, res: { status: 'Kick', why: 'Second miss in a row' } }),
+    p('Went', 'Left', { gone: true, leftAt: from + 3600e3, res: { status: 'Left', why: 'Left', before: { status: 'Warn', why: 'First miss' } } }),
+    p('LongGone', 'Left', { gone: true, leftAt: from - 30 * 864e5, res: { status: 'Left', why: 'Left', before: { status: 'Kick', why: 'x' } } }),
+    p('Dem', 'Demote', { done: { auto: true }, res: { status: 'Demote', why: 'Demoted after this war' } }),
+    p('NotYet', 'Demote', { done: { auto: false } }),
+  ];
+  const t = L.chatEnd(list, r, { from }).find(m => m.title.startsWith('Update')).text;
+  assert.match(t, /Kicked:\n- Kicked1 \(900 medals, 2nd miss in a row\)/);
+  assert.match(t, /Out of the clan:\n- Went \(900 medals, under target\)/);
+  assert.match(t, /Demoted:\n- Dem/); assert.doesNotMatch(t, /NotYet|LongGone/);
+  console.log('Actual-results message checks passed'); }
