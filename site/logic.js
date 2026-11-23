@@ -316,7 +316,7 @@ function endResult(p, model, r, note, past, fmt = ukDay) {
   // (From the start of the last battle day: leaders often act on day 4.)
   const from = model.endedAt ? model.endedAt - 864e5 : null;
   const keptAfterWar = p.gone && p.leftAt && from && p.leftAt > from;
-  if (p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.before = { status: res.status, why: res.why }; res.status = 'Left'; res.why = p.leftAt ? 'Left ' + fmt(p.leftAt) : 'Left during or before this war'; }
+  if (p.gone && !(res.status === 'Kick' && keptAfterWar)) { res.before = { status: res.status, why: res.why }; res.status = 'Left'; res.why = p.leftAt ? (p.removed ? 'Removed by a leader ' : 'Left ') + fmt(p.leftAt) : 'Left during or before this war'; }
   // A promotion or demotion seen in game after this war counts as this war's action, whatever was suggested.
   if (!p.gone && from) {
     const after = (p.roleEvents || []).filter(e => e.at > from).map(e => e.detail);
