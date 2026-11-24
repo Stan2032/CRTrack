@@ -910,7 +910,6 @@ export const welcomeText = (r = {}) => `**👋 Welcome! Link your Clash Royale a
 
 Not in the clan yet? Use \`/apply #YOURTAG\`, or join in game first, then link. Stuck? Ask a leader.
 _What we keep and how to delete it: \`/privacy\`_`;
-export const WELCOME = welcomeText();   // with the default rules
 
 // Plain-language reason when Discord refuses a post.
 function cantPost(channel, err) {

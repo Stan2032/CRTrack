@@ -18,6 +18,7 @@ const DEFAULT_RULES = {
   promoAvg: 2200,    // average medals
   chatLimit: 256,    // measured in game with a numbered ruler: clan chat keeps 256 characters
   lookback: 10,      // weeks used for history stats
+  discordInvite: '', // the clan's Discord invite (https://discord.gg/...), for the copy-ready join message
 };
 
 // What each rule means and the values that make sense, used to build the Rules screen and to
@@ -42,12 +43,19 @@ const RULE_SPEC = {
   promoAvg:       { group: 'Promotions', label: 'Average medals', min: 400, max: 3600, step: 50, unit: 'medals' },
   chatLimit:      { group: 'Messages and history', label: 'Clan chat message length', min: 50, max: 256, step: 1, unit: 'characters' },
   lookback:       { group: 'Messages and history', label: 'Recent wars used for history and stats', min: 3, max: 26, step: 1, unit: 'wars' },
+  discordInvite:  { group: 'Messages and history', label: 'Discord invite link (for the "join our Discord" message)', text: true },
 };
 
 // Corrects out-of-range or non-numeric values; returns the rules and what was changed.
 function sanitizeRules(r) {
   const out = { ...DEFAULT_RULES, ...r }, fixed = [];
   for (const [k, spec] of Object.entries(RULE_SPEC)) {
+    if (typeof DEFAULT_RULES[k] === 'string') {   // the invite link: a Discord invite or nothing
+      const v = String(out[k] ?? '').trim();
+      out[k] = /^https:\/\/(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9-]{2,32}$/.test(v) ? v : '';
+      if (out[k] !== v) fixed.push(k);
+      continue;
+    }
     if (typeof DEFAULT_RULES[k] === 'boolean') { if (typeof out[k] !== 'boolean') { out[k] = DEFAULT_RULES[k]; fixed.push(k); } continue; }
     let v = Number(out[k]);
     if (!Number.isFinite(v)) v = DEFAULT_RULES[k];
@@ -445,6 +453,16 @@ function chatEnd(list, r, opts = {}) {
 
 // opts: { day, reset, counts } — battle day number, the daily reset time ("09:43") for the reminder, and counts(p, k):
 // whether battle day k counted for that player (for the "missed decks" message of each finished day).
+// Copy-ready "join our Discord" messages (when the clan's invite link is set): why to link, then how.
+function chatJoin(r) {
+  if (!r.discordInvite) return [];
+  return [
+    { title: 'Join Discord', text: ['📢 We have a clan Discord! Link your account there and you get:', '- war reminders that tag you', '- /mystats: your full war record',
+      r.linkBonus ? '- 1 EXTRA CHANCE before a kick ⚠️' : '', `Join: ${r.discordInvite}`].filter(Boolean).join('\n') },
+    { title: 'How to link', text: 'How to link: join the Discord, type /link in #link-tag, enter your player tag (#...) and play 1 battle with the 2 cards it shows (a friendly battle works). Takes 2 minutes!' },
+  ];
+}
+
 function chatLive(list, r, opts = {}) {
   const here = list.filter(x => !x.gone);
   const left = here.filter(x => x.res.today < 4).sort((a, b) => a.res.today - b.res.today || a.name.localeCompare(b.name));
@@ -675,4 +693,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { raceOutlook, RANK_POINTS, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { chatJoin, raceOutlook, RANK_POINTS, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };

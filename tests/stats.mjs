@@ -168,3 +168,12 @@ console.log(`Stats checks passed (AzzA reliability ${ra.score}, bestgirlclasher 
   assert.match(t, /Left the clan:\n- Went \(900 medals, under target\)/);
   assert.match(t, /Demoted:\n- Dem/); assert.doesNotMatch(t, /NotYet|LongGone/);
   console.log('Actual-results message checks passed'); }
+
+// Discord invite in the rules: only a real invite link is kept; the join messages use it (and follow the extra-chance rule).
+{ assert.equal(L.sanitizeRules({ discordInvite: ' https://discord.gg/ZDkTGAbWjT ' }).rules.discordInvite, 'https://discord.gg/ZDkTGAbWjT');
+  assert.equal(L.sanitizeRules({ discordInvite: 'https://evil.example/x' }).rules.discordInvite, '', 'not a Discord invite: dropped');
+  assert.equal(L.chatJoin(L.sanitizeRules({}).rules).length, 0, 'no invite set: no message');
+  const r = L.sanitizeRules({ discordInvite: 'https://discord.gg/ZDkTGAbWjT' }).rules, [join, how] = L.chatJoin(r);
+  assert.match(join.text, /EXTRA CHANCE[\s\S]*Join: https:\/\/discord\.gg\/ZDkTGAbWjT$/); assert.ok(join.text.length <= 256 && how.text.length <= 256, 'fits clan chat');
+  assert.doesNotMatch(L.chatJoin({ ...r, linkBonus: false })[0].text, /EXTRA CHANCE/);
+  console.log('Discord join message checks passed'); }

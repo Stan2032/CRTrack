@@ -373,6 +373,7 @@ function render() {
       split(txt, r.chatLimit).forEach((t, i, a) => msgs.push({ title: a.length > 1 ? `Season ${i + 1}/${a.length}` : 'Season', text: t }));
     }
   }
+  msgs.push(...chatJoin(r));   // "join our Discord": always to hand once the invite link is set in the rules
   $('#cards').innerHTML = msgs.length ? msgs.map((m, i) => `<div class="card">
       <b>${esc(m.title)}<span class="cnt ${m.text.length > r.chatLimit ? 'over' : ''}" id="c${i}">${m.text.length}/${r.chatLimit}</span></b>
       <textarea data-i="${i}" aria-label="${esc(m.title)}">${esc(m.text)}</textarea>
@@ -472,6 +473,7 @@ function renderSteps(list, msgs) {
     if (w.length) posted('BOATS', 'Post the <b>boat attack tip</b>', copy('Boat'));
     posted('RECAP', 'Post the <b>war recap</b> (optional)', copy('Recap'));
     posted('SEASON', 'Post the <b>season recap</b> (optional, last war of the season)', copy('Season'));
+    posted('DISCORD', 'Post the <b>Discord invite</b> (optional; worth repeating every war or two)', copy('Join Discord') + copy('How to link'));
     players(c, 'Check', `Post the <b>check-in</b> ${names(c)}`, copy('Check'));
   } else if (mode === 'live') {
     const free = list.filter(p => p.res.status === 'Out' && !p.gone && p.res.today === 0);
@@ -652,7 +654,9 @@ function renderRules() {
   const r = rules(), groups = {};
   for (const [k, spec] of Object.entries(RULE_SPEC)) (groups[spec.group] ||= []).push([k, spec]);
   const changed = k => r[k] !== DEFAULT_RULES[k];
-  $('#rules').innerHTML = Object.entries(groups).map(([g, items]) => `<fieldset class="rgroup"><legend>${esc(g)}</legend>${items.map(([k, spec]) => typeof DEFAULT_RULES[k] === 'boolean'
+  $('#rules').innerHTML = Object.entries(groups).map(([g, items]) => `<fieldset class="rgroup"><legend>${esc(g)}</legend>${items.map(([k, spec]) => spec.text
+    ? `<label class="rule text"><span>${esc(spec.label)}</span><input type="url" inputmode="url" autocomplete="off" data-rule="${k}" placeholder="https://discord.gg/..." value="${esc(r[k] || '')}"></label>`
+    : typeof DEFAULT_RULES[k] === 'boolean'
     ? `<label class="rule"><span>${esc(spec.label)}</span><input type="checkbox" role="switch" class="switch" data-rule="${k}" ${r[k] ? 'checked' : ''}></label>`
     // Short ranges (days, wars, %) get a slider; medal amounts keep − / + for precision.
     : spec.unit !== 'medals' && (spec.max - spec.min) / spec.step <= 30
@@ -678,11 +682,12 @@ function renderRules() {
 
 // Set one rule, corrected to its allowed range, and say if it had to be changed.
 function setRule(k, v) {
-  const typed = typeof DEFAULT_RULES[k] === 'boolean' ? !!v : Number(v);
+  const typed = typeof DEFAULT_RULES[k] === 'boolean' ? !!v : typeof DEFAULT_RULES[k] === 'string' ? String(v).trim() : Number(v);
   const { rules: fixed } = sanitizeRules({ ...rules(), [k]: typed });
   local.rules[k] = fixed[k]; saveLocal(); render();
   const spec = RULE_SPEC[k];
-  if (typeof typed === 'number' && fixed[k] !== typed) say(`${spec.label}: must be ${spec.min.toLocaleString()}–${spec.max.toLocaleString()} ${spec.unit} (steps of ${spec.step}). Set to ${fixed[k].toLocaleString()}.`, true);
+  if (typeof typed === 'string' && typed && !fixed[k]) say('That doesn\'t look like a Discord invite link (https://discord.gg/...).', true);
+  else if (typeof typed === 'number' && fixed[k] !== typed) say(`${spec.label}: must be ${spec.min.toLocaleString()}–${spec.max.toLocaleString()} ${spec.unit} (steps of ${spec.step}). Set to ${fixed[k].toLocaleString()}.`, true);
   else say(codeOk ? 'Changed here. Tap "Save rules for everyone" to share.' : 'Saved on this device');
 }
 

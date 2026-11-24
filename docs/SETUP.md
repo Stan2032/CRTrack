@@ -62,8 +62,8 @@ On each leader's phone (Android Chrome, or iPhone Safari → Share → Add to Ho
 1. Open the site → at the top, **Install app** (iPhone: Share → Add to Home Screen, then open it from the home screen).
 2. Enter the leader code (step 3), then at the top, next to **🔔 Get alerts**, tap **Turn on**.
 
-Alerts: joins and leaves, war finished, battle day 4 "can't reach the target", decks unused in a day's last 4 hours,
-data pulls failing.
+Alerts: joins and leaves, war finished, battle day 4 "can't reach the target", decks unused (at the evening ping and
+the last call), and data pulls failing (from the second failure in a row; also posted in #leaders).
 
 ## 5. Discord bot
 

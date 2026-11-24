@@ -268,3 +268,6 @@ details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
 .daytabs button { padding: 4px 10px; font-size: 12px; }
 
 .linked { font-size: 11px; margin-left: 4px; }
+
+.rule.text { display: grid; gap: 6px; }
+.rule.text input { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; }

@@ -192,10 +192,9 @@ screenshots for absence messages, if wanted.
 
 ## Added 18 Nov (from looking at other clan bots: CWStats, Canadian War Bot, ClashBot, TrophyCoach, RoyaleAPI)
 
-- **Ping times**: the one battle-day ping used to go out in the last 4 hours (~05:45 UK for a 09:43 reset). Now an
-  evening ping (cfg.pingHour UK, or `busiestHour`: the start of the clan's busiest 3 hours starting 16:00–20:00 UK (mornings after the reset are busiest, but a ping then names nearly everyone), from
-  race_events; 19:00 until there's data) and a last call `cfg.lastCall` hours before reset (default 2). `/setup pings`.
-  Leaders' phone alerts follow the same times. `battleDayPings` in discord.js.
+- **Ping times**: an evening ping (cfg.pingHour UK, or `busiestHour`: the start of the clan's busiest 3 hours
+  starting 16:00–20:00 UK, from race_events; 19:00 until there's data) and a last call `cfg.lastCall` hours before
+  reset (default 2). `/setup pings`. Leaders' phone alerts follow the same times. `battleDayPings` in discord.js.
 - **`/apply #TAG`** (CWStats-style): card in #leaders with recruitCard, war readiness and the clan's trophy requirement,
   Accept / Decline buttons (`apply|yes|user|tag`); applicant told by DM, else in #not-in-clan. One open application per
   person; re-apply after a day.
@@ -211,14 +210,41 @@ member_events, war_players, race_days, race_events, war_battles, member_stats, n
 logged without the data). Notice pinned next to the rules, a line in the how-to-link message, and `site/privacy.html`
 linked from both pages' footers. Supercell's unofficial notice is on both pages, the README and the rules message.
 
-- **Extra chance for linked members** (rule `linkBonus`, on by default): a kick for a member linked on Discord becomes a
-  final warning once (`res.extra`); it's remembered as note kind `extra` with the result and counts as used when the
-  warning is ticked done; it comes back after `warnClear` wars in a row at the target. Demotions are unchanged.
-  `readHistory` returns `linked` (player tags only).
+## Learned from the first real war (138-3, 19–24 Nov), all checked against live data
 
-- **When leaders act without the site** (war 138-3: kicks and demotions done in game on day 4, warnings given in
-  chat instead of the suggested kicks): rank is judged going into the last battle day, and changes made that day
-  count as done; a day after the war, a suggested Kick/Demote that hasn't happened asks "what did you decide?"
-  (Kept on a warning / Kept, no action); the leaders' weekly digest lists decisions not yet recorded. Warnings only
-  count when recorded, so these keep next war's "second miss" and "on a warning" right.
+**The race and the numbers**
+- **Race points, not medals:** each battle day the clans are ranked by that day's medals; places earn
+  3,000 / 1,800 / 1,000 / 600 / 400 race points plus a boat-defence bonus; 10,000 is the finish. The API's clan `fame`
+  is race points as of the last reset; `periodPoints` is today's medals. **Colosseum weeks: total medals** (also
+  recognised by any total over 10,000). `raceOutlook` in logic.js; `race_standings` stores both, past days copied from
+  the game's day log.
+- **Medal values per battle** match the game exactly (1v1 200/100, duel 250/100 per game, boat 125/75).
+- **Exact decks per day:** yesterday's count is corrected after each reset (war total minus today); day 4 from the
+  finished war's final counts. Battle logs are fetched first for players who just played (each log keeps 25 battles).
+- **Forecasts:** war-to-war spread is ~±260 medals (the old model assumed ~±66); now form per war, whole days played
+  or skipped, battles as wins/losses. First war: "Unlikely" 0% made it, "Likely" 80%, "At risk" 73% (a bit
+  pessimistic); retune after 2–3 more wars.
 
+**Discord**
+- **One decks-left message a day**, edited as people play; the last call replaces it (a new post notifies); removed
+  at the next reset or when the war ends. #war is swept once a battle day; `/setup refresh` removes out-of-date bot
+  posts in live channels (never replies to people's commands; history channels untouched).
+- **Data-pull failures** post in #leaders from the second failure in a row (single proxy blips are common), and again
+  when it's working.
+- **Day summaries**: short labelled lines; every missed-deck name, grouped by how many.
+
+**Decisions after a war**
+- **Extra chance for linked members** (rule `linkBonus`, on by default): a kick for a member linked on Discord becomes
+  a final warning once (`res.extra`, note kind `extra`, used when ticked done, back after `warnClear` wars at the
+  target). Demotions are unchanged. The how-to-link message follows the switch.
+- **Leaders act in game, not always via the site** (138-3: kicks and demotions on day 4, warnings given in chat
+  instead of suggested kicks): rank is judged going into the last battle day and changes from then on count as done;
+  a day after the war, an undone Kick/Demote asks "what did you decide?" (Kept on a warning / Kept, no action); the
+  weekly digest lists unrecorded decisions; a second warning is worded as a last warning.
+- **Kicked or left:** the API doesn't say who removed someone, but nobody can leave while offline. If they were
+  already 30+ minutes offline when last seen in the clan (within 3 hours), the leave is recorded as
+  `<role>:removed` and called "Kicked"; otherwise "Left the clan".
+- **The results message** lists what actually happened in game from the start of the last battle day (kicks,
+  demotions, promotions seen), not the suggestions.
+- **Discord invite** (rule `discordInvite`): copy-ready "join our Discord" and "how to link" messages, and an optional
+  step after each war.
