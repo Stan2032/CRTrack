@@ -1,0 +1,7 @@
+# Keeps the GitHub Actions used by the tests up to date (a pull request when a new version comes out).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

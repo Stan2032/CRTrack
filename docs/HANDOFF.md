@@ -37,7 +37,6 @@ Molich's heuristics (see `docs/UI-GUIDE.md`). Nothing is hard-coded to #WINNING.
 | `worker/gen.mjs` | Copies `site/logic.js` and `site/stats.js` into Worker modules (`*.gen.js`, generated: don't edit) |
 | `tests/` | `check` (decisions), `function` (API), `history` (snapshots, alerts, notes), `stats`, `discord`, `ui` (both pages in a browser) |
 | `samples/` | Real RoyaleAPI exports from 16 Nov 2026 (used by tests) |
-| `docs/gemini/` | The earlier Gemini work this replaced |
 
 Run all tests: `for t in check function history stats discord leaders extras; do node --no-warnings tests/$t.mjs; done; node tests/ui.mjs`
 (the GitHub workflow runs them too, plus a Wrangler dry-run build; it was verified step by step in a clean clone. GitHub refuses to start the job on account grounds, see SETUP.md §10).

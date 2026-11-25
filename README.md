@@ -1,106 +1,67 @@
-# Clan War Audit
+# War Audit
 
-Clash Royale clan war audit for leaders: who to kick, demote, warn, check on or promote after each war, with clan chat
-messages ready to paste, live battle-day tracking, history and forecasts, phone alerts, and a Discord bot. Works for any
-clan. Hosted free on Cloudflare (**[setup](docs/SETUP.md)**); the page also works on its own with your own API key or
-RoyaleAPI CSVs.
+Clan war tracking and member decisions for Clash Royale, with a Discord bot.
 
-## Use
+[![Tests](https://github.com/Stan2032/CRTrack/actions/workflows/tests.yml/badge.svg)](https://github.com/Stan2032/CRTrack/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Open the hosted link (or `site/index.html` on your computer), and it loads the clan. Then work down the page:
+War Audit follows a clan's river races and tells its leaders who to promote, warn, demote or kick after each war,
+with the clan chat messages ready to paste. During battle days it tracks decks, medals and the race live, and its
+Discord bot posts the war board, reminders and daily summaries.
 
-1. **Clan**: type a tag and tap *Load clan* (automatic on the hosted link).
-2. **Who to act on**
-   - **Recommended**: numbered steps in order (in-game actions first, then what to post). Tap the circle when a step is done; in-game steps tick themselves. *Copy* copies that step's clan chat message.
-   - **Last war**: who to kick, demote, warn, check on, or promote.
-   - **This war**: during battle days, who can't reach 1800 any more and who still needs medals.
-   - Each player: name, then medals and decks, then the reason. Dots show their recent wars (green = reached 1800).
-   - Kicks, demotions and promotions tick themselves once the game shows them. First & only warnings and check-ins have **Mark done** (they happen in clan chat, which the game's data doesn't include). People who've left are hidden unless you tick *Show … who left the clan*.
-   - Tap a name for their history and to change the suggestion or join day.
-   - Pick an earlier war to see what was decided and done. Results are remembered automatically.
-3. **All clan chat messages** (folded): every message in one list. Each one also sits inside its step under Recommended.
+## Features
 
-Folded below: **Clan rules explained**, **Clan stats**, **Check a player**, **Clan log** and **Rules** (downloads are under Rules → Downloads).
+- **After-war decisions:** suggestions from rules each clan sets; kicks, demotions and promotions done in game are
+  picked up automatically; copy-ready clan chat messages.
+- **Live battle days:** decks played per player, race points and places, each player's chance of reaching the target.
+- **History:** every war kept (beyond the API's last 10), joins, leaves, rank changes and decks per battle day.
+- **Discord bot:** builds the server's roles and channels, verified account linking, war board, reminders, summaries
+  and a weekly digest for leaders.
+- **Members' page:** each player sees their own record and forecast.
 
-Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
-or download CSVs from RoyaleAPI and drop them in (*Other ways*).
+## How it works
 
-## Members' page
+A single [Cloudflare Worker](https://developers.cloudflare.com/workers/) on the free plan serves the site, reads the
+official Clash Royale API every 15 minutes (through the [RoyaleAPI proxy](https://docs.royaleapi.com/proxy.html)),
+stores history in [D1](https://developers.cloudflare.com/d1/) and answers Discord commands. Plain JavaScript: no
+framework, no runtime dependencies, no build step beyond copying shared logic into the Worker.
 
-`/mystats`: each member enters their own player tag and sees only their own numbers: this war's medals and decks
-left today, their forecast, their war history and consistency, how they play, and the rules explained.
+## Getting started
 
-## Discord
+Follow [docs/SETUP.md](docs/SETUP.md): a Clash Royale API key, a Cloudflare account, leader codes and, optionally,
+the Discord bot.
 
-A bot run by the same Worker ([setup](docs/SETUP.md#5-discord-bot)). Members: `/link #TAG`, `/mystats` (a full personal war report), `/clan stats` (clan stats), `/away` (going away: leaders see it, no automatic kick),
-`/remind` (private message when a battle day is ending with decks left). Leaders: `/setup channel` in each channel to choose
-what it gets (war board, summaries and results, welcomes and shout-outs, a leaders-only channel for absences, digests and backups,
-rules, how to link, a clan stats board), `/setup`, `/setup sync`, `/leader player #TAG`, `/leader check #TAG` (someone applying). Roles and nicknames
-follow the game.
+## Development
 
-## Stats and forecasts
+Requires Node.js 22 or later.
 
-- **Forecast** (This war): each player's chance of reaching the target, from their own habits (share of decks they play, medals per deck, how much that varies), simulated 2,000 times. New players use the clan's typical habits.
-- **Race**: every clan's race points (each day's place on medals earns 3,000 / 1,800 / 1,000 / 600 / 400), today's medals, what passing the next clan is worth, and the finish on recent form.
-- **Player panel** (tap a name): medals chart, reliability score with its breakdown, when they usually play, win rates and medals per deck by battle type, and which type earns them most.
-- **Clan stats**: medals and pass rate per war, most and least reliable, battle types clan-wide, when the clan plays (UK time), top donors, offline 7+ days.
+```sh
+npm test            # every test suite (the browser checks need Playwright)
+npx wrangler dev    # run the Worker and site locally
+```
 
-Reliability (0–100) = 40% wars at target + 30% decks used + 20% medals vs target (1.5× target = full) + 10% recent trend.
+Tests also run on GitHub Actions for every push and pull request.
 
-## History (hosted link only)
+## Project layout
 
-Every 15 minutes on battle days (twice a day on training days) the site saves the clan's members, donations, every clan's medals in the race, and players' war battles. Over time that gives:
+```
+site/      the website: leaders' page, members' page, shared logic and stats
+worker/    the Cloudflare Worker: API, scheduled snapshots, history, Discord bot
+tests/     node test suites (in-memory SQLite, Playwright for the pages)
+samples/   real RoyaleAPI exports used by the tests
+docs/      setup, user guide and design notes
+```
 
-- **Join dates**, so a late joiner's battle day is filled in automatically
-- **Who left, joined, was promoted or demoted, and when** (Clan log)
-- **Role at the end of each war**, so promoting someone after the war doesn't flag them for demotion
-- **Decks used each battle day**, e.g. "No decks day 3"
-- **All past wars**, beyond the API's last 10
-- **Shared choices**: join days, changes, done ticks and results are the same for every leader (needs the leader code)
+## Documentation
 
-## Set it up
+- [Setup](docs/SETUP.md): everything needed to run it
+- [User guide](docs/USER-GUIDE.md): using the site, the bot and the default rules
+- [Handoff notes](docs/HANDOFF.md): how it works inside, the maths and the decisions behind it
+- [UI guide](docs/UI-GUIDE.md): the usability rules the screens follow
 
-All setup (Clash Royale key, Cloudflare, leader codes, phone alerts, Discord bot, server roles and channels,
-troubleshooting) is in **[`docs/SETUP.md`](docs/SETUP.md)**. Free: Cloudflare Workers + D1.
+## License
 
-## Rules
+[MIT](LICENSE).
 
-Every clan sets its own under **Rules** (saved for all leaders with the leader code). Defaults:
-
-| When someone is under the target (default 1800 medals) | Suggestion |
-|---|---|
-| Member, first miss | First & only warning |
-| Member, new or second miss in a row | Kick |
-| Member, under again while on a first & only warning (it clears after the target is reached 3 wars in a row) | Kick |
-| Elder, first miss | First & only warning *(switch: Elders get a warning before demotion)* |
-| Elder, second miss in a row or after a warning | Demote |
-| Mostly boat attacks (50%+ of decks, 8+ decks), including new members | First & only warning, with the boat attack tip |
-| Still on boats and under again after that | Kick *(switch: Boat attackers still under after a warning are kicked)* |
-| Passed the target 3+ wars in a row, now offline 3+ days | Check on them |
-| Back after leaving the clan | Leaders decide |
-| New, join day unknown | Leaders decide |
-| Leader or co-leader | Leaders decide |
-
-| Otherwise | Suggestion |
-|---|---|
-| Joined mid-war | Target is 450 per battle day left after joining, or passes if every deck was used |
-| Member, 6+ wars in clan, at most 1 miss, average 2200+ | Promote to Elder |
-
-All numbers and switches can be changed.
-
-## Files
-
-- `site/`: the app (`index.html`, `style.css`, `logic.js` for the decisions, `stats.js` for forecasts and stats, `app.js` for the screen)
-- `worker/`, `wrangler.jsonc`: the Cloudflare Worker (serves `site/`, adds the key, saves history to D1 every 15 min)
-- `samples/`: real exports from #WINNING, week 138-2
-- `tests/`: `check`, `function`, `history`, `stats`, `discord`, `leaders`, `extras`, `ui` (run with `node tests/<name>.mjs`)
-
-The top of the page shows when data was last pulled (UK time). **Request updated data** pulls straight away (anyone, at most every 5 minutes), which helps on training days when the schedule is slower.
-- `docs/UI-GUIDE.md`: the usability rules the screens follow, with sources
-- `docs/SETUP.md`: setting it up, step by step
-- `docs/HANDOFF.md`: background, maths, and decisions so far
-- `docs/gemini/`: the earlier Gemini work, kept for reference
-
----
-This material is unofficial and is not endorsed by Supercell. For more information see Supercell's Fan Content Policy:
-https://supercell.com/en/fan-content-policy/
+This material is unofficial and is not endorsed by Supercell. For more information see
+[Supercell's Fan Content Policy](https://supercell.com/en/fan-content-policy/).
