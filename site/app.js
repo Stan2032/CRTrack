@@ -985,6 +985,9 @@ $('#key').value = settings.key || '';
     try { const r = await fetch('api/status'); if (r.ok) site = { ...site, ...(await r.json()) }; } catch (e) {}
   }
   if (site.key) { $('#setup').classList.add('hidden'); $('#other-sum').textContent = 'Use CSVs instead'; }
+  // A site set up for one clan: just that clan. No tag box, and no own-key/CSV options (those are for running the
+  // page on your own; a CSV only ever loads in the browser, but here it would just be confusing).
+  if (site.key && site.clans.length === 1) { $('#clanpick').classList.add('hidden'); $('#other').classList.add('hidden'); }
   const hashTag = location.hash.replace(/^#/, '');
   $('#tag').value = hashTag || settings.tag || (site.clans.length === 1 ? site.clans[0] : '');
   setLinks();

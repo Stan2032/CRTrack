@@ -59,6 +59,7 @@ try {
   await p.click('button[data-help="stats"]');
   assert.match(await p.textContent('#chips'), /To do:/);
   assert.match(await p.textContent('#groups'), /Kick/);
+  assert.ok(await p.locator('#clanpick').isHidden() && await p.locator('#other').isHidden(), 'a one-clan site shows just that clan: no tag box or CSV/own-key options');
   // A day after the war, a suggested kick that hasn't happened asks what was decided; one tap records it.
   { const n0 = await p.locator('[data-decide]').count();
     assert.ok(n0 > 0, 'undecided kicks/demotions ask what was decided');

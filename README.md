@@ -1,13 +1,27 @@
+<div align="center">
+
+<img src="site/icons/icon-512.png" alt="" width="96">
+
 # War Audit
 
 Clan war tracking and member decisions for Clash Royale, with a Discord bot.
 
 [![Tests](https://github.com/Stan2032/CRTrack/actions/workflows/tests.yml/badge.svg)](https://github.com/Stan2032/CRTrack/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Cloudflare Workers](https://img.shields.io/badge/runs%20on-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+
+</div>
 
 War Audit follows a clan's river races and tells its leaders who to promote, warn, demote or kick after each war,
 with the clan chat messages ready to paste. During battle days it tracks decks, medals and the race live, and its
 Discord bot posts the war board, reminders and daily summaries.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots-dark.png">
+  <img src="docs/assets/screenshots-light.png" alt="The leaders' page after a war: recommended steps with a copy-ready results message, and a player's record">
+</picture>
+
+<sub>Screenshots use real war data with made-up player names.</sub>
 
 ## Features
 
