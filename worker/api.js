@@ -9,7 +9,7 @@
 //   GET  /api/member?tag=TAG               one member's own data (members' page)
 //   GET  /api/push/key, /api/alerts/latest; POST /api/push/subscribe|unsubscribe|test   app notifications
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
-import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot, importWars } from './history.js';
+import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
 import { handleDiscord, registerCommands, discordReady, updateRulesMessages } from './discord.js';
 
@@ -80,16 +80,6 @@ export async function handleApi(request, env, ctx) {
     return m ? json(m, 200, 'no-store') : json({ reason: 'notInClan' }, 404);
   }
 
-  // Older wars from RoyaleAPI exports (leaders only; adds only wars the tracker doesn't have).
-  if (url.pathname === '/api/import') {
-    if (!env.DB) return json({ reason: 'noHistory' }, 501);
-    if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
-    const clan = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
-    if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);
-    if (!isEditor()) return json({ reason: 'needLeaderCode' }, 401);
-    let body; try { body = await request.json(); } catch (e) { return json({ reason: 'badJson' }, 400); }
-    return json(await importWars(env, clan, body.rows, editorName()), 200);
-  }
   if (url.pathname === '/api/history' || url.pathname === '/api/notes' || url.pathname === '/api/snapshot') {
     if (!env.DB) return json({ reason: 'noHistory' }, 501);
     if (url.pathname === '/api/snapshot') {

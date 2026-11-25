@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const load = f => { const ctx = { module: { exports: {} } }; vm.runInNewContext(readFileSync(new URL('../site/' + f, import.meta.url), 'utf8'), ctx); return ctx.module.exports; };
 const L = load('logic.js'), S = load('stats.js');
-const read = f => L.parseCSV(readFileSync(new URL('../samples/' + f, import.meta.url), 'utf8'));
+import { sample as read } from './samples.mjs';
 const m = L.build({ roster: read('roster.csv'), log: read('war-log.csv') });
 const by = n => m.players.find(p => p.name === n);
 

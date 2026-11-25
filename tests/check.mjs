@@ -2,6 +2,7 @@
 // Usage: node tests/check.mjs
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { sample } from './samples.mjs';
 import { fileURLToPath } from 'node:url';
 // Only print details when run directly (other tests import fakeApi from here).
 const main = process.argv[1] === fileURLToPath(import.meta.url);
@@ -13,9 +14,7 @@ const ctx = { module: { exports: {} } };
 vm.runInNewContext(code, ctx);
 const L = ctx.module.exports;
 
-const read = f => L.parseCSV(readFileSync(new URL('../samples/' + f, import.meta.url), 'utf8'));
-const files = { roster: read('roster.csv'), log: read('war-log.csv'), race: read('current-race.csv'), history: read('war-history.csv') };
-for (const [k, v] of Object.entries(files)) assert.equal(L.detect(v), k, 'detect ' + k);
+const files = { roster: sample('roster.csv'), log: sample('war-log.csv'), race: sample('current-race.csv') };
 
 const m = L.build({ roster: files.roster, log: files.log });
 assert.equal(m.season, '138-2');
@@ -50,13 +49,9 @@ for (const c of L.chatEnd(list, r)) {
   log(`--- ${c.title} (${c.text.length})\n${c.text}`);
 }
 
-// History-only fallback still works
-const h = L.build({ roster: files.roster, history: files.history });
-assert.equal(h.season, '138-2');
-
 // Live: race file (new week, nobody has medals yet)
 const live = L.build({ roster: files.roster, race: files.race });
-const day = L.guessDay(live.players);
+const day = 1;   // a new week: nobody has played yet
 const a = live.players.find(p => p.name === 'Astin');
 assert.equal(L.judgeLive(a, r, 'full', day).today, 4);
 // Day 4 elimination math

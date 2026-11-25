@@ -5,9 +5,9 @@ Setting it all up is in [SETUP.md](SETUP.md).
 
 ## Use
 
-Open the hosted link (or `site/index.html` on your computer), and it loads the clan. Then work down the page:
+Open the site, and it loads the clan. Then work down the page:
 
-1. **Clan**: type a tag and tap *Load clan* (automatic on the hosted link).
+1. **Clan**: loads automatically (a site set up for several clans asks for the tag).
 2. **Who to act on**
    - **Recommended**: numbered steps in order (in-game actions first, then what to post). Tap the circle when a step is done; in-game steps tick themselves. *Copy* copies that step's clan chat message.
    - **Last war**: who to kick, demote, warn, check on, or promote.
@@ -20,8 +20,6 @@ Open the hosted link (or `site/index.html` on your computer), and it loads the c
 
 Folded below: **Clan rules explained**, **Clan stats**, **Check a player**, **Clan log** and **Rules** (downloads are under Rules → Downloads).
 
-Without the hosted link: use your own key from developer.clashroyale.com (allowed IP `45.79.218.79`),
-or download CSVs from RoyaleAPI and drop them in (*Other ways*).
 
 ## Members' page
 
@@ -45,7 +43,7 @@ follow the game.
 
 Reliability (0–100) = 40% wars at target + 30% decks used + 20% medals vs target (1.5× target = full) + 10% recent trend.
 
-## History (hosted link only)
+## History
 
 Every 15 minutes on battle days (twice a day on training days) the site saves the clan's members, donations, every clan's medals in the race, and players' war battles. Over time that gives:
 

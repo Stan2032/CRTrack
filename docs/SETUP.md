@@ -201,10 +201,8 @@ Clan description** (add your Discord link there). Copy one into Clan → Edit �
 
 Developer notes (how it works, the maths, tests) are in [`HANDOFF.md`](HANDOFF.md).
 
-## 10. Older history and automatic tests
+## 10. Automatic tests
 
-- **Older wars:** site → **Rules** → leader code → **Import older wars (RoyaleAPI CSV)**. Use RoyaleAPI's *War log* or
-  *War history* export. Only wars the tracker doesn't already have are added; tracked wars are never changed.
 - **Automatic tests on GitHub** (every push to `main`): runs all checks, builds the Worker like Cloudflare does, and
   tests both pages in a browser. If runs fail within seconds with no log, GitHub is refusing to start them on account
   grounds: github.com → your profile → **Settings → Billing and plans** (check for a failed payment or a $0 spending

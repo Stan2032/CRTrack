@@ -81,39 +81,6 @@ const MEDALS = { duelWin: 250, winPvp: 200, loss: 100, boatWin: 125, boatLoss: 7
 // Most medals still possible today, by decks left today (duel needs 3+ decks)
 const TODAY_MAX = { 0: 0, 1: 200, 2: 400, 3: 700, 4: 900 };
 
-function parseCSV(text) {
-  const rows = []; let row = [], cell = '', q = false;
-  text = text.replace(/^﻿/, '');
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
-      else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === ',') { row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell); cell = '';
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
-    } else cell += c;
-  }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-  if (!rows.length) return [];
-  const head = rows[0].map(h => h.trim());
-  return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
-}
-
-function detect(rows) {
-  if (!rows.length) return null;
-  const c = Object.keys(rows[0]);
-  if (c.includes('role') && c.includes('lastSeen')) return 'roster';
-  if (c.includes('season_key') && c.includes('player_fame')) return 'log';
-  if (c.includes('player_decks_used_today')) return 'race';
-  if (c.includes('player_is_current_member')) return 'history';
-  return null;
-}
-
 const cleanTag = t => String(t || '').replace(/^#/, '').toUpperCase();
 // In-game colour codes in names, e.g. "<c4>Baki" (shown in game as a coloured name).
 const cleanName = n => String(n ?? '').replace(/<\/?c\d*>/gi, '');
@@ -129,25 +96,8 @@ function parseTime(s) {
   const t = Date.parse(s); return isNaN(t) ? null : t;
 }
 
-// History export (wide) -> log-style rows. No boat data in this file.
-function historyToLog(rows) {
-  const out = [];
-  for (const r of rows) {
-    for (const col of Object.keys(r)) {
-      const m = col.match(/^s_(\d+-\d+)_fame$/);
-      if (!m) continue;
-      const k = m[1], fame = +r[col] || 0, decks = +r[`s_${k}_decks_used`] || 0;
-      if (!fame && !decks) continue; // can't tell "absent" from "0" here
-      out.push({ season_key: k, player_tag: r.player_tag, player_name: r.player_name,
-        player_fame: fame, player_decks_used: decks, player_boat_attacks: '', clan_tag: r.clan_tag, clan_name: r.clan_name });
-    }
-  }
-  return out;
-}
-
 // opts.season: which finished war to audit (default latest). opts.withGone: include that war's players who have since left.
-function build({ roster = [], log = [], race = [], history = [] }, opts = {}) {
-  if (!log.length && history.length) log = historyToLog(history);
+function build({ roster = [], log = [], race = [] }, opts = {}) {
   const seasons = [...new Set(log.map(r => r.season_key))].sort(cmpKey).reverse();
   const idx = opts.season ? Math.max(0, seasons.indexOf(opts.season)) : 0;
   const season = seasons[idx] || null;
@@ -350,11 +300,6 @@ function judgeLive(p, r, join, day) {
   else status = 'Need';
   return { status, need, max, leftToday, fame: x.fame, today: x.today, target: t.medals,
     why: p.awayLive && status !== 'Safe' ? `Away ${awayText(p.awayLive)}` : status === 'Out' && x.today === 0 ? 'No decks used today (kick frees a slot)' : '' };
-}
-
-function guessDay(players) {
-  const most = Math.max(0, ...players.map(p => (p.race ? p.race.decks : 0)));
-  return Math.min(4, Math.max(1, Math.ceil(most / 4)));
 }
 
 function lines(title, items) { return items.length ? `${title}\n${items.map(s => '- ' + s).join('\n')}` : ''; }
@@ -693,4 +638,4 @@ function battleText(x) {
   return [part('duel', 'Duels'), part('pvp', '1v1'), part('boat', 'Boats')].filter(Boolean).join(' · ');
 }
 
-if (typeof module !== 'undefined') module.exports = { chatJoin, raceOutlook, RANK_POINTS, historyToLog, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, parseCSV, detect, build, judgeEnd, judgeLive, guessDay, chatEnd, chatLive, boatSwap, split, targetFor };
+if (typeof module !== 'undefined') module.exports = { chatJoin, raceOutlook, RANK_POINTS, clanDescriptions, endResult, ACTIONS, AUTO_CHECKED, awayText, parseAway, awayDuring, shortReason, RULE_SPEC, sanitizeRules, ruleProblems, warnState, cleanName, battleText, autoDone, historyLogRows, mergeLog, autoJoin, roleAt, dayDecks, applyHistory, recent, apiToRows, raceDay, VALID_TAG, missCount, avgMedals, DEFAULT_RULES, build, judgeEnd, judgeLive, chatEnd, chatLive, boatSwap, split, targetFor };

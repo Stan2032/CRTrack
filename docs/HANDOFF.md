@@ -186,8 +186,6 @@ screenshots for absence messages, if wanted.
 - **War report DM** (`/warreport`): after each war, in the stats-board run, up to 20 per run (rest on later runs).
 - **Forecast accuracy** (site, Clan stats): "right X% of the time", by band and battle day (`calibrate` in stats.js).
   Not on Discord: rerunning thousands of simulations would exceed the Worker's CPU limit.
-- **Import older wars** (`/api/import`, site Rules): RoyaleAPI War log / War history CSVs; only untracked weeks;
-  imported wars have `ended_at = ''` (sort before tracked ones, no invented dates).
 
 ## Added 18 Nov (from looking at other clan bots: CWStats, Canadian War Bot, ClashBot, TrophyCoach, RoyaleAPI)
 

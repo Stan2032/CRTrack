@@ -1,12 +1,11 @@
 // ---- UI ----
 const $ = s => document.querySelector(s);
-const PROXY = 'https://proxy.royaleapi.dev/v1';
 let data = { roster: [], log: [], race: [], history: [] };
-let model = null, mode = 'end', day = 4, source = '', hist = null, pickWeek = null;
+let model = null, mode = 'end', day = 4, hist = null, pickWeek = null;
 let showGone = get('cr-war-audit:showGone', false);
 let raceInfo = { week: null, day: 0, period: null };
 let local = { notes: {}, rules: {} };          // this device
-let settings = { key: '', tag: '', code: '' };
+let settings = { tag: '', code: '' };
 let site = { key: false, clans: [], history: false, edit: false };
 let codeOk = false, leaderName = '';
 
@@ -60,13 +59,8 @@ async function setNote(kind, p, value) {
 
 function say(msg, err) { const el = $('#status'); el.textContent = msg; el.classList.toggle('err', !!err); }
 function cleanInputTag() { return $('#tag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'); }
-function setLinks() {
-  const t = cleanInputTag(), base = 'https://royaleapi.com/clan/' + t;
-  $('#links').innerHTML = VALID_TAG.test(t)
-    ? `Download CSVs: <a href="${base}" target="_blank" rel="noopener">Members</a> · <a href="${base}/war/log" target="_blank" rel="noopener">War log</a> · <a href="${base}/war/race" target="_blank" rel="noopener">Race</a>` : '';
-}
 
-function load(rows, src) {
+function load(rows) {
   _clanH = null;
   const base = rows.__rows || rows;
   data = { roster: [], log: [], race: [], history: [], ...base };
@@ -74,9 +68,8 @@ function load(rows, src) {
   data.__rows = base;
   model = build(data, { season: pickWeek, withGone: true });
   if (hist) applyHistory(model, hist, raceInfo.week);
-  if (model.clan.tag) { $('#tag').value = model.clan.tag; settings.tag = model.clan.tag; put('cr-war-audit:settings', settings); setLinks(); }
+  if (model.clan.tag) { $('#tag').value = model.clan.tag; settings.tag = model.clan.tag; put('cr-war-audit:settings', settings); }
   loadLocal();
-  source = src;
   $('#sub').textContent = [model.clan.name, model.clan.tag && '#' + model.clan.tag].filter(Boolean).join(' · ');
   render();
 }
@@ -84,12 +77,10 @@ function load(rows, src) {
 async function pull() {
   const t = cleanInputTag();
   if (!VALID_TAG.test(t)) return say('Check the clan tag', true);
-  const viaSite = !settings.key && site.key;
-  if (!settings.key && !viaSite) { $('#other').open = true; $('#key').focus(); return say('Add an API key first', true); }
+  if (!site.key) return say("This site isn't set up yet: it needs a Clash Royale key on the server (see the setup guide).", true);
   say('Loading…');
   const call = async path => {
-    const url = (viaSite ? 'api/v1' : PROXY) + '/clans/' + encodeURIComponent('#' + t) + path;
-    const r = await fetch(url, viaSite ? { cache: 'no-store' } : { cache: 'no-store', headers: { Authorization: 'Bearer ' + settings.key } });
+    const r = await fetch('api/v1/clans/' + encodeURIComponent('#' + t) + path, { cache: 'no-store' });
     if (!r.ok) throw r.status;
     return r.json();
   };
@@ -101,34 +92,20 @@ async function pull() {
     raceInfo = { week: rows.raceWeek, day: rows.raceDay, period: rows.racePeriod, outlook: rows.outlook };
     if (raceInfo.day) day = raceInfo.day;
     pickWeek = null;
-    load(rows, 'api');
+    load(rows);
     // Battle days open on This war, unless last war still has things to do.
     mode = 'end';
     const todo = model.season === model.latest && evaluate().some(p => !p.gone && ACTIONS.includes(p.res.status) && !(p.done && (p.done.auto || p.done.manual)));
     setMode(raceInfo.day && !todo ? 'live' : 'end');
     say('Updated ' + fmtTime(Date.now()) + (hist?.events?.length ? ' · history since ' + fmtDate(model.history.since) : ''));
   } catch (e) {
-    const msg = viaSite && e === 501 ? 'This site has no key. Add your own below.'
-      : viaSite && e === 403 ? 'This site only works for its own clan'
-      : e === 403 ? 'Key refused. Check the allowed IP.'
+    const msg = e === 501 ? "This site has no Clash Royale key yet (see the setup guide)."
+      : e === 403 ? 'This site only works for its own clan'
       : e === 404 ? 'Clan not found' : typeof e === 'number' ? 'Error ' + e : "Couldn't connect";
     say(msg, true);
-    if (e === 403 || e === 501) $('#other').open = true;
   }
 }
 
-async function addFiles(files) {
-  const rows = source === 'api' ? { roster: [], log: [], race: [], history: [] } : { ...(data.__rows || data) };
-  pickWeek = null;
-  hist = null; raceInfo = { week: null, day: 0, period: null };
-  const bad = [];
-  for (const f of files) { const r = parseCSV(await f.text()), kind = detect(r); if (kind) rows[kind] = r; else bad.push(f.name); }
-  load(rows, 'csv');
-  if (rows.race.length) { day = guessDay(model.players); $('#day').value = day; }
-  if (rows.race.length && !rows.log.length && !rows.history.length) setMode('live');
-  const have = [['roster', 'Members'], ['log', 'War log'], ['race', 'Race']].map(([k, n]) => (rows[k].length ? '✓ ' : '✗ ') + n);
-  say(have.join('   ') + (bad.length ? '   · not recognised: ' + bad.join(', ') : ''));
-}
 
 // Decks on each battle day of this war: finished days from history, yesterday exact (war total minus today), today
 // live. null = not known. counts(k): whether day k counted for them (not excused; joined before that day).
@@ -306,7 +283,7 @@ function raceBox() {
 function contextLine() {
   if (!model) return '';
   if (mode === 'end') return model.season ? '' : 'No finished war found';
-  if (source === 'api' && !raceInfo.day) return `War ${raceInfo.week || ''}: training days. Battle days haven't started.`;
+  if (!raceInfo.day) return `War ${raceInfo.week || ''}: training days. Battle days haven't started.`;
   const o = raceInfo.outlook, st = o?.rows || [], i = st.findIndex(c => c.tag === model.clan.tag);
   const place = i >= 0 ? ` · ${nth(i)} of ${st.length} clans` : '';
   return `${raceInfo.week ? 'War ' + raceInfo.week + ': ' : ''}battle day ${day} of 4${place}`;
@@ -319,10 +296,9 @@ function weekPicker() {
 
 function render() {
   renderRules();
-  $('#daywrap').classList.toggle('hidden', !(mode === 'live' && source === 'csv'));
   if (!model || !model.players.length) return;
   $('#context').innerHTML = weekPicker() + `<span>${esc(contextLine())}</span>` + raceBox();
-  if (mode === 'live' && source === 'api' && !raceInfo.day) {
+  if (mode === 'live' && !raceInfo.day) {
     $('#steps').classList.add('hidden'); syncMsgBox();
     $('#chips').innerHTML = ''; $('#groups').innerHTML = '<div class="empty">Nothing to check until battle day 1.</div>';
     $('#cards').innerHTML = '<div class="empty">Nothing yet</div>'; renderLog(); return;
@@ -676,7 +652,6 @@ function renderRules() {
   $('#leader').classList.toggle('hidden', !site.edit);
   $('#saverules').classList.toggle('hidden', !codeOk);
   $('#discordrow').classList.toggle('hidden', !(codeOk && site.discord));
-  $('#importrow').classList.toggle('hidden', !(codeOk && site.history));
   $('#codehint').textContent = codeOk ? `Leader code accepted${leaderName && leaderName !== 'Leader' ? ' (' + leaderName + ')' : ''}. Changes are saved for everyone. Remembered on this device.` : 'With the leader code, your changes are saved for everyone.';
 }
 
@@ -721,19 +696,11 @@ function exportMd() {
 }
 
 // events
-const drop = $('#drop');
-['dragover', 'dragenter'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
-['dragleave', 'drop'].forEach(e => drop.addEventListener(e, () => drop.classList.remove('over')));
-drop.addEventListener('drop', ev => { ev.preventDefault(); addFiles(ev.dataTransfer.files); });
-$('#pick').addEventListener('change', e => addFiles(e.target.files));
 $('#pull').onclick = pull;
 $('#refresh').onclick = requestUpdate;
-$('#tag').addEventListener('input', setLinks);
 $('#tag').addEventListener('keydown', e => { if (e.key === 'Enter') pull(); });
-$('#savekey').onclick = () => { settings.key = $('#key').value.trim(); put('cr-war-audit:settings', settings); $('#other').open = false; say(settings.key ? 'Key saved' : 'Key removed'); };
 $('#m-end').onclick = () => setMode('end');
 $('#m-live').onclick = () => setMode('live');
-$('#day').onchange = e => { day = +e.target.value; render(); };
 $('#savecode').onclick = async () => {
   const c = $('#code').value.trim();
   codeOk = await checkCode(c);
@@ -793,7 +760,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target, p = model && model.players.find(x => x.tag === (el.dataset.join || el.dataset.over));
   if (el.id === 'showgone') { showGone = el.checked; put('cr-war-audit:showGone', showGone); render(); return; }
-  if (el.id === 'week') { pickWeek = el.value === model.latest ? null : el.value; load(data.__rows, source); return; }
+  if (el.id === 'week') { pickWeek = el.value === model.latest ? null : el.value; load(data.__rows); return; }
   if (el.dataset.join && p) setNote('join', p, el.value);
   if (el.dataset.over && p) setNote('over', p, el.value);
   if (el.dataset.rule) setRule(el.dataset.rule, el.type === 'checkbox' ? el.checked : el.value);
@@ -920,34 +887,11 @@ document.addEventListener('click', e => {
   else { tip.remove(); b.setAttribute('aria-expanded', 'false'); }
 }, true);
 
-// ---- Import older wars (RoyaleAPI "War log" or "War history" CSV exports): adds only wars the tracker doesn't have ----
-$('#importfile').addEventListener('change', async e => {
-  const msg = $('#importmsg'), rows = [];
-  for (const f of e.target.files) {
-    const r = parseCSV(await f.text()), kind = detect(r);
-    const log = kind === 'log' ? r : kind === 'history' ? historyToLog(r) : [];
-    for (const x of log) rows.push({ week: x.season_key, tag: cleanTag(x.player_tag), name: cleanName(x.player_name), fame: +x.player_fame || 0, decks: +x.player_decks_used || 0, boats: x.player_boat_attacks === '' ? null : +x.player_boat_attacks || 0 });
-  }
-  e.target.value = '';
-  if (!rows.length) { msg.textContent = 'No war rows found. Use RoyaleAPI\'s War log or War history export.'; return; }
-  msg.textContent = 'Importing…';
-  try {
-    const r = await fetch('api/import?clan=' + (model?.clan.tag || cleanInputTag()), { method: 'POST', headers: { 'content-type': 'application/json', 'X-Edit-Key': settings.code }, body: JSON.stringify({ rows }) });
-    const j = await r.json();
-    if (!r.ok) { msg.textContent = 'Failed: ' + (j.reason || r.status); return; }
-    msg.textContent = j.imported.length
-      ? `Added ${j.imported.length} older war${j.imported.length === 1 ? '' : 's'} (${j.imported[0]} to ${j.imported[j.imported.length - 1]}).` + (j.skipped.length ? ` ${j.skipped.length} already tracked, left as they were.` : '')
-      : `Nothing new: all ${j.skipped.length} wars in the file are already tracked.`;
-    if (j.imported.length) pull();
-  } catch (err) { msg.textContent = "Couldn't import. Try again."; }
-});
-
 // ---- Check a player (recruits) ----
 async function checkPlayer() {
   const t = $('#ptag').value.trim().toUpperCase().replace(/^#/, '').replace(/O/g, '0'), out = $('#pout');
   if (!VALID_TAG.test(t)) { out.textContent = 'Check the player tag'; return; }
-  const viaSite = !settings.key && site.key;
-  const call = path => fetch((viaSite ? 'api/v1' : PROXY) + '/players/' + encodeURIComponent('#' + t) + path, viaSite ? {} : { headers: { Authorization: 'Bearer ' + settings.key } })
+  const call = path => fetch('api/v1/players/' + encodeURIComponent('#' + t) + path)
     .then(r => r.ok ? r.json() : Promise.reject(r.status));
   out.textContent = 'Checking…';
   try {
@@ -972,26 +916,22 @@ async function checkPlayer() {
       ['Last battle', last ? `${fmtDate(last)} ${fmtTime(last)}` : '–'],
     ];
     out.innerHTML = `<table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>`;
-  } catch (e) { out.textContent = e === 404 ? 'Player not found' : viaSite || settings.key ? "Couldn't load that player" : 'Needs the hosted site or your own key'; }
+  } catch (e) { out.textContent = e === 404 ? 'Player not found' : "Couldn't load that player"; }
 }
 $('#pcheck').onclick = checkPlayer;
 $('#statsbox').addEventListener('toggle', () => renderStats());
 $('#ptag').addEventListener('keydown', e => { if (e.key === 'Enter') checkPlayer(); });
 
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
-$('#key').value = settings.key || '';
 (async () => {
   if (/^https?:$/.test(location.protocol)) {
     try { const r = await fetch('api/status'); if (r.ok) site = { ...site, ...(await r.json()) }; } catch (e) {}
   }
-  if (site.key) { $('#setup').classList.add('hidden'); $('#other-sum').textContent = 'Use CSVs instead'; }
-  // A site set up for one clan: just that clan. No tag box, and no own-key/CSV options (those are for running the
-  // page on your own; a CSV only ever loads in the browser, but here it would just be confusing).
-  if (site.key && site.clans.length === 1) { $('#clanpick').classList.add('hidden'); $('#other').classList.add('hidden'); }
+  // A site set up for one clan just shows that clan (no tag box).
+  if (site.key && site.clans.length === 1) $('#clanpick').classList.add('hidden');
   const hashTag = location.hash.replace(/^#/, '');
   $('#tag').value = hashTag || settings.tag || (site.clans.length === 1 ? site.clans[0] : '');
-  setLinks();
   if (settings.code) { settings.tag ||= cleanInputTag(); codeOk = await checkCode(settings.code); $('#code').value = ''; }
   renderRules();
-  if ((settings.key || site.key) && VALID_TAG.test(cleanInputTag())) pull();
+  if (site.key && VALID_TAG.test(cleanInputTag())) pull();
 })();

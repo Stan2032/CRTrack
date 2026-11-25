@@ -62,7 +62,7 @@ Tests also run on GitHub Actions for every push and pull request.
 site/      the website: leaders' page, members' page, shared logic and stats
 worker/    the Cloudflare Worker: API, scheduled snapshots, history, Discord bot
 tests/     node test suites (in-memory SQLite, Playwright for the pages)
-samples/   real RoyaleAPI exports used by the tests
+samples/   real RoyaleAPI exports, used as test data
 docs/      setup, user guide and design notes
 ```
 

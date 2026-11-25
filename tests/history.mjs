@@ -184,44 +184,6 @@ console.log('History checks passed');
   console.log('Request limit checks passed');
 }
 
-// Importing older wars (RoyaleAPI exports): only wars not already tracked; nothing tracked is overwritten; leaders only.
-{
-  const { importWars, SCHEMA } = await import('../worker/history.js');
-  const { handleApi } = await import('../worker/api.js');
-  const { fakeD1 } = await import('./fake-d1.mjs');
-  const DB2 = fakeD1(), env2 = { DB: DB2, EDIT_KEY: 'code1234', ALLOWED_CLANS: 'PPCCR8VU' };
-  await DB2.exec(SCHEMA);
-  await DB2.exec(`INSERT INTO wars (clan,week,ended_at) VALUES ('PPCCR8VU','138-2','2026-11-16T09:43:00Z'); INSERT INTO war_players (clan,week,tag,name,fame,decks,boats) VALUES ('PPCCR8VU','138-2','2VJ9V2PV','Luke',2850,16,0)`);
-  const rows = [
-    { week: '135-1', tag: '#2vj9v2pv', name: 'Luke', fame: 2000, decks: 16, boats: null },
-    { week: '135-1', tag: 'YVJRGLCC', name: 'perc', fame: 1200, decks: 12, boats: 3 },
-    { week: '135-2', tag: '2VJ9V2PV', name: 'Luke', fame: 2100, decks: 16, boats: 0 },
-    { week: '138-2', tag: '2VJ9V2PV', name: 'Luke', fame: 1, decks: 1, boats: 0 },       // tracked already: left alone
-    { week: 'bad', tag: '2VJ9V2PV', fame: 1, decks: 1 }, { week: '135-1', tag: 'NOT A TAG', fame: 1, decks: 1 }, { week: '135-1', tag: 'YVJRGLCC', fame: 99999, decks: 1 },
-  ];
-  const r = await importWars(env2, 'PPCCR8VU', rows, 'Stan');
-  assert.deepEqual(r.imported, ['135-1', '135-2']); assert.deepEqual(r.skipped, ['138-2']); assert.equal(r.rows, 3); assert.equal(r.invalid, 3);
-  assert.equal((await DB2.prepare("SELECT fame FROM war_players WHERE week = '138-2' AND tag = '2VJ9V2PV'").first()).fame, 2850, 'tracked war untouched');
-  assert.equal((await DB2.prepare("SELECT ended_at FROM wars WHERE week = '135-1'").first()).ended_at, '', 'imported wars carry no date');
-  assert.match((await DB2.prepare("SELECT value, by FROM note_log WHERE kind = 'import'").first()).value, /2 wars: 135-1, 135-2/);
-  assert.deepEqual((await importWars(env2, 'PPCCR8VU', rows)).imported, [], 'importing again adds nothing');
-  // The page still builds with imported wars mixed in (they sort before the tracked ones).
-  const h = await readHistory(env2, 'PPCCR8VU', { weeks: 26 });
-  assert.ok(h.players.some(p => p.week === '135-1') && h.wars.length === 3);
-  // API: leader code required.
-  const call = (key, body) => handleApi(new Request('https://x.dev/api/import?clan=PPCCR8VU', { method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { 'X-Edit-Key': key } : {}) }, body: JSON.stringify(body) }), env2, {});
-  assert.equal((await call(null, { rows })).status, 401);
-  assert.equal((await (await call('code1234', { rows: [{ week: '134-4', tag: '2VJ9V2PV', name: 'Luke', fame: 1900, decks: 16 }] })).json()).imported[0], '134-4');
-  // A real RoyaleAPI "War history" export converts to rows the importer accepts.
-  const L = await import('../worker/logic.gen.js');
-  const { readFileSync } = await import('node:fs');
-  const csv = L.parseCSV(readFileSync(new URL('../samples/war-history.csv', import.meta.url), 'utf8'));
-  assert.equal(L.detect(csv), 'history');
-  const fromCsv = L.historyToLog(csv).map(x => ({ week: x.season_key, tag: x.player_tag, name: x.player_name, fame: +x.player_fame, decks: +x.player_decks_used, boats: null }));
-  const r3 = await importWars(env2, 'PPCCR8VU', fromCsv);
-  assert.equal(r3.imported.length, 9, 'the 10 wars in the export, minus the one tracked'); assert.equal(r3.invalid, 0);
-  console.log('Import checks passed');
-}
 
 // The race, on the real day log of war 138-3 (20 Nov 2026, just after the first reset): race points = place on that
 // day's medals (3,000/1,800/1,000/600/400) + defence bonus. Day 1: Bolo 25,350 medals → 3,012; us 21,150 (3rd) → 1,376.

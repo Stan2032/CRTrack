@@ -28,30 +28,12 @@
     <button class="btn main" id="pull">Load clan</button>
   </div>
   <div class="status" id="status" role="status"></div>
-  <details class="setup" id="other">
-    <summary id="other-sum">Other ways: own key or CSVs</summary>
-    <div id="setup">
-      <ol>
-        <li>Make a free key at <a href="https://developer.clashroyale.com" target="_blank" rel="noopener">developer.clashroyale.com</a></li>
-        <li>Allowed IP: <code>45.79.218.79</code> (<a href="https://docs.royaleapi.com/proxy.html" target="_blank" rel="noopener">RoyaleAPI proxy</a>)</li>
-        <li>Paste the key here. It stays on this device.</li>
-      </ol>
-      <div class="row"><input id="key" type="text" class="grow masked" placeholder="API key" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" aria-label="API key"><button class="btn" id="savekey">Save key</button></div>
-    </div>
-    <div class="links" id="links" style="margin-top:10px"></div>
-    <label class="drop" id="drop">Drop RoyaleAPI CSVs here
-      <input type="file" id="pick" multiple accept=".csv,text/csv" hidden>
-    </label>
-  </details>
 </section>
 
 <section class="step">
   <h2><span class="n">2</span>Who to act on <button class="q" data-help="act" aria-label="What is this?" aria-expanded="false">?</button></h2>
   <div class="row">
     <span class="seg" role="tablist"><button id="m-end" class="on" role="tab">Last war</button><button id="m-live" role="tab">This war</button></span>
-    <label id="daywrap" class="hidden">Battle day
-      <select id="day"><option value="1">1 of 4</option><option value="2">2 of 4</option><option value="3">3 of 4</option><option value="4">4 of 4</option></select>
-    </label>
   </div>
   <div id="context" class="context"></div>
   <div class="summary" id="chips"></div>
@@ -108,7 +90,6 @@
   <div id="leader" class="hidden" style="margin-top:14px">
     <div class="row"><input id="code" type="text" class="grow masked" placeholder="Leader code" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" aria-label="Leader code"><button class="btn" id="savecode">Use code</button></div>
     <div class="hint" id="codehint">With the leader code, your changes are saved for everyone.</div>
-    <div class="row hidden" id="importrow" style="margin-top:10px"><label class="btn small" for="importfile">Import older wars (RoyaleAPI CSV)</label><input type="file" id="importfile" accept=".csv,text/csv" multiple class="hidden"><span class="hint" id="importmsg"></span></div>
     <div class="row hidden" id="discordrow" style="margin-top:10px"><button class="btn small" id="discordreg">Register Discord commands</button><span class="hint" id="discordmsg"></span></div>
   </div>
 </details>
