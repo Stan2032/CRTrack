@@ -11,6 +11,24 @@
     --brand: #141313; --gold: #e8b94f; --gold-hi: #fcdf5e; --flame: #ff6b70; --on-gold: #1c1b1b;
   }
 }
+/* Display options (Aa button; ui.js). Dark chosen by hand, whatever the phone says. */
+:root[data-theme="dark"] {
+    --bg: #1c1b1b; --card: #262525; --line: #3d3b3b; --text: #efece6; --muted: #a39f98; --soft: #302f2f;
+    --green: #4cc46a; --red: #ff6b70; --orange: #e8833a; --yellow: #e2b341; --blue: #6cb2ff; --cyan: #45c9d3;
+    --brand: #141313; --gold: #e8b94f; --gold-hi: #fcdf5e; --flame: #ff6b70; --on-gold: #1c1b1b;
+}
+/* Colour-blind safe (Okabe & Ito palette): blue for good, vermillion for bad, reddish purple instead of orange. */
+:root[data-colours="cb"] { --green: #0b63a8; --red: #b34a00; --orange: #8f3f73; }
+:root[data-colours="cb"][data-theme="dark"] { --green: #56b4e9; --red: #ff8f4d; --orange: #e08fc0; }
+@media (prefers-color-scheme: dark) { :root[data-colours="cb"]:not([data-theme="light"]) { --green: #56b4e9; --red: #ff8f4d; --orange: #e08fc0; } }
+/* High contrast: secondary text and lines much closer to the main text colour (also when the phone asks for more). */
+:root[data-contrast="high"] { --muted: color-mix(in srgb, var(--text) 85%, var(--bg)); --line: color-mix(in srgb, var(--text) 50%, var(--bg)); }
+@media (prefers-contrast: more) { :root { --muted: color-mix(in srgb, var(--text) 85%, var(--bg)); --line: color-mix(in srgb, var(--text) 50%, var(--bg)); } }
+/* Text size: the whole page scales, so layouts keep their proportions. */
+:root[data-text="large"] { zoom: 1.15; }
+:root[data-text="larger"] { zoom: 1.3; }
+:root[data-motion="reduce"] * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+
 * { box-sizing: border-box; }
 body { margin: 0 auto; max-width: 860px; padding: 16px 16px 48px; background: var(--bg); color: var(--text);
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -271,3 +289,34 @@ details.stepmsgs[open] > .stepmsg { margin-top: 8px; }
 
 .rule.text { display: grid; gap: 6px; }
 .rule.text input { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; }
+
+/* Display button and panel */
+h1 .dispbtn { margin-left: auto; background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; font: inherit; font-size: 15px; font-weight: 700; padding: 4px 10px; cursor: pointer; }
+.display { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--text); padding: 0; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+.display::backdrop { background: rgba(0,0,0,.45); }
+.disp { padding: 14px 16px 16px; display: grid; gap: 12px; }
+.disp-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; }
+.disp fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.disp legend { font-weight: 600; font-size: 14px; padding: 0; margin-bottom: 6px; }
+.disp .seg { width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.disp .seg button { font-size: 13px; padding: 6px 10px; }
+
+/* Compact layout: one line per player */
+.p.compact { padding: 7px 2px; }
+.cline { display: flex; align-items: center; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.cline .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cline .cnum { flex: none; color: var(--muted); }
+.cline .cwhy { flex: 1 1 0; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cline .tick, .cline .fcb { flex: none; font-size: 11px; padding: 3px 8px; }
+
+/* Table layout */
+.tscroll { overflow-x: auto; margin: 4px 0 8px; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ptable th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ptable td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ptable td.num, .ptable th.num { text-align: right; white-space: nowrap; }
+.ptable td.note { color: var(--muted); font-size: 12px; min-width: 140px; }
+.ptable tr.is-done td { opacity: .55; }
+.ptable .morerow td { background: var(--soft); }
+.ptable td.who .tick, .ptable td.who .fcb { margin-top: 5px; font-size: 11px; padding: 3px 8px; }
+.ptable td.note { min-width: 110px; }

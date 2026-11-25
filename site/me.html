@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My War Stats</title>
 <link rel="stylesheet" href="style.css">
+<script>/* display options early, to avoid a flash of the wrong theme (full code in ui.js) */try{var d=JSON.parse(localStorage.getItem('cr-war-audit:display'))||{};['theme','contrast','text','colours','motion'].forEach(function(k){if(d[k]&&!/^(auto|normal|standard)$/.test(d[k]))document.documentElement.dataset[k]=d[k];});}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
@@ -12,7 +13,8 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141313">
 </head>
 <body>
-<h1><img src="icons/clan-badge.svg" alt="" class="badge">My War Stats</h1>
+<h1><img src="icons/clan-badge.svg" alt="" class="badge">My War Stats<button type="button" class="dispbtn" id="dispbtn" aria-label="Display options" aria-haspopup="dialog">Aa</button></h1>
+<dialog id="display" class="display" aria-label="Display options"></dialog>
 <div id="sub">Your own war progress and history</div>
 
 <section class="step">

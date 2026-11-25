@@ -73,3 +73,46 @@ function rulesExplained(r, opts = {}) {
     .reduce((acc, t) => { const last = acc[acc.length - 1]; if (last && last.length + 1 + t.length <= r.chatLimit) acc[acc.length - 1] = last + '\n' + t; else acc.push(t); return acc; }, []);
   return { sections, chat };
 }
+
+// ---- Display options (saved on this device). Each one rests on a standard or established guidance; see
+// docs/UI-GUIDE.md. "Auto" follows the phone's own setting where the phone has one.
+const DISPLAY = {
+  layout: { label: 'Layout', leaders: true, hint: 'Cards: one player at a time. Compact: scan a long list. Table: compare players.',
+    choices: [['cards', 'Cards'], ['compact', 'Compact'], ['table', 'Table']] },
+  sort: { label: 'Order within each group', leaders: true, choices: [['suggested', 'Suggested'], ['medals', 'Most medals'], ['name', 'Name']] },
+  theme: { label: 'Theme', choices: [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']] },
+  contrast: { label: 'Contrast', choices: [['auto', 'Auto'], ['high', 'High']] },
+  text: { label: 'Text size', choices: [['normal', 'Normal'], ['large', 'Large'], ['larger', 'Larger']] },
+  colours: { label: 'Colours', hint: 'Colour-blind safe: blue for good, orange for bad, instead of green and red.',
+    choices: [['standard', 'Standard'], ['cb', 'Colour-blind safe']] },
+  motion: { label: 'Motion', choices: [['auto', 'Auto'], ['reduce', 'Reduce']] },
+};
+const DISPLAY_ATTRS = ['theme', 'contrast', 'text', 'colours', 'motion'];   // set on <html> as data-* for the CSS
+function displayPrefs() {
+  const p = get('cr-war-audit:display', {}) || {};
+  return Object.fromEntries(Object.entries(DISPLAY).map(([k, s]) => [k, s.choices.some(c => c[0] === p[k]) ? p[k] : s.choices[0][0]]));
+}
+function applyDisplay(p = displayPrefs()) {
+  const root = document.documentElement;
+  for (const k of DISPLAY_ATTRS) { if (p[k] === DISPLAY[k].choices[0][0]) delete root.dataset[k]; else root.dataset[k] = p[k]; }
+}
+// The Display panel: a dialog of one-tap choices. leaders: also show layout and order. onChange: re-draw the page.
+function setupDisplay(leaders, onChange = () => {}) {
+  const btn = document.getElementById('dispbtn'), dlg = document.getElementById('display');
+  if (!btn || !dlg) return;
+  const draw = () => {
+    const p = displayPrefs();
+    dlg.innerHTML = `<form method="dialog" class="disp"><div class="disp-head"><b>Display</b><button class="btn small" value="close">Done</button></div>
+      ${Object.entries(DISPLAY).filter(([, s]) => leaders || !s.leaders).map(([k, s]) => `<fieldset><legend>${esc(s.label)}</legend>
+        <span class="seg" role="radiogroup" aria-label="${esc(s.label)}">${s.choices.map(([v, l]) => `<button type="button" role="radio" data-disp="${k}|${v}" aria-checked="${p[k] === v}" class="${p[k] === v ? 'on' : ''}">${esc(l)}</button>`).join('')}</span>
+        ${s.hint ? `<div class="hint">${esc(s.hint)}</div>` : ''}</fieldset>`).join('')}
+      <div class="hint">Saved on this device only.</div></form>`;
+  };
+  btn.onclick = () => { draw(); dlg.showModal(); };
+  dlg.addEventListener('click', e => {
+    const b = e.target.closest('[data-disp]');
+    if (b) { const [k, v] = b.dataset.disp.split('|'); put('cr-war-audit:display', { ...displayPrefs(), [k]: v }); applyDisplay(); draw(); onChange(); }
+    else if (e.target === dlg) dlg.close();   // tap outside to close
+  });
+}
+applyDisplay();

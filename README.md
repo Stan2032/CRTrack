@@ -32,6 +32,7 @@ Discord bot posts the war board, reminders and daily summaries.
 - **Discord bot:** builds the server's roles and channels, verified account linking, war board, reminders, summaries
   and a weekly digest for leaders.
 - **Members' page:** each player sees their own record and forecast.
+- **Display options:** cards, compact list or table; theme, contrast, text size, colour-blind safe colours, reduced motion.
 
 ## How it works
 

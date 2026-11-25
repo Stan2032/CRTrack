@@ -68,3 +68,4 @@ $('#explain').innerHTML = rulesExplained(DEFAULT_RULES).sections.map(([h, ps]) =
 const start = location.hash.replace(/^#/, '') || get('cr-war-audit:me', '');
 if (start) { $('#tag').value = start; show(); }
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+setupDisplay(false);

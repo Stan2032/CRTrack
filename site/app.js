@@ -205,7 +205,8 @@ function warPips(p) {
 // New to the clan: in this war's view, no finished war with us at all (last war counts as history); for a finished
 // war, none before that war.
 const isNewNow = p => mode === 'live' ? !p.weeks.length : p.isNew;
-function row(p) {
+// Everything shown for one player, in any layout (cards, compact, table).
+function rowParts(p) {
   const r = rules(), role = p.roleNow || p.role;
   const tags = `${ROLE[role] ? `<span class="role">${ROLE[role]}</span>` : ''}${isNewNow(p) && !p.gone ? '<span class="new">NEW</span>' : ''}${p.linked ? '<span class="linked" title="Linked on Discord" aria-label="Linked on Discord">🔗</span>' : ''}`;
   let facts, right = '';
@@ -243,10 +244,34 @@ function row(p) {
   const ask = isNewNow(p) && !p.gone && !p.joinAuto && !note('join', p) && (mode === 'live' || p.cur)
     ? `<div class="ask">Joined when? ${joinSelect(p)}</div>` : decide;
   const isDone = p.done && (p.done.auto || p.done.manual);
-  return `<div class="p ${isDone ? 'is-done' : ''}">
-    <div class="top"><button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>${tags}<span class="grow"></span>${right}</div>
-    <div class="facts">${facts}</div>${why ? `<div class="why">${esc(why)}</div>` : ''}${ask}
+  // Short numbers for the compact and table layouts.
+  const nums = mode === 'end'
+    ? [p.cur ? p.cur.fame.toLocaleString() : '–', p.cur ? `${p.cur.decks}/16` : '–']
+    : [p.res.fame.toLocaleString(), `${p.res.today}/4`, `${p.warDecks || 0}/16`];
+  const nameBtn = `<button class="name" data-more="${esc(p.tag)}" aria-expanded="false">${esc(p.name)} <span class="chev">›</span></button>`;
+  // The short layouts lead with the reason itself ("Changed by a leader" shows in the full card and the details).
+  const brief = why.replace(/^(Changed by a leader|Saved result)( · )?/, '');
+  return { tags, facts, right, why, brief, ask, isDone, nums, nameBtn };
+}
+const NUM_HEADS = () => mode === 'end' ? ['Medals', 'Decks'] : ['Medals', 'Today', 'War'];
+function row(p) {
+  const x = rowParts(p), layout = displayPrefs().layout;
+  if (layout === 'compact') return `<div class="p compact ${x.isDone ? 'is-done' : ''}">
+    <div class="cline">${x.nameBtn}${x.nums.map(n => `<span class="cnum">${n}</span>`).join('')}<span class="cwhy" title="${esc(x.why)}">${esc(x.brief)}</span>${x.right}</div>${x.ask}
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
+  return `<div class="p ${x.isDone ? 'is-done' : ''}">
+    <div class="top">${x.nameBtn}${x.tags}<span class="grow"></span>${x.right}</div>
+    <div class="facts">${x.facts}</div>${x.why ? `<div class="why">${esc(x.why)}</div>` : ''}${x.ask}
+    <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
+}
+// Table layout: one table per group, so players can be compared side by side.
+function rowsTable(ps) {
+  const heads = NUM_HEADS();
+  return `<div class="tscroll"><table class="ptable"><thead><tr><th>Player</th>${heads.map(h => `<th class="num">${h}</th>`).join('')}<th>Note</th></tr></thead><tbody>${ps.map(p => {
+    const x = rowParts(p);
+    return `<tr class="${x.isDone ? 'is-done' : ''}"><td class="who">${x.nameBtn}${x.tags}${x.right ? `<div>${x.right}</div>` : ''}</td>${x.nums.map(n => `<td class="num">${n}</td>`).join('')}<td class="note">${esc(x.brief)}${x.ask}</td></tr>
+      <tr class="morerow hidden" id="m-${esc(p.tag)}"><td colspan="${heads.length + 2}">${more(p)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
 }
 
 // Daily reset time in UK time, from when the last war ended (wars end at the daily reset).
@@ -307,8 +332,12 @@ function render() {
   const list = showGone ? all : all.filter(p => !p.gone);
   const groups = mode === 'end' ? GROUPS_END : GROUPS_LIVE;
   const isDone = p => !!(p.done && (p.done.auto || p.done.manual));
-  const sortKey = p => (isDone(p) ? 1e6 : 0) + (mode === 'end' ? (p.cur?.fame ?? 0) : p.res.today * 10000 + p.res.fame);
-  const parts = groups.map(s => [s, list.filter(p => p.res.status === s).sort((a, b) => sortKey(a) - sortKey(b))]).filter(g => g[1].length);
+  // Order within a group (Display → Order): suggested (fewest medals / decks first), most medals, or name. Done always last.
+  const how = displayPrefs().sort, medals = p => mode === 'end' ? (p.cur?.fame ?? 0) : p.res.fame;
+  const cmp = (a, b) => (isDone(a) - isDone(b)) || (how === 'name' ? a.name.localeCompare(b.name)
+    : how === 'medals' ? medals(b) - medals(a)
+    : (mode === 'end' ? medals(a) - medals(b) : (a.res.today * 10000 + a.res.fame) - (b.res.today * 10000 + b.res.fame)));
+  const parts = groups.map(s => [s, list.filter(p => p.res.status === s).sort(cmp)]).filter(g => g[1].length);
 
   if (mode === 'end') {
     const todo = ACTIONS.map(s => [s, list.filter(p => p.res.status === s && !isDone(p)).length]).filter(x => x[1]);
@@ -328,7 +357,7 @@ function render() {
     const d = ps.filter(isDone).length;
     const allDone = ACTIONS.includes(s) && ps.length && d === ps.length;
     const head = `${esc(label(s))} <span class="count">${ps.length}${allDone ? ' ✓ all done' : d ? `, ${d} done` : ''}</span>`;
-    const body = ps.map(row).join('');
+    const body = displayPrefs().layout === 'table' ? rowsTable(ps) : ps.map(row).join('');
     return FOLDED.includes(s) || allDone ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
@@ -922,6 +951,7 @@ $('#pcheck').onclick = checkPlayer;
 $('#statsbox').addEventListener('toggle', () => renderStats());
 $('#ptag').addEventListener('keydown', e => { if (e.key === 'Enter') checkPlayer(); });
 
+setupDisplay(true, () => { if (model) render(); });
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
 (async () => {
   if (/^https?:$/.test(location.protocol)) {

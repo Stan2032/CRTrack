@@ -40,3 +40,19 @@ The rules this app's screens and wording follow, and where each comes from.
 | Out | Can't reach 1800 |
 | Need | Still needs medals |
 | Safe | Reached 1800 |
+
+## Display options (Aa button)
+
+Each option rests on a standard or established guidance, and is saved on that device only. "Auto" follows the
+phone's own setting.
+
+| Option | Choices | Basis |
+|---|---|---|
+| Layout | Cards · Compact · Table | Cards suit reviewing one record at a time, lists suit fast scanning, tables suit comparing records ([Smart Interface Design Patterns](https://smart-interface-design-patterns.com/articles/cards-vs-lists-vs-tables-vs-data-grids/); [uxdesign.cc](https://uxdesign.cc/how-to-design-data-tables-for-phones-7ed6b04da10)) |
+| Order within each group | Suggested · Most medals · Name | Recognition over recall: find a name, or see the strongest first |
+| Theme | Auto · Light · Dark | `prefers-color-scheme`, with a manual override ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Using_for_accessibility)) |
+| Contrast | Auto · High | `prefers-contrast` ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-contrast)); WCAG 1.4.3/1.4.6 contrast |
+| Text size | Normal · Large · Larger | WCAG 1.4.4 Resize Text: enlarged without loss of content |
+| Colours | Standard · Colour-blind safe | WCAG 1.4.1 Use of Color; Okabe & Ito's colour-blind-safe palette (blue / vermillion / reddish purple) |
+| Motion | Auto · Reduce | `prefers-reduced-motion` ([MDN](https://developer.mozilla.org/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion)); WCAG 2.3.3 |
+

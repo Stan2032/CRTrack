@@ -53,6 +53,16 @@ try {
   await p.click('button[data-help="stats"]');
   assert.match(await p.textContent('#chips'), /To do:/);
   assert.match(await p.textContent('#groups'), /Kick/);
+  // Display options: the panel opens; layouts redraw the player rows; theme etc. set data-* on <html>; remembered.
+  { await p.click('#dispbtn'); assert.ok(await p.locator('#display[open]').count(), 'Display panel opens');
+    await p.click('[data-disp="layout|compact"]'); assert.ok(await p.locator('#groups .p.compact').count() > 0, 'compact rows');
+    await p.click('[data-disp="layout|table"]'); assert.ok(await p.locator('#groups table.ptable').count() > 0, 'tables');
+    await p.click('[data-disp="theme|dark"]'); await p.click('[data-disp="colours|cb"]'); await p.click('[data-disp="text|large"]');
+    assert.deepEqual({ ...(await p.evaluate(() => ({ ...document.documentElement.dataset }))) }, { theme: 'dark', colours: 'cb', text: 'large' });
+    await p.reload(); await p.waitForLoadState('networkidle');
+    assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark', 'remembered after a reload (and applied before drawing)');
+    await p.evaluate(() => localStorage.removeItem('cr-war-audit:display')); await p.reload(); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
+    assert.equal(await p.locator('#groups .p.compact, #groups table.ptable').count(), 0, 'back to cards by default'); }
   assert.ok(await p.locator('#clanpick').isHidden() && await p.locator('#other').isHidden(), 'a one-clan site shows just that clan: no tag box or CSV/own-key options');
   // A day after the war, a suggested kick that hasn't happened asks what was decided; one tap records it.
   { const n0 = await p.locator('[data-decide]').count();
