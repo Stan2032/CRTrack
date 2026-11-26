@@ -1160,7 +1160,8 @@ export async function postBackup(env, clan, onlyGuild = null, now = Date.now()) 
 //   Step 3: a pinned note in each channel, rival scouting
 //   Step 4 (fresh only): delete the old channels
 const P = { VIEW: 1n << 10n, SEND: 1n << 11n, EMBED: 1n << 14n, ATTACH: 1n << 15n, HISTORY: 1n << 16n, REACT: 1n << 6n, APPS: 1n << 31n,
-  INVITE: 1n << 0n, CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n };
+  INVITE: 1n << 0n, CONNECT: 1n << 20n, SPEAK: 1n << 21n, MANAGE_CHANNELS: 1n << 4n, MANAGE_GUILD: 1n << 5n, MANAGE_ROLES: 1n << 28n, MANAGE_NICK: 1n << 27n, ADMIN: 1n << 3n, MENTION_ALL: 1n << 17n };
+const byIdPerm = (roles, id) => roles.find(x => x.id === id)?.permissions || '0';
 const bits = (...k) => String(k.reduce((t, x) => t | P[x], 0n));
 const CHAT = bits('VIEW', 'SEND', 'HISTORY', 'REACT', 'EMBED', 'ATTACH', 'APPS'), READ = bits('VIEW', 'HISTORY', 'REACT', 'APPS');
 const BOT = bits('VIEW', 'SEND', 'HISTORY', 'EMBED', 'ATTACH');
@@ -1388,6 +1389,20 @@ export async function whoSees(env, guild, cfg) {
   if (nobody.length) out.push(`**Hidden from every role:** ${nobody.map(c => `<#${c.id}>`).join(' ')}`);
   for (const spec of SPECS) if (!list.some(c => spec.match.test(plain(c.name)) && c.type === (spec.type || 0))) out.push(`⚠️ Missing: ${spec.name}. Run \`/setup auto apply:True\` to add it.`);
   if (!r.guest) out.push('_No Not in clan role yet: run `/setup auto apply:True`._');
+  // The bot can only give or take roles below its own highest role, and needs these server permissions for sync.
+  const me = await dapi(env, 'GET', `/guilds/${guild}/members/${env.DISCORD_APP_ID}`).catch(() => null);
+  if (me) {
+    const byId = Object.fromEntries(roles.map(x => [x.id, x])), top = Math.max(0, ...(me.roles || []).map(id => byId[id]?.position ?? 0));
+    const perms = [guild, ...(me.roles || [])].reduce((t, id) => t | BigInt(byId[id]?.permissions || '0'), 0n);
+    const above = Object.entries(r).filter(([, id]) => byId[id] && byId[id].position >= top).map(([, id]) => byId[id].name);
+    if (above.length) out.push(`⚠️ War Audit's role is below **${above.join(', ')}**, so it can't give or take ${above.length === 1 ? 'that role' : 'those roles'}. Server Settings → Roles: drag **War Audit** above them.`);
+    const need = [['MANAGE_ROLES', 'Manage Roles'], ['MANAGE_NICK', 'Manage Nicknames'], ['MANAGE_CHANNELS', 'Manage Channels']].filter(([k]) => (perms & P.ADMIN) !== P.ADMIN && (perms & P[k]) !== P[k]).map(([, n]) => n);
+    if (need.length) out.push(`⚠️ War Audit is missing **${need.join(', ')}** (Server Settings → Roles → War Audit).`);
+    if (!above.length && !need.length) out.push('✅ War Audit can manage every clan role and nickname.');
+  }
+  // Server-wide permissions everyone gets (the @everyone role): flag the risky ones.
+  const ev = BigInt(byIdPerm(roles, guild)), risky = [['ADMIN', 'Administrator'], ['MANAGE_GUILD', 'Manage Server'], ['MANAGE_ROLES', 'Manage Roles'], ['MANAGE_CHANNELS', 'Manage Channels'], ['MENTION_ALL', 'Mention @everyone']].filter(([k]) => (ev & P[k]) === P[k]).map(([, n]) => n);
+  if (risky.length) out.push(`⚠️ **Everyone** (even newcomers) has **${risky.join(', ')}**. Server Settings → Roles → @everyone: turn ${risky.length === 1 ? 'it' : 'them'} off.`);
   out.push('_(read) = can see but not post. Server owner and Administrators always see everything._');
   return out.join('\n');
 }

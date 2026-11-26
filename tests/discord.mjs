@@ -477,6 +477,20 @@ assert.equal(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G
   assert.match(ws, /\*\*Not in clan:\*\* <#NEWCH-notinclan>\n/);
   assert.match(ws, /\*\*Member:\*\* [^\n]*<#NEWCH-clanstats> \(read\)/); assert.doesNotMatch(ws.split('\n').find(l => l.startsWith('**Member')), /linktag|leaders|notinclan|can invite/);
   assert.match(ws, /\*\*Leader:\*\* [^\n]*leaderchat[^\n]*· can invite/); assert.doesNotMatch(ws.split('\n').find(l => l.startsWith('**Member')), /leaderchat/);
+  // Role order and risky server-wide permissions: the bot's role below Leader can't manage it; @everyone pinging everyone is flagged.
+  const roleList = ok => [{ id: 'G3', position: 0, permissions: String(1n << 10n | (ok ? 0n : 1n << 17n)) }, { id: 'BOTR', position: ok ? 9 : 3, permissions: String(1n << 28n | 1n << 27n | 1n << 4n) },
+    { id: 'NEW-Not in clan', position: 1, permissions: '0' }, { id: 'RM3', position: 2, permissions: '0' }, { id: 'NEW-Elder', position: 2, permissions: '0' }, { id: 'NEW-Co-Leader', name: 'Co-Leader', position: 4, permissions: '1' }, { id: 'RL', name: 'Leader', position: 5, permissions: '1' }];
+  for (const ok of [false, true]) {
+    globalThis.fetch = async (url, opt = {}) => { const u = String(url);
+      if (/guilds\/G3\/channels$/.test(u)) return Response.json(made);
+      if (/guilds\/G3\/roles$/.test(u)) return Response.json(roleList(ok));
+      if (/guilds\/G3\/members\/A$/.test(u)) return Response.json({ roles: ['BOTR'] });
+      return realF(url, opt); };
+    const w2 = await whoSees(env, 'G3', JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:G3'").first()).v));
+    globalThis.fetch = realF;
+    if (!ok) { assert.match(w2, /below \*\*[^*]*Leader[^*]*\*\*/, 'bot role below Leader/Co-Leader'); assert.match(w2, /Everyone\*\* \(even newcomers\) has \*\*Mention @everyone\*\*/); }
+    else { assert.match(w2, /✅ War Audit can manage every clan role/); assert.doesNotMatch(w2, /⚠️ \*\*Everyone/); }
+  }
 }
 calls.length = 0;
 const untilNot = async (envx, re) => { let r; for (let k = 0; k < 6; k++) { r = await autoSetupNext(envx, 'G3', 'PPCCR8VU'); if (!re.test(r.content)) break; } return r; };
