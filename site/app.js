@@ -255,7 +255,7 @@ function rowParts(p) {
 }
 const NUM_HEADS = () => mode === 'end' ? ['Medals', 'Decks'] : ['Medals', 'Today', 'War'];
 function row(p) {
-  const x = rowParts(p), layout = displayPrefs().layout;
+  const x = rowParts(p), layout = layoutNow();
   if (layout === 'compact') return `<div class="p compact ${x.isDone ? 'is-done' : ''}">
     <div class="cline">${x.nameBtn}${x.nums.map(n => `<span class="cnum">${n}</span>`).join('')}<span class="cwhy" title="${esc(x.why)}">${esc(x.brief)}</span>${x.right}</div>${x.ask}
     <div class="morewrap hidden" id="m-${esc(p.tag)}">${more(p)}</div></div>`;
@@ -338,6 +338,10 @@ function render() {
     : how === 'medals' ? medals(b) - medals(a)
     : (mode === 'end' ? medals(a) - medals(b) : (a.res.today * 10000 + a.res.fame) - (b.res.today * 10000 + b.res.fame)));
   const parts = groups.map(s => [s, list.filter(p => p.res.status === s).sort(cmp)]).filter(g => g[1].length);
+  // Layout switch right above the players (also in Display). "Auto" is chosen in Display; here it shows what Auto picked.
+  const lay = layoutNow(), auto = displayPrefs().layout === 'auto';
+  $('#layoutbar').innerHTML = `<span class="seg" role="radiogroup" aria-label="Layout">${[['cards', 'Cards'], ['compact', 'Compact'], ['table', 'Table']].map(([v, l]) =>
+    `<button type="button" role="radio" data-layout="${v}" aria-checked="${lay === v}" class="${lay === v ? 'on' : ''}">${l}</button>`).join('')}</span>${auto ? '<span class="muted"> auto</span>' : ''}`;
 
   if (mode === 'end') {
     const todo = ACTIONS.map(s => [s, list.filter(p => p.res.status === s && !isDone(p)).length]).filter(x => x[1]);
@@ -357,7 +361,7 @@ function render() {
     const d = ps.filter(isDone).length;
     const allDone = ACTIONS.includes(s) && ps.length && d === ps.length;
     const head = `${esc(label(s))} <span class="count">${ps.length}${allDone ? ' ✓ all done' : d ? `, ${d} done` : ''}</span>`;
-    const body = displayPrefs().layout === 'table' ? rowsTable(ps) : ps.map(row).join('');
+    const body = layoutNow() === 'table' ? rowsTable(ps) : ps.map(row).join('');
     return FOLDED.includes(s) || allDone ? `<details class="group" id="g-${s}"><summary class="s-${s}">${head}</summary>${body}</details>`
       : `<div class="group" id="g-${s}"><h3 class="s-${s}">${head}</h3>${body}</div>`;
   }).join('');
@@ -768,6 +772,8 @@ document.addEventListener('click', e => {
       saveLocal(); render(); say(shared ? 'Saved for everyone' : 'Saved on this device');
     });
   }
+  const lb = e.target.closest('[data-layout]');
+  if (lb) { put('cr-war-audit:display', { ...displayPrefs(), layout: lb.dataset.layout }); return render(); }
   const md = e.target.closest('[data-msgday]');
   if (md) { msgDay = Number(md.dataset.msgday) || null; return render(); }
   const cs = e.target.closest('[data-copystep]');
@@ -952,6 +958,10 @@ $('#statsbox').addEventListener('toggle', () => renderStats());
 $('#ptag').addEventListener('keydown', e => { if (e.key === 'Enter') checkPlayer(); });
 
 setupDisplay(true, () => { if (model) render(); });
+// Auto layout: redraw when the screen changes size enough to switch (e.g. turning a tablet).
+let _lastLayout = null;
+window.addEventListener('resize', () => { const l = layoutNow(); if (model && _lastLayout && l !== _lastLayout) render(); _lastLayout = l; });
+_lastLayout = layoutNow();
 settings = { ...settings, ...get('cr-war-audit:settings', {}) };
 (async () => {
   if (/^https?:$/.test(location.protocol)) {

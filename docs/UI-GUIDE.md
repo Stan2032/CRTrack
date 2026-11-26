@@ -48,11 +48,12 @@ phone's own setting.
 
 | Option | Choices | Basis |
 |---|---|---|
-| Layout | Cards · Compact · Table | Cards suit reviewing one record at a time, lists suit fast scanning, tables suit comparing records ([Smart Interface Design Patterns](https://smart-interface-design-patterns.com/articles/cards-vs-lists-vs-tables-vs-data-grids/); [uxdesign.cc](https://uxdesign.cc/how-to-design-data-tables-for-phones-7ed6b04da10)) |
+| Layout | Auto · Cards · Compact · Table (switch also above the list) | Auto: cards under 720px wide, a table above.  Cards suit reviewing one record at a time, lists suit fast scanning, tables suit comparing records ([Smart Interface Design Patterns](https://smart-interface-design-patterns.com/articles/cards-vs-lists-vs-tables-vs-data-grids/); [uxdesign.cc](https://uxdesign.cc/how-to-design-data-tables-for-phones-7ed6b04da10)) |
 | Order within each group | Suggested · Most medals · Name | Recognition over recall: find a name, or see the strongest first |
 | Theme | Auto · Light · Dark | `prefers-color-scheme`, with a manual override ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Using_for_accessibility)) |
 | Contrast | Auto · High | `prefers-contrast` ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-contrast)); WCAG 1.4.3/1.4.6 contrast |
 | Text size | Normal · Large · Larger | WCAG 1.4.4 Resize Text: enlarged without loss of content |
+| Text spacing | Normal · Wider | WCAG 1.4.12 Text Spacing (line height 1.5+, letter 0.12em, word 0.16em); helps some readers, including with dyslexia, where special "dyslexia fonts" haven't been shown to help |
 | Colours | Standard · Colour-blind safe | WCAG 1.4.1 Use of Color; Okabe & Ito's colour-blind-safe palette (blue / vermillion / reddish purple) |
 | Motion | Auto · Reduce | `prefers-reduced-motion` ([MDN](https://developer.mozilla.org/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion)); WCAG 2.3.3 |
 

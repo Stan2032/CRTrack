@@ -77,21 +77,24 @@ function rulesExplained(r, opts = {}) {
 // ---- Display options (saved on this device). Each one rests on a standard or established guidance; see
 // docs/UI-GUIDE.md. "Auto" follows the phone's own setting where the phone has one.
 const DISPLAY = {
-  layout: { label: 'Layout', leaders: true, hint: 'Cards: one player at a time. Compact: scan a long list. Table: compare players.',
-    choices: [['cards', 'Cards'], ['compact', 'Compact'], ['table', 'Table']] },
+  layout: { label: 'Layout', leaders: true, hint: 'Auto: cards on a phone, a table on a wider screen. Cards: one player at a time. Compact: scan a long list. Table: compare players.',
+    choices: [['auto', 'Auto'], ['cards', 'Cards'], ['compact', 'Compact'], ['table', 'Table']] },
   sort: { label: 'Order within each group', leaders: true, choices: [['suggested', 'Suggested'], ['medals', 'Most medals'], ['name', 'Name']] },
   theme: { label: 'Theme', choices: [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']] },
   contrast: { label: 'Contrast', choices: [['auto', 'Auto'], ['high', 'High']] },
   text: { label: 'Text size', choices: [['normal', 'Normal'], ['large', 'Large'], ['larger', 'Larger']] },
+  spacing: { label: 'Text spacing', hint: 'Wider: more space between letters, words and lines (easier for some readers).', choices: [['normal', 'Normal'], ['wide', 'Wider']] },
   colours: { label: 'Colours', hint: 'Colour-blind safe: blue for good, orange for bad, instead of green and red.',
     choices: [['standard', 'Standard'], ['cb', 'Colour-blind safe']] },
   motion: { label: 'Motion', choices: [['auto', 'Auto'], ['reduce', 'Reduce']] },
 };
-const DISPLAY_ATTRS = ['theme', 'contrast', 'text', 'colours', 'motion'];   // set on <html> as data-* for the CSS
+const DISPLAY_ATTRS = ['theme', 'contrast', 'text', 'spacing', 'colours', 'motion'];   // set on <html> as data-* for the CSS
 function displayPrefs() {
   const p = get('cr-war-audit:display', {}) || {};
   return Object.fromEntries(Object.entries(DISPLAY).map(([k, s]) => [k, s.choices.some(c => c[0] === p[k]) ? p[k] : s.choices[0][0]]));
 }
+// The layout actually used: Auto picks cards on a phone and a table on a wider screen.
+const layoutNow = () => { const l = displayPrefs().layout; return l === 'auto' ? (window.innerWidth >= 720 ? 'table' : 'cards') : l; };
 function applyDisplay(p = displayPrefs()) {
   const root = document.documentElement;
   for (const k of DISPLAY_ATTRS) { if (p[k] === DISPLAY[k].choices[0][0]) delete root.dataset[k]; else root.dataset[k] = p[k]; }

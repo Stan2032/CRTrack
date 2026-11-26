@@ -62,7 +62,17 @@ try {
     await p.reload(); await p.waitForLoadState('networkidle');
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark', 'remembered after a reload (and applied before drawing)');
     await p.evaluate(() => localStorage.removeItem('cr-war-audit:display')); await p.reload(); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
-    assert.equal(await p.locator('#groups .p.compact, #groups table.ptable').count(), 0, 'back to cards by default'); }
+    assert.equal(await p.locator('#groups .p.compact, #groups table.ptable').count(), 0, 'back to cards by default (Auto on a phone)');
+    await p.click('#layoutbar [data-layout="compact"]'); assert.ok(await p.locator('#groups .p.compact').count() > 0, 'switch above the list');
+    await p.evaluate(() => localStorage.removeItem('cr-war-audit:display'));
+    await p.setViewportSize({ width: 1024, height: 900 }); await p.reload(); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
+    assert.ok(await p.locator('#groups table.ptable').count() > 0, 'Auto: a table on a wide screen');
+    await p.setViewportSize({ width: 412, height: 900 }); await p.waitForTimeout(300);
+    assert.equal(await p.locator('#groups table.ptable').count(), 0, 'Auto: back to cards when the screen narrows');
+    await p.click('#dispbtn'); await p.click('[data-disp="spacing|wide"]');
+    assert.equal(await p.evaluate(() => document.documentElement.dataset.spacing), 'wide', 'text spacing');
+    await p.keyboard.press('Escape'); assert.equal(await p.locator('#display[open]').count(), 0, 'closes');
+    await p.evaluate(() => localStorage.removeItem('cr-war-audit:display')); }
   assert.ok(await p.locator('#clanpick').isHidden() && await p.locator('#other').isHidden(), 'a one-clan site shows just that clan: no tag box or CSV/own-key options');
   // A day after the war, a suggested kick that hasn't happened asks what was decided; one tap records it.
   { const n0 = await p.locator('[data-decide]').count();
