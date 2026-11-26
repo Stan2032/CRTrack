@@ -637,7 +637,9 @@ function renderExplain() {
 let descTexts = [];
 function renderDesc() {
   const box = $('#desccards'); if (!box) return;
-  descTexts = clanDescriptions(rules(), $('#descextra')?.value || '');
+  // Empty box: the Discord invite from the rules goes in (short form, no https://), so it's in the description by default.
+  const invite = rules().discordInvite ? 'Discord: ' + rules().discordInvite.replace(/^https?:\/\//, '') : '';
+  descTexts = clanDescriptions(rules(), $('#descextra')?.value.trim() || invite);
   box.innerHTML = descTexts.map((t, i) => `<div class="card"><b>${i ? 'Shorter' : 'Most detail'}<span class="cnt">${t.length}/128</span></b><div class="quote">${esc(t)}</div><button class="copybtn" data-desc="${i}">Copy</button></div>`).join('')
     + '<div class="hint">Clan → Edit → Description. If the game cuts it off, use a shorter one (emoji can count as 2).</div>';
 }

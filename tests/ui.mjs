@@ -108,6 +108,11 @@ try {
   await p.fill('#descextra', 'Discord: dsc.gg/x');
   assert.match(await p.textContent('#desccards'), /Discord: dsc\.gg\/x/);
   for (const c of await p.locator('#desccards .cnt').allTextContents()) assert.ok(+c.split('/')[0] <= 128, c);
+  // An empty box uses the Discord invite from the rules (short form).
+  await p.fill('input[data-rule="discordInvite"]', 'https://discord.gg/abc123'); await p.dispatchEvent('input[data-rule="discordInvite"]', 'change');
+  await p.fill('#descextra', '');
+  assert.match(await p.textContent('#desccards'), /Discord: discord\.gg\/abc123/);
+  assert.doesNotMatch(await p.textContent('#desccards'), /https:/);
   if (process.env.SHOT) { await p.evaluate(() => { const el = document.querySelector('#descextra'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); }); await p.screenshot({ path: process.env.SHOT }); }
   assert.deepEqual(p.errs, [], 'no page errors');
 
