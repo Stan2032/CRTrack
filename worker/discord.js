@@ -8,7 +8,7 @@ import { sanitizeRules, DEFAULT_RULES, RANK_POINTS, cleanName } from './logic.ge
 const FINISH_POINTS = 10000;   // a normal week's race can't pass this; a colosseum's medal totals can
 import { meCard, statsBoard } from './cards.js';
 import { seasonRecap, scoutRivals, leaderDigest, backupFile } from './extras.js';
-import { PUSH_SCHEMA } from './push.js';
+import { PUSH_SCHEMA, kvRow, kvHas, kvPut, kvDel } from './push.js';
 
 const API = 'https://discord.com/api/v10';
 export const DISCORD_SCHEMA = `CREATE TABLE IF NOT EXISTS discord_links (guild TEXT, user_id TEXT, clan TEXT, tag TEXT, at TEXT, by TEXT, PRIMARY KEY (guild, user_id));
@@ -105,10 +105,10 @@ export async function registerCommands(env) {
 // ---- Config and links ----
 async function setupDB(env) { await ensureSchema(env.DB, DISCORD_SCHEMA + '\n' + PUSH_SCHEMA); }
 async function getConfig(env, guild) {
-  const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:' + guild).first();
+  const r = await kvRow(env, 'discord:' + guild);
   return r ? JSON.parse(r.v) : null;
 }
-async function setConfig(env, guild, cfg) { await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('discord:' + guild, JSON.stringify(cfg)).run(); }
+async function setConfig(env, guild, cfg) { await kvPut(env, 'discord:' + guild, JSON.stringify(cfg)); }
 async function allConfigs(env) {
   return (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE 'discord:%'").all()).results
     .filter(r => /^discord:[^:]+$/.test(r.k)).map(r => ({ guild: r.k.slice(8), ...JSON.parse(r.v) }));
@@ -116,9 +116,8 @@ async function allConfigs(env) {
 // Which channel gets which kind of post: war (board + reminders), results (summaries + war results), joins.
 export const JOBS = { bot: 'Bot commands (note only)', guests: 'Not in clan (waiting room)', war: 'War board + battle-day reminders', results: 'Battle day summaries + war results', joins: 'Welcomes + shout-outs', scout: 'Rival scouting',
   leaders: 'Leaders only: absences, digest, backups' };
-const LEGACY_JOBS = ['war', 'results', 'joins'];   // the only jobs an older single-channel setup had
-const chan = (cfg, job) => cfg?.channels ? cfg.channels[job] : LEGACY_JOBS.includes(job) ? cfg?.channel : undefined;
-const channelsOf = cfg => ({ ...(cfg?.channels || (cfg?.channel ? Object.fromEntries(LEGACY_JOBS.map(j => [j, cfg.channel])) : {})) });
+const chan = (cfg, job) => cfg?.channels?.[job];
+const channelsOf = cfg => ({ ...(cfg?.channels || {}) });
 
 async function findRoles(env, guild, opt, cfg) {
   const byName = {};
@@ -133,7 +132,7 @@ async function findRoles(env, guild, opt, cfg) {
 
 async function overview(env, guild, cfg) {
   const at = ch => ch ? `<#${ch}>` : '_not set_';
-  const saved = async k => { const r = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first(); return r ? JSON.parse(r.v).channel : null; };
+  const saved = async k => { const r = await kvRow(env, k); return r ? JSON.parse(r.v).channel : null; };
   const r = cfg?.roles || {};
   return [`**What the bot posts where**`,
     ...Object.entries(JOBS).map(([k, label]) => `• ${label} → ${at(chan(cfg, k))}`),
@@ -210,7 +209,7 @@ async function postApplication(env, guild, cfg, clan, user, tag) {
     { type: 2, style: 3, label: 'Accept', custom_id: `apply|yes|${user}|${tag}` },
     { type: 2, style: 4, label: 'Decline', custom_id: `apply|no|${user}|${tag}` }] }];
   await dapi(env, 'POST', `/channels/${chan(cfg, 'leaders')}/messages`, { content, components: buttons, allowed_mentions: { parse: [] } });
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`apply:${guild}:${user}`, JSON.stringify({ tag, at: Date.now(), done: false })).run();
+  await kvPut(env, `apply:${guild}:${user}`, JSON.stringify({ tag, at: Date.now(), done: false }));
   return `Sent to the leaders ✅ You'll hear back by DM${chan(cfg, 'guests') ? ` (or in <#${chan(cfg, 'guests')}> if your DMs are off)` : ''}.`;
 }
 
@@ -225,7 +224,7 @@ async function decideApplication(i, env, how, applicant, tag) {
   const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: applicant }).catch(() => null))?.id;
   const told = dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: text }).then(() => true, () => false);
   if (!told && chan(cfg, 'guests')) await dapi(env, 'POST', `/channels/${chan(cfg, 'guests')}/messages`, { content: `<@${applicant}> ${text}`, allowed_mentions: { parse: [], users: [applicant] } }).catch(() => null);
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`apply:${i.guild_id}:${applicant}`, JSON.stringify({ tag, at: Date.now(), done: true, accepted: yes })).run();
+  await kvPut(env, `apply:${i.guild_id}:${applicant}`, JSON.stringify({ tag, at: Date.now(), done: true, accepted: yes }));
   const original = String(i.message?.content || '');
   return Response.json({ type: 7, data: { content: `${original}\n\n${yes ? '✅ **Accepted**' : '❌ **Declined**'} by ${who}${told ? ' (told by DM)' : chan(cfg, 'guests') ? ' (told in the waiting room: DMs closed)' : ' (couldn\'t tell them: DMs closed)'}`.slice(0, 1990), components: [], allowed_mentions: { parse: [] } } });
 }
@@ -241,8 +240,8 @@ export async function tidyGuests(env, clan, now = Date.now()) {
   if (!discordReady(env)) return { warned: 0, removed: 0 };
   await setupDB(env);
   const day = new Date(now).toISOString().slice(0, 10), out = { warned: 0, removed: 0 };
-  if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`tidy:${clan}:${day}`).first()) return out;
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`tidy:${clan}:${day}`, '1').run();
+  if (await kvHas(env, `tidy:${clan}:${day}`)) return out;
+  await kvPut(env, `tidy:${clan}:${day}`, '1');
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && c.roles?.guest)) {
     const days = cfg.tidyDays ?? 7;
     if (!days) continue;
@@ -290,25 +289,25 @@ async function startProof(env, guild, user, tag, m) {
   const pl = await cr(env, `/players/${encodeURIComponent('#' + tag)}`).catch(() => null);
   if (!pl) return reply('Couldn\'t reach the game\'s data just now. Try `/link` again in a minute.');
   // Same tag asked again within the time limit: keep the same two cards (don't move the goalposts mid-way).
-  const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(proofKey(guild, user)).first().then(r => r && JSON.parse(r.v));
+  const prev = await kvRow(env, proofKey(guild, user)).then(r => r && JSON.parse(r.v));
   if (prev && prev.tag === tag && Date.now() - prev.at < PROOF_MS && prev.cards?.length === 2)
     return { type: 4, data: { content: proofText(tag, cleanName(m.name), prev.cards), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
   const inDeck = new Set((pl.currentDeck || []).map(c => c.name)), pool = (pl.cards || []).map(c => c.name).filter(n => n && !inDeck.has(n));
   if (pool.length < 2) return reply('Couldn\'t read that account\'s cards. Ask a leader to link you with `/leader link`.');
   const a = Math.floor(Math.random() * pool.length); let b = Math.floor(Math.random() * (pool.length - 1)); if (b >= a) b++;
   const cards = [pool[a], pool[b]];
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(proofKey(guild, user), JSON.stringify({ tag, cards, at: Date.now() })).run();
+  await kvPut(env, proofKey(guild, user), JSON.stringify({ tag, cards, at: Date.now() }));
   return { type: 4, data: { content: proofText(tag, cleanName(m.name), cards), components: proofButtons, flags: EPHEMERAL, allowed_mentions: { parse: [] } } };
 }
 
 // The Check button: both cards in their deck → linked, roles and nickname set.
 async function checkProof(i, env, ctx) {
   const guild = i.guild_id, user = i.member?.user?.id;
-  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(proofKey(guild, user)).first();
+  const row = await kvRow(env, proofKey(guild, user));
   const update = (content, components = []) => Response.json({ type: 7, data: { content, components, allowed_mentions: { parse: [] } } });
   if (!row) return update('Nothing to check. Start with `/link #YOURTAG`.');
   const v = JSON.parse(row.v);
-  if (Date.now() - v.at > PROOF_MS) { await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run(); return update('That took over an hour. Run `/link` again for two new cards.'); }
+  if (Date.now() - v.at > PROOF_MS) { await kvDel(env, proofKey(guild, user)); return update('That took over an hour. Run `/link` again for two new cards.'); }
   const cfg = await getConfig(env, guild), clan = cfg?.clan || (env.ALLOWED_CLANS || '').split(',')[0]?.trim().toUpperCase().replace(/^#/, '');
   const m = await env.DB.prepare('SELECT tag, name, role, in_clan FROM members WHERE clan = ? AND tag = ?').bind(clan, v.tag).first();
   const log = await cr(env, `/players/${encodeURIComponent('#' + v.tag)}/battlelog`).catch(() => null);
@@ -317,7 +316,7 @@ async function checkProof(i, env, ctx) {
   const taken = await env.DB.prepare('SELECT user_id FROM discord_links WHERE guild = ? AND tag = ? AND user_id != ?').bind(guild, v.tag, user).first();
   if (taken) await env.DB.prepare('DELETE FROM discord_links WHERE guild = ? AND tag = ?').bind(guild, v.tag).run();   // proven owner wins
   await saveLink(env, guild, user, clan, v.tag, user);
-  await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(proofKey(guild, user)).run();
+  await kvDel(env, proofKey(guild, user));
   const work = syncOne(env, guild, cfg, user, m).catch(() => {});
   if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
   return update(`✅ **Proven and linked** to **${cleanName(m?.name || v.tag)}** (#${v.tag}). Your role and nickname are being set. You can swap the cards back now.`);
@@ -403,7 +402,7 @@ export async function handleDiscord(request, env, ctx) {
       const inClan = await member(tag);
       if (inClan?.in_clan) return Response.json(reply('You\'re already in the clan: use `/link` to connect your account.'));
       if (!chan(cfg, 'leaders')) return Response.json(reply('Applications aren\'t set up here yet. Ask a leader.'));
-      const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(`apply:${guild}:${user}`).first().then(r => r && JSON.parse(r.v));
+      const prev = await kvRow(env, `apply:${guild}:${user}`).then(r => r && JSON.parse(r.v));
       if (prev && !prev.done) return Response.json(reply('Your application is with the leaders. You\'ll hear back soon.'));
       if (prev && Date.now() - prev.at < 864e5) return Response.json(reply('You can apply again tomorrow.'));
       later((async () => {
@@ -788,29 +787,29 @@ export async function battleDayPings(env, r, now, msLeft) {
     const d = due(pingPlan(cfg, auto)), mk = `pingmsg:${cfg.guild}`;
     // Once a battle day: clear any out-of-date bot messages from #war (old pings, a board deleted and re-posted, etc.).
     const tk = `tidy:${cfg.guild}:${r.week}:${r.day}`;
-    if (!(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(tk).first())) {
-      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(tk, String(now)).run();
+    if (!(await kvHas(env, tk))) {
+      await kvPut(env, tk, String(now));
       await tidyLive(env, cfg.guild, cfg, [chan(cfg, 'war')], 10).catch(() => null);
     }
-    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(mk).first().then(x => x && JSON.parse(x.v)).catch(() => null);
+    const saved = await kvRow(env, mk).then(x => x && JSON.parse(x.v)).catch(() => null);
     const stake = raceStake(r.board, r.clan), body = `${stake ? stake + '\n' : ''}${r.decksLeft} decks left:`;
     let posted = false;
     for (const [kind, on] of [['eve', d.evening], ['last', d.lastCall]]) {
       if (!on || !list.length) continue;
       const key = `ping:${cfg.guild}:${r.week}:${r.day}:${kind}`;
-      if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(key).first()) continue;
-      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, String(now)).run();
+      if (await kvHas(env, key)) continue;
+      await kvPut(env, key, String(now));
       const h = Math.max(1, Math.round(msLeft / 3600e3));
       const title = kind === 'eve' ? `⚔️ Battle day ${r.day}: decks still to play${r.board?.reset ? ` (resets ${r.board.reset} UK)` : ''}` : `⏰ Last call: battle day ${r.day} ends in about ${h} hour${h === 1 ? '' : 's'}`;
       if (saved?.id) await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).catch(() => {});
       const id = await postPings(env, cfg, title, body, list);
-      if (id) { out.sent++; posted = true; await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(mk, JSON.stringify({ channel: chan(cfg, 'war'), id: id === true ? null : id, week: r.week, day: r.day, title })).run(); }
+      if (id) { out.sent++; posted = true; await kvPut(env, mk, JSON.stringify({ channel: chan(cfg, 'war'), id: id === true ? null : id, week: r.week, day: r.day, title })); }
       break;   // one post per run
     }
     if (posted || !saved?.id) continue;
     if (saved.week !== r.week || saved.day !== r.day) {   // a new battle day: yesterday's list is out of date (the summary is in results)
       await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).catch(() => {});
-      await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(mk).run();
+      await kvDel(env, mk);
       continue;
     }
     const msg = list.length ? await pingContent(env, cfg, saved.title, body, list) : { content: `**${saved.title}**\n✅ Everyone has played all 4 decks today.`, allowed_mentions: { parse: [] } };
@@ -847,7 +846,7 @@ export async function dmReminders(env, clan, week, day, msLeft, leftToday, reset
     const key = `dm:${clan}:${week}:${day}:${x.user_id}`;
     if (done.has(key)) continue;
     if (tried++ >= 8) break;   // attempts, not successes: failed DMs still use the run's request budget
-    await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, '1').run();   // once, even if it fails
+    await kvPut(env, key, '1');   // once, even if it fails
     const n2 = left.get(x.tag);
     const content = `⏰ Battle day ${day} ends ${when}${resetLabel ? ` (${resetLabel} UK)` : ''}. You still have **${n2} deck${n2 === 1 ? '' : 's'}** to play: each one is worth at least 100 medals, win or lose.\n_Stop these with \`/remind 0\`._`;
     if (await dapi(env, 'POST', `/channels/${x.dm}/messages`, { content }).then(() => true, () => false)) sent++;
@@ -920,7 +919,7 @@ function cantPost(channel, err) {
 }
 
 async function upsert(env, key, channel, content) {
-  const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(key).first();
+  const saved = await kvRow(env, key);
   const body = typeof content === 'string' ? { content: content.slice(0, 1990), allowed_mentions: { parse: [] } } : content;
   const old = saved ? JSON.parse(saved.v) : null;
   if (old && old.channel !== channel && old.id) await dapi(env, 'DELETE', `/channels/${old.channel}/messages/${old.id}`).catch(() => null);   // moved: remove the old copy
@@ -930,7 +929,7 @@ async function upsert(env, key, channel, content) {
     if (ok) return id;
   }
   const m = await dapi(env, 'POST', `/channels/${channel}/messages`, body);
-  if (m?.id) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(key, JSON.stringify({ channel, id: m.id })).run();
+  if (m?.id) await kvPut(env, key, JSON.stringify({ channel, id: m.id }));
   return m?.id;
 }
 
@@ -984,7 +983,7 @@ export async function warBoard(env, r, now) {
     if (await upsert(env, `discord:board:${cfg.guild}:${r.week}`, chan(cfg, 'war'), content).catch(() => null)) sent++;
     if (r.day === 1) {   // a new war: the previous war's board is history (the result is in #results)
       const old = (await env.DB.prepare('SELECT k, v FROM kv WHERE k LIKE ? AND k != ?').bind(`discord:board:${cfg.guild}:%`, `discord:board:${cfg.guild}:${r.week}`).all()).results;
-      for (const o of old) { const x = JSON.parse(o.v); if (x.id) await dapi(env, 'DELETE', `/channels/${x.channel}/messages/${x.id}`).catch(() => null); await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(o.k).run(); }
+      for (const o of old) { const x = JSON.parse(o.v); if (x.id) await dapi(env, 'DELETE', `/channels/${x.channel}/messages/${x.id}`).catch(() => null); await kvDel(env, o.k); }
     }
   }
   return sent;
@@ -1003,7 +1002,7 @@ export async function daySummary(env, clan, week, day) {
   if (!discordReady(env) || day < 1 || day > 4) return 0;
   await setupDB(env);
   const once = `dsum:${clan}:${week}:${day}`;
-  if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(once).first()) return 0;
+  if (await kvHas(env, once)) return 0;
   // This day and the day before, one query per table (each query counts against the per-run limit).
   const [dr, sr] = await Promise.all([env.DB.prepare('SELECT day, tag, name, fame, today FROM race_days WHERE clan = ? AND week = ? AND day IN (?, ?)').bind(clan, week, day, day - 1).all(),
     env.DB.prepare('SELECT day, rival, name, fame, medals FROM race_standings WHERE clan = ? AND week = ? AND day IN (?, ?)').bind(clan, week, day, day - 1).all()]);
@@ -1040,7 +1039,7 @@ export async function daySummary(env, clan, week, day) {
     '',
     missed.length ? missedBlock(missed) : '✅ **No decks missed today**',
   ].filter(x => x != null && x !== false).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1990);
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(once, '1').run();
+  await kvPut(env, once, '1');
   let sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan && chan(c, 'results'))) {
     await dapi(env, 'POST', `/channels/${chan(cfg, 'results')}/messages`, { content, allowed_mentions: { parse: [] } }).then(() => sent++).catch(() => {});
@@ -1231,7 +1230,7 @@ async function serverState(env, guild) {
 // Which existing channels are reused (not when fresh): ones already given a job, then by name.
 async function reuse(env, guild, cfg, channels) {
   const found = {}, text = channels.filter(c => c.type === 0), voice = channels.filter(c => c.type === 2);
-  const savedCh = async k => (await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v).channel)) || null;
+  const savedCh = async k => (await kvRow(env, k).then(r => r && JSON.parse(r.v).channel)) || null;
   const chosen = { leaders: chan(cfg, 'leaders'), link: await savedCh('discord:welcome:' + guild), rules: await savedCh('discord:rules:' + guild), stats: await savedCh('discord:stats:' + guild),
     results: cfg?.channels?.results !== cfg?.channels?.war ? chan(cfg, 'results') : null, scout: chan(cfg, 'scout'), war: chan(cfg, 'war'), general: chan(cfg, 'joins') };
   for (const [k, id] of Object.entries(chosen)) if (id && text.some(c => c.id === id) && !Object.values(found).includes(id)) found[k] = id;
@@ -1321,11 +1320,11 @@ export async function autoSetup(env, guild, cfg, clan, apply, fresh = false) {
   for (const spec of SPECS) for (const j of spec.jobs) if (ids[spec.key] && JOBS[j]) next.channels[j] = ids[spec.key];
   await setConfig(env, guild, next);
   for (const [job, key] of [['rules', 'rules'], ['stats', 'stats'], ['welcome', 'link']]) if (ids[key]) {
-    const prev = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(`discord:${job}:${guild}`).first();
+    const prev = await kvRow(env, `discord:${job}:${guild}`);
     const p2 = prev ? JSON.parse(prev.v) : null;
-    if (!p2 || p2.channel !== ids[key]) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`discord:${job}:${guild}`, JSON.stringify({ channel: ids[key], id: null })).run();
+    if (!p2 || p2.channel !== ids[key]) await kvPut(env, `discord:${job}:${guild}`, JSON.stringify({ channel: ids[key], id: null }));
   }
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), oldNames: Object.fromEntries(old.map(c => [c.id, c.name])), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) })).run();
+  await kvPut(env, 'autosetup:' + guild, JSON.stringify({ step: 2, fresh, old: old.map(c => c.id), oldNames: Object.fromEntries(old.map(c => [c.id, c.name])), ids, problems: problems.filter(x => !/Manage (Roles|Channels)/.test(x)) }));
   return { content: [`**Step 1 of ${STEPS(fresh)} done: roles and channels**`, ...done].join('\n').slice(0, 1900), components: nextButton(2, STEPS(fresh)) };
 }
 
@@ -1396,10 +1395,10 @@ export async function whoSees(env, guild, cfg) {
 // The next step, from the Continue button.
 export async function autoSetupNext(env, guild, clan) {
   await setupDB(env);
-  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('autosetup:' + guild).first();
+  const row = await kvRow(env, 'autosetup:' + guild);
   if (!row) return { content: 'Nothing in progress. Start with `/setup auto`.', components: [] };
   const run = JSON.parse(row.v), cfg = await getConfig(env, guild), of = STEPS(run.fresh), done = [];
-  const save = s => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ ...run, step: s })).run();
+  const save = s => kvPut(env, 'autosetup:' + guild, JSON.stringify({ ...run, step: s }));
   const pin = async (ch, id) => {
     if (!(await dapi(env, 'PUT', `/channels/${ch}/pins/${id}`).then(() => true, () => false))) return false;
     const recent = await dapi(env, 'GET', `/channels/${ch}/messages?limit=5`).catch(() => []);
@@ -1413,7 +1412,7 @@ export async function autoSetupNext(env, guild, clan) {
     await pin(ch, id); done.push(`✅ ${label} → <#${ch}>`);
   };
   if (run.step === 2) {
-    const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
+    const kv = k => kvRow(env, k).then(r => r ? JSON.parse(r.v) : null);
     const [rules, welcome, stats] = await Promise.all([kv('discord:rules:' + guild), kv('discord:welcome:' + guild), kv('discord:stats:' + guild)]);
     if (rules) { await post('discord:rules:' + guild, rules.channel, rulesText(await clanRules(env, clan)), 'Rules'); await post('discord:privacy:' + guild, rules.channel, PRIVACY, 'Privacy'); }
     if (welcome) await post('discord:welcome:' + guild, welcome.channel, welcomeText(await clanRules(env, clan)), 'How to link');
@@ -1432,16 +1431,16 @@ export async function autoSetupNext(env, guild, clan) {
   if (run.step === 3) {
     const nb = await postNotes(env, guild, cfg, run.note || 0, 5, run.ids?.bot);
     done.push(...nb.done.map(x => x.replace(/^✅ What appears here/, '✅ Note')));
-    if (nb.next != null) { await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('autosetup:' + guild, JSON.stringify({ ...run, note: nb.next })).run(); return { content: [`**Step 3 of ${of}: channel notes**`, ...done, '', 'More notes to go.'].join('\n'), components: nextButton(3, of) }; }
+    if (nb.next != null) { await kvPut(env, 'autosetup:' + guild, JSON.stringify({ ...run, note: nb.next })); return { content: [`**Step 3 of ${of}: channel notes**`, ...done, '', 'More notes to go.'].join('\n'), components: nextButton(3, of) }; }
     if (chan(cfg, 'scout')) {
       const race = await cr(env, `/clans/${encodeURIComponent('#' + clan)}/currentriverrace`).catch(() => null);
       const week = (await env.DB.prepare('SELECT week FROM periods WHERE clan = ? ORDER BY first_seen DESC LIMIT 1').bind(clan).first())?.week || '';
       const text = race && await scoutRivals(env, clan, week, (race.clans || []).map(c => ({ tag: String(c.tag).replace('#', ''), name: c.name, score: c.clanScore || 0 }))).catch(() => null);
-      if (text && await postJob(env, guild, cfg, 'scout', text).catch(() => null)) { done.push(`✅ Rival scouting → <#${chan(cfg, 'scout')}>`); if (week) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${week}`, String(Date.now())).run(); }
+      if (text && await postJob(env, guild, cfg, 'scout', text).catch(() => null)) { done.push(`✅ Rival scouting → <#${chan(cfg, 'scout')}>`); if (week) await kvPut(env, `scout:${clan}:${week}`, String(Date.now())); }
     }
     const shown = done.filter(x => !/^✅ Note/.test(x)), notes = done.length - shown.length;
     if (run.fresh && run.old.length) { await save(4); return { content: [`**Step 3 of ${of} done: notes${notes ? ` (${notes} pinned)` : ''}, scouting**`, ...shown, '', `Last step deletes the **${run.old.length} old channels** (including this one).`].join('\n'), components: nextButton(4, of) }; }
-    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
+    await kvDel(env, 'autosetup:' + guild);
     return { content: [`**All done ✅**`, ...shown, notes ? `✅ ${notes} channel notes pinned` : '', run.problems?.length ? `\n**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', '\nNext: `/link #YOURTAG`, then `/setup sync`.'].filter(Boolean).join('\n'), components: [] };
   }
   if (run.step === 4) {
@@ -1451,7 +1450,7 @@ export async function autoSetupNext(env, guild, clan) {
       if (await dapi(env, 'DELETE', `/channels/${id}`).then(() => true, () => false)) removed++; else stuck.push(run.oldNames?.[id] || id);
     }
     if (left.length) { run.old = left; await save(4); return { content: `Deleted ${removed} old channels; ${left.length} left.`, components: nextButton(4, of) }; }
-    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('autosetup:' + guild).run();
+    await kvDel(env, 'autosetup:' + guild);
     const summary = [`**War Audit set up the server ✅**`, `Deleted ${removed} old channel${removed === 1 ? '' : 's'}.`,
       stuck.length ? `⚠️ Couldn't delete: ${stuck.map(x => '#' + x).join(', ')} (War Audit can't see ${stuck.length === 1 ? 'it' : 'them'}, or Discord protects ${stuck.length === 1 ? 'it' : 'them'}). Delete by hand: long-press → Delete Channel.` : '', run.problems?.length ? `**Still to do:**\n${run.problems.map(x => '• ' + x).join('\n')}` : '', 'Next: `/link #YOURTAG`, then `/setup sync`.'].filter(Boolean).join('\n');
     if (chan(cfg, 'leaders')) await postJob(env, guild, cfg, 'leaders', summary).catch(() => null);   // the channel this ran in may be gone
@@ -1486,8 +1485,12 @@ function noteChannels(cfg, extraBot = null) {
   }
   return Object.entries(introCh);
 }
-async function postNotes(env, guild, cfg, from, max = 5, extraBot = null) {
-  const list = noteChannels(cfg, extraBot), done = [];
+async function postNotes(env, guild, cfg, from, max = 5, extraBot = null, onlyPosted = false) {
+  let list = noteChannels(cfg, extraBot); const done = [];
+  if (onlyPosted) {   // the weekly upkeep only keeps up notes that were posted, it doesn't add new ones
+    const have = new Set((await env.DB.prepare('SELECT k FROM kv WHERE k LIKE ?').bind(`discord:intro:${guild}:%`).all()).results.map(r => r.k.split(':').pop()));
+    list = list.filter(([c]) => have.has(c));
+  }
   for (const [c, jobs] of list.slice(from, from + max)) await postKept(env, done, `discord:intro:${guild}:${c}`, c, jobs.map(j => INTROS[j]).join('\n\n'), 'What appears here');
   return { done, next: from + max < list.length ? from + max : null };
 }
@@ -1498,10 +1501,10 @@ export async function endOfWarTidy(env, clan) {
   if (!discordReady(env)) return 0;
   let n2 = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
-    const k = 'pingmsg:' + cfg.guild, saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r && JSON.parse(r.v)).catch(() => null);
+    const k = 'pingmsg:' + cfg.guild, saved = await kvRow(env, k).then(r => r && JSON.parse(r.v)).catch(() => null);
     if (!saved) continue;
     if (saved.id) await dapi(env, 'DELETE', `/channels/${saved.channel}/messages/${saved.id}`).then(() => n2++, () => null);
-    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(k).run();
+    await kvDel(env, k);
   }
   return n2;
 }
@@ -1514,7 +1517,7 @@ async function keptIds(env, guild) {
 }
 // Channels that should hold only what the bot keeps up to date (history channels like results and general are left alone).
 async function liveChannels(env, guild, cfg) {
-  const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v).channel : null).catch(() => null);
+  const kv = k => kvRow(env, k).then(r => r ? JSON.parse(r.v).channel : null).catch(() => null);
   return [...new Set([chan(cfg, 'war'), chan(cfg, 'bot'), await kv('discord:rules:' + guild), await kv('discord:welcome:' + guild), await kv('discord:stats:' + guild)].filter(Boolean))];
 }
 // Delete the bot's out-of-date messages in those channels (newest 50 in each), at most `max` per call (request budget).
@@ -1533,23 +1536,23 @@ export async function tidyLive(env, guild, cfg, channels = null, max = 15) {
   return { removed, more };
 }
 
-export async function refreshAll(env, guild, cfg, clan, clean) {
+export async function refreshAll(env, guild, cfg, clan, clean, auto = false) {
   await setupDB(env);
-  const kv = k => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first().then(r => r ? JSON.parse(r.v) : null);
+  const kv = k => kvRow(env, k).then(r => r ? JSON.parse(r.v) : null);
   const kept = { rules: await kv('discord:rules:' + guild), welcome: await kv('discord:welcome:' + guild), stats: await kv('discord:stats:' + guild) };
   const channels = [...new Set([...Object.values(cfg?.channels || {}), ...Object.values(kept).filter(Boolean).map(x => x.channel)])];
   if (!channels.length) return { content: 'Nothing set up yet: run `/setup auto`.', components: [] };
   // Remember where each kept message lives (so a clean step can forget the ids and still re-post in the same place).
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('refresh:' + guild, JSON.stringify({ stage: clean ? 'clean' : 'kept', channels, kept, note: 0, cfg })).run();
+  await kvPut(env, 'refresh:' + guild, JSON.stringify({ stage: clean ? 'clean' : 'kept', channels, kept, note: 0, cfg, auto }));
   return refreshNext(env, guild, clan);
 }
 
 export async function refreshNext(env, guild, clan) {
   await setupDB(env);
-  const row = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('refresh:' + guild).first();
+  const row = await kvRow(env, 'refresh:' + guild);
   if (!row) return { content: 'Nothing in progress. Start with `/setup refresh`.', components: [] };
   const run = JSON.parse(row.v), cfg = run.cfg || await getConfig(env, guild), done = [];
-  const save = next => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('refresh:' + guild, JSON.stringify({ ...run, ...next })).run();
+  const save = next => kvPut(env, 'refresh:' + guild, JSON.stringify({ ...run, ...next }));
   if (run.stage === 'clean') {
     let removed = 0, more = false;
     for (const ch of run.channels) {
@@ -1560,8 +1563,8 @@ export async function refreshNext(env, guild, clan) {
         if (await dapi(env, 'DELETE', `/channels/${ch}/messages/${m.id}`).then(() => true, () => false)) removed++;
       }
     }
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k = ?")
-      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:board:${guild}:%`, `discord:todo:${guild}:%`, `discord:todochat:${guild}:%`, `discord:intro:${guild}:%`, `discord:privacy:${guild}`).run();
+    await env.DB.prepare("DELETE FROM kv WHERE k = ? OR k = ? OR k = ? OR k = ? OR k LIKE ? OR k LIKE ?")
+      .bind(`discord:rules:${guild}`, `discord:welcome:${guild}`, `discord:stats:${guild}`, `discord:privacy:${guild}`, `discord:board:${guild}:%`, `discord:intro:${guild}:%`).run();
     run.cleaned = (run.cleaned || 0) + removed;
     if (more) { await save({ cleaned: run.cleaned }); return { content: `🧹 Deleted ${run.cleaned} old messages so far. More to go.`, components: refreshButton('Continue ▶ (clearing)') }; }
     await save({ stage: 'kept', cleaned: run.cleaned });
@@ -1576,7 +1579,7 @@ export async function refreshNext(env, guild, clan) {
     return { content: [`**Re-posted**`, ...done, '', 'Next: the note in each channel.'].join('\n'), components: refreshButton('Continue ▶ (channel notes)') };
   }
   if (run.stage === 'notes') {
-    const r = await postNotes(env, guild, cfg, run.note || 0);
+    const r = await postNotes(env, guild, cfg, run.note || 0, 5, null, run.auto);
     if (r.next != null) { await save({ note: r.next }); return { content: [...r.done, '', 'More notes to go.'].join('\n'), components: refreshButton('Continue ▶ (more notes)') }; }
     await save({ stage: 'tidy', notesDone: r.done });
     return { content: [...r.done, '', 'Next: remove out-of-date bot messages (old pings and boards).'].join('\n'), components: refreshButton('Continue ▶ (tidy up)') };
@@ -1585,10 +1588,35 @@ export async function refreshNext(env, guild, clan) {
     const t = await tidyLive(env, guild, cfg, null, 20);
     run.tidied = (run.tidied || 0) + t.removed;
     if (t.more) { await save({ tidied: run.tidied }); return { content: `🧹 Removed ${run.tidied} out-of-date messages so far. More to go.`, components: refreshButton('Continue ▶ (tidy up)') }; }
-    await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('refresh:' + guild).run();
+    await kvDel(env, 'refresh:' + guild);
     return { content: ['**Refreshed ✅**', ...(run.notesDone || []), run.tidied ? `🧹 Removed ${run.tidied} out-of-date message${run.tidied === 1 ? '' : 's'}` : '', chan(cfg, 'war') ? '➖ War board: posts itself at the next pull on a battle day' : ''].filter(Boolean).join('\n'), components: [] };
   }
   return { content: 'Nothing to do.', components: [] };
+}
+
+// Weekly upkeep without anyone running /setup refresh: on quiet training-day runs, one refresh stage per run (each
+// stage fits the request budget): rules, privacy, how-to-link and stats edited in place (re-posted and pinned if
+// someone deleted them), the channel notes, then out-of-date bot messages removed. Problems go to the leaders.
+// Returns true if it did a stage (the caller then leaves the rest of the run alone).
+export async function weeklyUpkeep(env, clan, now = Date.now()) {
+  if (!discordReady(env)) return false;
+  await setupDB(env);
+  const week = Math.floor(now / (7 * 864e5));
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    const row = await kvRow(env, 'refresh:' + cfg.guild);
+    const run = row && JSON.parse(row.v);
+    let msg = null;
+    if (run?.auto) msg = await refreshNext(env, cfg.guild, clan);
+    else if (!run && !(await kvHas(env, `upkeep:${cfg.guild}:${week}`))) {
+      await kvPut(env, `upkeep:${cfg.guild}:${week}`, String(now));
+      msg = await refreshAll(env, cfg.guild, cfg, clan, false, true);
+    }
+    if (!msg) continue;
+    const warn = msg.content.split('\n').filter(l => l.startsWith('⚠️'));
+    if (warn.length && chan(cfg, 'leaders')) await dapi(env, 'POST', `/channels/${chan(cfg, 'leaders')}/messages`, { content: ['**Weekly tidy-up: something needs a hand**', ...warn].join('\n').slice(0, 1990), allowed_mentions: { parse: [] } }).catch(() => null);
+    return true;
+  }
+  return false;
 }
 
 // Re-write every posted stats board for this clan (after each war).
@@ -1597,7 +1625,7 @@ export async function updateStatsBoards(env, clan) {
   await setupDB(env);
   let text = null, sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
-    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:stats:' + cfg.guild).first();
+    const saved = await kvRow(env, 'discord:stats:' + cfg.guild);
     if (!saved) continue;
     text ||= await statsBoard(env, clan);
     if (await upsert(env, 'discord:stats:' + cfg.guild, JSON.parse(saved.v).channel, text).catch(() => null)) sent++;
@@ -1612,10 +1640,10 @@ export async function updateRulesMessages(env, clan) {
   const r = await clanRules(env, clan), text = rulesText(r), welcome = welcomeText(r);
   let n2 = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
-    const saved = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:rules:' + cfg.guild).first();
+    const saved = await kvRow(env, 'discord:rules:' + cfg.guild);
     if (saved && await upsert(env, 'discord:rules:' + cfg.guild, JSON.parse(saved.v).channel, text).catch(() => null)) n2++;
     // The how-to-link message mentions the extra chance only while that rule is on.
-    const w = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('discord:welcome:' + cfg.guild).first();
+    const w = await kvRow(env, 'discord:welcome:' + cfg.guild);
     if (w) await upsert(env, 'discord:welcome:' + cfg.guild, JSON.parse(w.v).channel, welcome).catch(() => null);
   }
   return n2;

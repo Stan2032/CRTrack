@@ -593,14 +593,7 @@ await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:G5', '{"clan":"
   globalThis.fetch = realF;
   await interaction({ type: 2, guild_id: 'G3', member: leader, data: { name: 'setup', options: [{ type: 1, name: 'tidy', options: [{ name: 'days', value: 7 }] }] } }); }
 
-// Older single-channel setups: leaders-only posts never go to that public channel; changing settings keeps it.
-await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:OLD', '{"clan":"PPCCR8VU","channel":"PUB","roles":{}}')`);
-{ const { sendDigest } = await import('../worker/discord.js'); calls.length = 0;
-  await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%' AND k NOT IN ('discord:OLD')`);
-  await sendDigest(env, 'PPCCR8VU').catch(() => 0);
-  assert.ok(!calls.some(c => /channels\/PUB\//.test(c.url)), 'no leaders-only digest in the public channel'); }
-await interaction({ type: 2, guild_id: 'OLD', member: leader, data: { name: 'setup', options: [] } });
-assert.deepEqual(JSON.parse((await DB.prepare("SELECT v FROM kv WHERE k = 'discord:OLD'").first()).v).channels, { war: 'PUB', results: 'PUB', joins: 'PUB' }, 'migrated, not dropped');
+await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%'`);
 
 // Donors: rows saved with week 'unknown' never count as "this week".
 await DB.exec(`INSERT INTO member_stats (clan,week,tag,donations) VALUES ('PPCCR8VU','unknown','YVJRGLCC',9999)`);
@@ -708,5 +701,28 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
 { const { missedBlock } = await import('../worker/discord.js');
   assert.equal(missedBlock([{ name: 'Zed', today: 0 }, { name: 'amy', today: 0 }, { name: 'Bob', today: 2 }, { name: '<c4>Mike', today: 3 }]),
     '❌ **Missed decks: 11**\n**All 4:** amy, Zed\n**2:** Bob\n**1:** Mike'); }
+
+// Weekly upkeep (no /setup refresh needed): one stage per quiet run; kept messages edited in place, a deleted one
+// re-posted and pinned; only notes that were posted are kept up; once a week.
+{ const { weeklyUpkeep } = await import('../worker/discord.js');
+  await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%' OR k LIKE 'refresh:%' OR k LIKE 'upkeep:%'`);
+  await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:GU', '{"clan":"PPCCR8VU","channels":{"war":"UW","results":"UR","leaders":"UL"},"roles":{}}'),
+    ('discord:rules:GU', '{"channel":"UK","id":"R1"}'), ('discord:welcome:GU', '{"channel":"UK","id":"W1"}'), ('discord:intro:GU:UW', '{"channel":"UW","id":"I1"}')`);
+  const calls2 = []; const realF = globalThis.fetch;
+  globalThis.fetch = async (url, o = {}) => { const u = String(url); calls2.push((o.method || 'GET') + ' ' + u.replace('https://discord.com/api/v10', ''));
+    if (o.method === 'PATCH' && u.endsWith('/W1')) return new Response('{}', { status: 404 });   // someone deleted the how-to-link message
+    if (o.method === 'POST') return Response.json({ id: 'NEW' + calls2.length });
+    if (/messages\?limit=/.test(u)) return Response.json([]);
+    return Response.json({}); };
+  const now = Date.parse('2026-11-24T12:00:00Z'); let stages = 0;
+  while (await weeklyUpkeep(env, 'PPCCR8VU', now + stages * 9e5) && stages < 10) stages++;
+  globalThis.fetch = realF;
+  assert.equal(stages, 3, 'kept, notes, tidy: one per run');
+  assert.ok(calls2.includes('PATCH /channels/UK/messages/R1'), 'rules edited in place');
+  assert.ok(calls2.some(c => c.startsWith('POST /channels/UK/messages')) && calls2.some(c => /^PUT \/channels\/UK\/pins\/NEW/.test(c)), 'deleted how-to-link re-posted and pinned');
+  assert.ok(calls2.includes('PATCH /channels/UW/messages/I1') && !calls2.some(c => /POST \/channels\/U[RL]\//.test(c)), 'only notes already posted');
+  assert.equal(await weeklyUpkeep(env, 'PPCCR8VU', now + 864e5), false, 'once a week');
+  assert.equal(await DB.prepare("SELECT 1 FROM kv WHERE k = 'refresh:GU'").first(), null, 'finished');
+  await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%' OR k LIKE 'upkeep:%'`); }
 
 console.log('Discord checks passed');

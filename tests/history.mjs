@@ -265,3 +265,16 @@ console.log('History checks passed');
   assert.doesNotMatch(d(on.tag), /:removed$/, 'online then: could have left themselves');
   globalThis.fetch = realFetch;
   console.log('Removed-or-left checks passed'); }
+
+// After each war, once-only markers of older wars and old dated ones are forgotten; the current and last two wars' stay.
+{ const { pruneKv } = await import('../worker/history.js');
+  const DB = fakeD1(); const env = { DB };
+  await DB.exec(`CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT); CREATE TABLE wars (clan TEXT, week TEXT, ended_at TEXT);
+    INSERT INTO wars VALUES ('C','138-2','20261116T0943'),('C','138-3','20261123T0943'),('C','138-1','20261109T0943');`);
+  const keys = ['ping:G:138-1:1:eve', 'ping:G:138-2:4:last', 'dsum:C:138-3:4', 'scout:C:138-4', 'wr:C:137-4:G:U1', 'dm:C:138-1:2:U1', 'tidy:G:138-1:3',
+    'tidy:C:2026-11-01', 'tidy:C:2026-11-25', 'todo:C:138-2', 'todo:latest:C', 'errpost:C:1', 'backup:C:2026-10', 'backup:C:2026-11', 'digest:due:C', 'discord:rules:G', 'pingmsg:G'];
+  for (const k of keys) DB.raw.prepare('INSERT INTO kv VALUES (?, ?)').run(k, '1');
+  assert.equal(await pruneKv(env, 'C', Date.parse('2026-11-26T10:00:00Z')), 9);
+  assert.deepEqual(DB.raw.prepare('SELECT k FROM kv ORDER BY k').all().map(r => r.k),
+    ['backup:C:2026-11', 'digest:due:C', 'discord:rules:G', 'dsum:C:138-3:4', 'ping:G:138-2:4:last', 'pingmsg:G', 'scout:C:138-4', 'tidy:C:2026-11-25']);
+  console.log('Old marker clean-up checks passed'); }

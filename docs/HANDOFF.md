@@ -133,7 +133,7 @@ after-war shout-outs: top 3 and every 5 wars in a row at target), **leaders** (a
 **rules**, **how to link** and the **clan stats board** (messages kept up to date by editing; stats after every war:
 last 8 wars as bars, pass-rate trend, most reliable, streaks, most improved, battle types, busiest hours, joins/leaves,
 top donors). Reports are in `worker/cards.js`. Config in kv `discord:{guild}` =
-`{clan, channels: {war, results, joins, leaders}, roles}`.
+`{clan, channels: {war, results, joins, scout, leaders, guests, bot}, roles}`.
 
 **Also** (`worker/extras.js`): season recap when a war ends and the race has moved to a new season (and `/clan season`);
 rival scouting once per race from each rival's last 5 wars (`/clan scout`); the leaders' weekly digest on the last training
@@ -226,6 +226,11 @@ linked from both pages' footers. Supercell's unofficial notice is on both pages,
 - **One decks-left message a day**, edited as people play; the last call replaces it (a new post notifies); removed
   at the next reset or when the war ends. #war is swept once a battle day; `/setup refresh` removes out-of-date bot
   posts in live channels (never replies to people's commands; history channels untouched).
+- **Weekly upkeep** (`weeklyUpkeep`): once a week, on quiet training-day runs, the bot runs the refresh itself, one
+  stage per run: kept messages edited in place (re-posted and pinned if deleted), existing channel notes, then the
+  tidy-up. Anything it can't post goes to #leaders. `/setup refresh` is only needed after changing channels.
+- **Old markers** (`pruneKv`): after each war, kv once-only markers (pings, summaries, DMs sent...) of wars before the
+  last two, and dated ones over two weeks old, are deleted.
 - **Data-pull failures** post in #leaders from the second failure in a row (single proxy blips are common), and again
   when it's working.
 - **Day summaries**: short labelled lines; every missed-deck name, grouped by how many.

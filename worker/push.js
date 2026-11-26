@@ -12,8 +12,13 @@ CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, clan TE
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const enc = o => b64u(new TextEncoder().encode(JSON.stringify(o)));
 
-async function kvGet(db, k) { const r = await db.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first(); return r ? r.v : null; }
-async function kvSet(db, k, v) { await db.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(k, v).run(); }
+// The kv table: small settings and once-only markers, shared by the whole Worker.
+export const kvRow = (env, k) => env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(k).first();
+export const kvHas = (env, k) => env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(k).first();
+export const kvPut = (env, k, v) => env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(k, v).run();
+export const kvDel = (env, k) => env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(k).run();
+const kvGet = (db, k) => kvRow({ DB: db }, k).then(r => r ? r.v : null);
+const kvSet = (db, k, v) => kvPut({ DB: db }, k, v);
 
 async function vapid(env) {
   await env.DB.exec(PUSH_SCHEMA);

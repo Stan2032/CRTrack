@@ -34,7 +34,7 @@ async function page(b, path = '') {
     const f = 'site' + (u.pathname === '/' ? '/index.html' : u.pathname);
     return existsSync(f) ? r.fulfill({ status: 200, contentType: types[f.split('.').pop()] || 'text/plain', body: readFileSync(f) }) : r.fulfill({ status: 404, body: '' });
   });
-  // Wait for the page to finish loading its data (network quiet), not a fixed time: fixed waits failed under load.
+  // Wait for conditions (network quiet, an element appearing), not fixed times: fixed waits failed under load.
   await p.goto(site + path); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
   return p;
 }
@@ -67,8 +67,8 @@ try {
     await p.evaluate(() => localStorage.removeItem('cr-war-audit:display'));
     await p.setViewportSize({ width: 1024, height: 900 }); await p.reload(); await p.waitForLoadState('networkidle'); await p.waitForTimeout(300);
     assert.ok(await p.locator('#groups table.ptable').count() > 0, 'Auto: a table on a wide screen');
-    await p.setViewportSize({ width: 412, height: 900 }); await p.waitForTimeout(300);
-    assert.equal(await p.locator('#groups table.ptable').count(), 0, 'Auto: back to cards when the screen narrows');
+    await p.setViewportSize({ width: 412, height: 900 });
+    await p.waitForFunction(() => !document.querySelector('#groups table.ptable'), null, { timeout: 5000 }).catch(() => assert.fail('Auto: back to cards when the screen narrows'));
     await p.click('#dispbtn'); await p.click('[data-disp="spacing|wide"]');
     assert.equal(await p.evaluate(() => document.documentElement.dataset.spacing), 'wide', 'text spacing');
     await p.keyboard.press('Escape'); assert.equal(await p.locator('#display[open]').count(), 0, 'closes');
@@ -78,13 +78,13 @@ try {
   { const n0 = await p.locator('[data-decide]').count();
     assert.ok(n0 > 0, 'undecided kicks/demotions ask what was decided');
     const who = (await p.locator('[data-decide]').first().getAttribute('data-decide')).split('|')[0];
-    await p.locator(`[data-decide="${who}|Warn"]`).click(); await p.waitForTimeout(300);
-    assert.equal(await p.locator(`[data-decide^="${who}|"]`).count(), 0, 'answered: the question goes away'); }
+    await p.locator(`[data-decide="${who}|Warn"]`).click();
+    await p.locator(`[data-decide^="${who}|"]`).first().waitFor({ state: 'detached', timeout: 5000 }).catch(() => assert.fail('answered: the question goes away')); }
   // Recommended steps and copy
   assert.ok(await p.$('#steps li'), 'recommended steps');
   await p.click('[data-copystep]'); assert.match(await p.evaluate(() => navigator.clipboard.readText()), /War update|First & only|Switch boats|Holding|Congrats/);
   // War picker
-  await p.selectOption('#week', '137-4'); await p.waitForTimeout(200);
+  await p.selectOption('#week', '137-4'); await p.waitForFunction(() => [...document.querySelectorAll('textarea')].some(t => /^Season/.test(t.getAttribute('aria-label'))), null, { timeout: 5000 }).catch(() => {});
   assert.ok((await p.$$eval('textarea', t => t.map(x => x.getAttribute('aria-label')))).some(l => /^Season/.test(l)), 'season recap on a season\'s last war');
   await p.selectOption('#week', '138-2');
   // Rules: steppers and limits
@@ -95,10 +95,11 @@ try {
   assert.match(await p.textContent('#rulenote'), /on this device only/);
   await p.click('[data-step="target"][data-dir="1"]'); assert.equal(await p.inputValue('input[data-rule="target"]'), '1850');
   // Leader code, then a shared tick
-  await p.fill('#code', 'code'); await p.click('#savecode'); await p.waitForTimeout(200);
+  await p.fill('#code', 'code'); await p.click('#savecode');
+  await p.waitForFunction(() => /accepted/.test(document.querySelector('#status').textContent), null, { timeout: 5000 }).catch(() => {});
   assert.match(await p.textContent('#status'), /accepted/);
   const tick = await p.$('[data-stepdone], [data-markall]');
-  if (tick) { await tick.click(); await p.waitForTimeout(200); assert.match(await p.textContent('#status'), /Saved for everyone/); }
+  if (tick) { await tick.click(); await p.waitForFunction(() => /Saved for everyone/.test(document.querySelector('#status').textContent), null, { timeout: 5000 }).catch(() => {}); assert.match(await p.textContent('#status'), /Saved for everyone/); }
   // Clan stats and the rules explainer open without errors
   await p.click('#statsbox summary'); await p.waitForTimeout(200); assert.match(await p.textContent('#statsbody'), /What stands out|Charts/);
   await p.click('#explainbox summary'); assert.match(await p.textContent('#explain'), /first & only warning/);

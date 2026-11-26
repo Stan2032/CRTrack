@@ -2,8 +2,8 @@
 // Free plan limits: 50 D1 queries and 10 ms CPU per run, so rows are written with one
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
-import { sendAlert, PUSH_SCHEMA } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports, endOfWarTidy } from './discord.js';
+import { sendAlert, PUSH_SCHEMA, kvRow, kvHas, kvPut, kvDel } from './push.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports, endOfWarTidy, weeklyUpkeep } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 import { raceOutlook, cleanName } from './logic.gen.js';
 
@@ -302,6 +302,30 @@ async function alertsFor(env, r, now) {
   }
 }
 
+// After each war: forget the once-only markers (pings sent, summaries posted, DMs sent...) of wars before the last
+// two, and dated ones over two weeks old, so the kv table stays small. One read and one batch.
+const PER_WAR = ['ping', 'tidy', 'dsum', 'scout', 'digest', 'dm', 'wr'];
+export async function pruneKv(env, clan, now = Date.now()) {
+  const keep = new Set((await env.DB.prepare('SELECT week FROM wars WHERE clan = ? ORDER BY ended_at DESC LIMIT 2').bind(clan).all()).results.map(w => w.week));
+  const rows = (await env.DB.prepare(`SELECT k FROM kv WHERE ${PER_WAR.map(() => 'k LIKE ?').join(' OR ')} OR k LIKE ? OR k LIKE ? OR k LIKE ? OR k LIKE ?`)
+    .bind(...PER_WAR.map(p => p + ':%'), 'todo:%', 'errpost:' + clan + ':%', 'upkeep:%', 'backup:' + clan + ':%').all()).results.map(r => r.k);
+  const old = new Date(now - 14 * 864e5).toISOString().slice(0, 10), bucket = Math.floor(now / (6 * 3600e3)), wk = Math.floor(now / (7 * 864e5)), month = new Date(now).toISOString().slice(0, 7);
+  const wkNum = w => { const [a, b] = w.split('-').map(Number); return a * 100 + b; }, oldest = Math.min(...[...keep].map(wkNum));
+  const gone = rows.filter(k => {
+    const [kind, ...rest] = k.split(':'), last = rest[rest.length - 1];
+    if (kind === 'todo') return true;   // the retired to-do list
+    if (kind === 'errpost') return +last < bucket - 4;
+    if (kind === 'upkeep') return +last < wk - 2;
+    if (kind === 'backup') return last < month;
+    const date = rest.find(x => /^\d{4}-\d\d-\d\d$/.test(x));
+    if (date) return date < old;
+    const week = rest.find(x => /^\d+-\d+$/.test(x));
+    return !!week && keep.size === 2 && wkNum(week) < oldest;   // older than the last two wars (never the current one)
+  });
+  for (let i = 0; i < gone.length; i += 90) await env.DB.batch(gone.slice(i, i + 90).map(k => env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(k)));
+  return gone.length;
+}
+
 export async function snapshotAll(env, { force = false, now = Date.now(), only = null } = {}) {
   const out = [];
   await ensureSchema(env.DB, SCHEMA + '\n' + PUSH_SCHEMA);   // once per run, not per check
@@ -309,18 +333,18 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
     try {
       // A war ended last run: refresh the stats boards now, in a run of its own (they read the whole history).
       if (!force && !only) {
-        const due = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('todo:due:' + clan).first();
+        const due = await kvRow(env, 'warend:due:' + clan);
         if (due) {
-          await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('todo:due:' + clan).run();
+          await kvDel(env, 'warend:due:' + clan);
           const left = await sendWarReports(env, clan).catch(() => 0);   // members' own results by DM (/warreport)
-          if (left) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('warreport:due:' + clan, '1').run();
-          out.push({ clan, stats: await updateStatsBoards(env, clan).catch(() => 0) });
+          if (left) await kvPut(env, 'warreport:due:' + clan, '1');
+          out.push({ clan, stats: await updateStatsBoards(env, clan).catch(() => 0), pruned: await pruneKv(env, clan, now).catch(() => 0) });
           continue;
         }
         // Last training day: the leaders' weekly digest, also in a run of its own.
-        const dig = await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('digest:due:' + clan).first();
+        const dig = await kvRow(env, 'digest:due:' + clan);
         if (dig) {
-          await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('digest:due:' + clan).run();
+          await kvDel(env, 'digest:due:' + clan);
           out.push({ clan, digest: await sendDigest(env, clan).catch(e => String(e.message || e)) });
           continue;
         }
@@ -333,19 +357,20 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
         const state = { lastType: st?.lastType, lastRun: st?.lastRun ? Date.parse(st.lastRun) : null, resetAt: st?.lastEnd ? ms(st.lastEnd) : null };
         // Once a month, on a training day: a backup file of the full history to the leaders' channel (a run of its own).
         const month = new Date(now).toISOString().slice(0, 7);
-        if (state.lastType === 'training' && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`backup:${clan}:${month}`).first())) {
-          await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`backup:${clan}:${month}`, String(now)).run();
+        if (state.lastType === 'training' && !(await kvHas(env, `backup:${clan}:${month}`))) {
+          await kvPut(env, `backup:${clan}:${month}`, String(now));
           const b = await postBackup(env, clan, null, now).catch(e => String(e.message || e));
           out.push({ clan, backup: b });
-          if (b === 0) await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind(`backup:${clan}:${month}`).run();   // nowhere to post yet
+          if (b === 0) await kvDel(env, `backup:${clan}:${month}`);   // nowhere to post yet
           else continue;
         }
         if (!shouldRun(state, now)) {
           // Quiet training-day runs: any war reports still to send, then (once a day) tidy the Discord waiting room.
-          if (await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind('warreport:due:' + clan).first()) {
+          if (await kvHas(env, 'warreport:due:' + clan)) {
             const left = await sendWarReports(env, clan).catch(() => 0);
-            if (!left) await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('warreport:due:' + clan).run();
+            if (!left) await kvDel(env, 'warreport:due:' + clan);
           }
+          if (await weeklyUpkeep(env, clan, now).catch(() => false)) { out.push({ clan, skipped: 'training day', upkeep: true }); continue; }
           const tidy = await tidyGuests(env, clan, now).catch(() => null);
           out.push({ clan, skipped: 'training day', ...(tidy && (tidy.warned || tidy.removed) ? { tidy } : {}) });
           continue;
@@ -355,22 +380,22 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push(res);
       await alertsFor(env, res, now).catch(() => {});
       await discordAfterSnapshot(env, clan, res.changedTags).catch(() => {});
-      if (res.wars?.length) await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('todo:due:' + clan, String(now)).run();
+      if (res.wars?.length) await kvPut(env, 'warend:due:' + clan, String(now));
       // A new race: scout the other clans once.
-      if (res.week && res.rivals?.length > 1 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`scout:${clan}:${res.week}`).first())) {
-        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`scout:${clan}:${res.week}`, String(now)).run();
+      if (res.week && res.rivals?.length > 1 && !(await kvHas(env, `scout:${clan}:${res.week}`))) {
+        await kvPut(env, `scout:${clan}:${res.week}`, String(now));
         await postToJob(env, clan, 'scout', await scoutRivals(env, clan, res.week, res.rivals).catch(() => null), 'war').catch(() => {});
       }
       // Last training day: queue the weekly digest for the next run.
-      if (!res.day && res.week && res.period % 7 === 2 && !(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(`digest:${clan}:${res.week}`).first())) {
-        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(`digest:${clan}:${res.week}`, '1').run();
-        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('digest:due:' + clan, '1').run();
+      if (!res.day && res.week && res.period % 7 === 2 && !(await kvHas(env, `digest:${clan}:${res.week}`))) {
+        await kvPut(env, `digest:${clan}:${res.week}`, '1');
+        await kvPut(env, 'digest:due:' + clan, '1');
       }
       await warBoard(env, res, now).catch(() => {});
       // Working again after failures: clear the count, and say so if the leaders were told it was failing.
-      const errs = Number((await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind('errcount:' + clan).first().catch(() => null))?.v || 0);
+      const errs = Number((await kvRow(env, 'errcount:' + clan).catch(() => null))?.v || 0);
       if (errs) {
-        await env.DB.prepare('DELETE FROM kv WHERE k = ?').bind('errcount:' + clan).run().catch(() => {});
+        await kvDel(env, 'errcount:' + clan).catch(() => {});
         if (errs >= 2) await postToJob(env, clan, 'leaders', `✅ **War Audit is updating again** (it was down for about ${errs * 15} minutes; nothing was lost).`).catch(() => {});
       }
       // A new battle day began: summarise the one that ended. A war ended: summarise its day 4.
@@ -380,14 +405,14 @@ export async function snapshotAll(env, { force = false, now = Date.now(), only =
       out.push({ clan, error: String(e.message || e) });
       // One failed pull is usually a blip at the proxy (e.g. a 525 that's fine 15 minutes later). Alert from the second
       // failure in a row, then at most once every 6 hours while it keeps failing.
-      const ck = 'errcount:' + clan, fails = Number((await env.DB.prepare('SELECT v FROM kv WHERE k = ?').bind(ck).first().catch(() => null))?.v || 0) + 1;
-      await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(ck, String(fails)).run().catch(() => {});
+      const ck = 'errcount:' + clan, fails = Number((await kvRow(env, ck).catch(() => null))?.v || 0) + 1;
+      await kvPut(env, ck, String(fails)).catch(() => {});
       if (fails < 2) continue;
       await sendAlert(env, clan, `err:${clan}:${Math.floor(now / (6 * 3600e3))}`, 'Data pull failing', `Couldn't update ${clan}: ${String(e.message || e).slice(0, 80)}. Check the Clash Royale key.`).catch(() => {});
       // Also in the leaders' Discord channel (most leaders don't use phone alerts), once per 6 hours.
       const ek = `errpost:${clan}:${Math.floor(now / (6 * 3600e3))}`;
-      if (!(await env.DB.prepare('SELECT 1 FROM kv WHERE k = ?').bind(ek).first().catch(() => null))) {
-        await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind(ek, '1').run().catch(() => {});
+      if (!(await kvHas(env, ek).catch(() => null))) {
+        await kvPut(env, ek, '1').catch(() => {});
         await postToJob(env, clan, 'leaders', `⚠️ **War Audit hasn't been able to update the clan's data for ${fails * 15} minutes** (${String(e.message || e).slice(0, 120)}). It keeps retrying every 15 minutes and will say here when it's working again. If this lasts for hours, check the Clash Royale API key in Cloudflare (see docs/SETUP.md).`).catch(() => {});
       }
     }
@@ -402,7 +427,7 @@ export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
   const r = await env.DB.prepare("SELECT (SELECT max(updated_at) FROM members WHERE clan = ?1) AS ok, (SELECT v FROM kv WHERE k = 'snapreq:' || ?1) AS asked").bind(clan).first();
   const last = Math.max(r?.ok ? Date.parse(r.ok) : 0, r?.asked ? Number(r.asked) : 0);
   if (!isEditor && now - last < 5 * 60e3) return { status: 429, body: { reason: 'tooSoon', lastRun: r?.ok || null, retryAfter: Math.ceil((last + 5 * 60e3 - now) / 1000) } };
-  await env.DB.prepare('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)').bind('snapreq:' + clan, String(now)).run();
+  await kvPut(env, 'snapreq:' + clan, String(now));
   const res = await snapshotAll(env, { force: true, now, only: clan });
   return res[0]?.error ? { status: 502, body: res[0] } : { status: 200, body: res[0] };
 }
