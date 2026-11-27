@@ -718,7 +718,7 @@ async function loadRejoins() {
   }
   const box = $('#rejoins'); if (!box) return;
   box.classList.toggle('hidden', !rejoinList.length);
-  box.innerHTML = rejoinList.length ? `<b>⚠️ Rejoined after being kicked</b> <span class="muted">(private: not shown to other leader codes)</span><ul>${rejoinList.map(p =>
+  box.innerHTML = rejoinList.length ? `<b>⚠️ Rejoined after being kicked</b> <span class="muted">(private warning)</span><ul>${rejoinList.map(p =>
     `<li><b>${esc(cleanName(p.name))}</b> #${esc(p.tag)}: back ${fmtDate(parseTime(p.joined))}. ${[p.removedAt && 'Removed by a leader ' + fmtDate(parseTime(p.removedAt)), p.kickWeeks.length && 'Marked Kick after war ' + p.kickWeeks.map(esc).join(', ')].filter(Boolean).join('; ')}.</li>`).join('')}</ul>` : '';
 }
 

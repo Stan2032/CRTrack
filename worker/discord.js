@@ -67,7 +67,7 @@ export const COMMANDS = [
     sub('pings', 'When battle-day pings go out', [{ type: 4, name: 'hour', description: 'Evening ping hour, UK time (0-23)', min_value: 0, max_value: 23 },
       bool('auto', 'Evening ping at the start of the clan\'s busiest hours'), { type: 4, name: 'last_call', description: 'Last call this many hours before reset (0 = off)', min_value: 0, max_value: 6 }]),
     sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }]),
-    sub('rejoins', 'Leader only: who gets a private DM when a kicked player rejoins', [{ type: 6, name: 'user', description: 'Discord member', required: true }, bool('on', 'On or off', true)]),
+    sub('rejoins', 'Leader only: kicked players who rejoin, by DM to the server owner and clan Leader; Co-Leaders too?', [bool('coleaders', 'Also tell Co-Leaders', true)]),
     sub('remove', 'Leader only: delete everything War Audit made in this server (asks first)', [bool('links', 'Also delete everyone\'s linked accounts and settings')])] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
@@ -599,12 +599,14 @@ export async function handleDiscord(request, env, ctx) {
       return Response.json(reply(days ? `Done: people in the Not in clan waiting room get a heads-up after ${days - 1} day${days - 1 === 1 ? '' : 's'} and are removed after ${days} (they can rejoin with a new invite). Leaders are never removed. ${waiting} waiting now.` : 'Done: nobody is removed from the waiting room.'));
     }
     case 'rejoins': {
-      // Only the Leader (or a server admin) chooses who's told; Co-Leaders can't add themselves.
+      // Only the Leader (or a server admin) decides whether Co-Leaders are told too.
       if (!isTopLeader(i.member, cfg)) return Response.json(reply('Only the Leader (or a server admin) can change this.'));
-      const watch = new Set(cfg?.rejoinWatch || []);
-      if (opt.on) watch.add(String(opt.user)); else watch.delete(String(opt.user));
-      await setConfig(env, guild, { ...(cfg || { clan, channels: {}, roles: {} }), rejoinWatch: [...watch] });
-      return Response.json(reply(watch.size ? `Done. A private DM goes to ${[...watch].map(u => `<@${u}>`).join(', ')} when someone who was kicked rejoins the clan.` : 'Done. Nobody gets the rejoin DM now.'));
+      const next = { ...(cfg || { clan, channels: {}, roles: {} }), rejoinCo: !!opt.coleaders };
+      delete next.rejoinWatch;
+      await setConfig(env, guild, next);
+      const who = await rejoinRecipients(env, { ...next, guild }, clan).catch(() => ({ users: [], leaderLinked: false }));
+      return Response.json(reply([`Done. When a kicked player rejoins, a private DM goes to the server owner, the clan Leader${next.rejoinCo ? ' and Co-Leaders' : ''} (linked accounts), and the site shows a warning to ${next.rejoinCo ? 'every leader code' : 'the leader codes in PRIVATE_ALERTS'}.`,
+        `Right now that's ${who.users.map(u => `<@${u}>`).join(', ') || 'nobody'}.`, who.leaderLinked ? '' : '⚠️ The clan Leader hasn\'t linked their account yet (`/link`), so they won\'t get it until they do.'].filter(Boolean).join('\n')));
     }
     case 'sync': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
@@ -1643,16 +1645,25 @@ export async function weeklyUpkeep(env, clan, now = Date.now()) {
   return false;
 }
 
-// A kicked player rejoined: a private DM to the people chosen with /setup rejoins (never a channel: Co-Leaders see those).
+// A kicked player rejoined: a private DM (never a channel: Co-Leaders see those).
 export function rejoinText(list) {
   const day = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
   return ['⚠️ **Rejoined after being kicked**', ...list.map(p => `**${p.name}** (#${p.tag}): ${[p.removedAt && `removed by a leader on ${day(p.removedAt)}`, p.kickWeeks.length && `marked Kick after war ${p.kickWeeks.join(', ')}`].filter(Boolean).join('; ')}. Record: \`/leader player tag:#${p.tag}\``)].join('\n');
 }
+// Who's told: the Discord server's owner and the in-game Leader (Co-Leaders too if switched on), by their linked accounts.
+export async function rejoinRecipients(env, cfg, clan) {
+  const roles = cfg.rejoinCo ? ['leader', 'coLeader'] : ['leader'];
+  const linked = (await env.DB.prepare(`SELECT l.user_id, m.role FROM discord_links l JOIN members m ON m.clan = l.clan AND m.tag = l.tag
+    WHERE l.guild = ? AND l.clan = ? AND m.in_clan = 1 AND m.role IN (${roles.map(() => '?').join(',')})`).bind(cfg.guild, clan, ...roles).all()).results;
+  const owner = (await dapi(env, 'GET', `/guilds/${cfg.guild}`).catch(() => null))?.owner_id;
+  return { users: [...new Set([owner, ...linked.map(r => r.user_id)].filter(Boolean))], leaderLinked: linked.some(r => r.role === 'leader') };
+}
 export async function rejoinAlert(env, clan, list) {
   if (!discordReady(env) || !list.length) return 0;
+  await setupDB(env);
   let sent = 0;
   for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
-    for (const user of cfg.rejoinWatch || []) {
+    for (const user of (await rejoinRecipients(env, cfg, clan)).users) {
       const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
       if (dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: rejoinText(list).slice(0, 1990), allowed_mentions: { parse: [] } }).then(() => true, () => false)) sent++;
     }

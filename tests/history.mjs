@@ -296,4 +296,7 @@ console.log('History checks passed');
   const ask = key => handleApi(new Request('https://x.dev/api/rejoins?clan=PPCCR8VU', { headers: key ? { 'X-Edit-Key': key } : {} }), env3);
   assert.equal((await ask(null)).status, 403); assert.equal((await ask('co')).status, 403, 'other leader codes: no');
   const ok = await ask('abc'); assert.equal(ok.status, 200);
+  await DB2.exec(`CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT); INSERT INTO kv VALUES ('discord:G', '{"clan":"PPCCR8VU","rejoinCo":true}')`);
+  assert.equal((await ask('co')).status, 200, 'Co-Leaders switched on by the Leader: every leader code');
+  assert.equal((await ask(null)).status, 403);
   console.log('Rejoin checks passed'); }
