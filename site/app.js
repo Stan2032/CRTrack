@@ -8,6 +8,7 @@ let local = { notes: {}, rules: {} };          // this device
 let settings = { tag: '', code: '' };
 let site = { key: false, clans: [], history: false, edit: false };
 let codeOk = false, leaderName = '';
+let rejoinList = [];   // kicked players back in the clan (only for leader codes the server allows)
 
 const LABEL = { Kick: 'Kick', Demote: 'Demote', Warn: 'First & only warning', Check: 'Check on them', Review: 'Leaders decide',
   Promote: 'Promote to Elder', OK: 'Passed', Excused: 'Excused', Left: 'Left the clan', Out: "Can't reach target", Need: 'Still needs medals', Safe: 'Reached target' };
@@ -97,6 +98,7 @@ async function pull() {
     mode = 'end';
     const todo = model.season === model.latest && evaluate().some(p => !p.gone && ACTIONS.includes(p.res.status) && !(p.done && (p.done.auto || p.done.manual)));
     setMode(raceInfo.day && !todo ? 'live' : 'end');
+    loadRejoins();
     say('Updated ' + fmtTime(Date.now()) + (hist?.events?.length ? ' · history since ' + fmtDate(model.history.since) : ''));
   } catch (e) {
     const msg = e === 501 ? "This site has no Clash Royale key yet (see the setup guide)."
@@ -708,6 +710,18 @@ function setMode(m) {
   render();
 }
 
+// Kicked players who rejoined in the last 30 days. The server only answers the leader codes named in PRIVATE_ALERTS.
+async function loadRejoins() {
+  rejoinList = [];
+  if (codeOk && settings.code && settings.tag) {
+    try { const r = await fetch('api/rejoins?clan=' + settings.tag, { headers: { 'X-Edit-Key': settings.code }, cache: 'no-store' }); if (r.ok) rejoinList = (await r.json()).rejoins || []; } catch (e) {}
+  }
+  const box = $('#rejoins'); if (!box) return;
+  box.classList.toggle('hidden', !rejoinList.length);
+  box.innerHTML = rejoinList.length ? `<b>⚠️ Rejoined after being kicked</b> <span class="muted">(private: not shown to other leader codes)</span><ul>${rejoinList.map(p =>
+    `<li><b>${esc(cleanName(p.name))}</b> #${esc(p.tag)}: back ${fmtDate(parseTime(p.joined))}. ${[p.removedAt && 'Removed by a leader ' + fmtDate(parseTime(p.removedAt)), p.kickWeeks.length && 'Marked Kick after war ' + p.kickWeeks.map(esc).join(', ')].filter(Boolean).join('; ')}.</li>`).join('')}</ul>` : '';
+}
+
 async function checkCode(code) {
   if (!site.edit || !code || !settings.tag) return false;
   try {
@@ -741,7 +755,7 @@ $('#savecode').onclick = async () => {
   codeOk = await checkCode(c);
   settings.code = codeOk ? c : ''; put('cr-war-audit:settings', settings);
   if (codeOk) $('#code').value = '';   // nothing left in the box, so the browser has no "password" to offer to save
-  say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render(); renderNotify();
+  say(codeOk ? 'Leader code accepted' : 'Wrong leader code', !codeOk); render(); renderNotify(); loadRejoins();
 };
 $('#discordreg').onclick = async () => {
   $('#discordmsg').textContent = 'Registering…';

@@ -29,6 +29,7 @@ async function page(b, path = '') {
       for (const i of JSON.parse(r.request().postData()).items) notes.push({ ...i, at: 'x' });
       return j({ saved: 1, by: 'Tester' });
     }
+    if (u.pathname === '/api/rejoins') return r.request().headers()['x-edit-key'] === 'code' ? j({ rejoins: [{ tag: 'K1', name: 'Kicked Kid', joined: '2026-11-26T10:00:00Z', removedAt: '2026-11-23T10:00:00Z', kickWeeks: [] }] }) : j({}, 403);
     if (u.pathname === '/api/member') return j({ tag: 'P8C99JYRG', name: 'iccyman2511', role: 'coLeader', inClan: true, war: null, rules: {}, weeks: [{ week: '138-2', fame: 2850, decks: 16, boats: 0 }, { week: '138-1', fame: 2600, decks: 16, boats: 0 }, { week: '137-4', fame: 2200, decks: 16, boats: 0 }], battles: [], events: [] });
     if (u.pathname.startsWith('/api/')) { const k = decodeURIComponent(u.pathname); return j(k.endsWith('/members') ? api.members : k.includes('currentriverrace') ? { ...api.race, periodType: 'training', periodIndex: 15, sectionIndex: 2 } : k.includes('riverracelog') ? api.log : api.clan); }
     const f = 'site' + (u.pathname === '/' ? '/index.html' : u.pathname);
@@ -43,6 +44,7 @@ const b = await chromium.launch();
 try {
   // Leaders' page: loads the clan and opens on last war (training day)
   const p = await page(b);
+  assert.ok(await p.locator('#rejoins').isHidden(), 'no rejoin warning without an allowed leader code');
   // Help: a ? next to a section title shows its explanation; again hides it. In a folded section it doesn't open it.
   await p.click('button[data-help="act"]');
   assert.match(await p.textContent('.helptip'), /Tap a circle/);
@@ -98,6 +100,8 @@ try {
   await p.fill('#code', 'code'); await p.click('#savecode');
   await p.waitForFunction(() => /accepted/.test(document.querySelector('#status').textContent), null, { timeout: 5000 }).catch(() => {});
   assert.match(await p.textContent('#status'), /accepted/);
+  assert.ok(await p.locator('#rejoins').isHidden() === false || await p.locator('#rejoins:not(.hidden)').waitFor({ timeout: 5000 }).then(() => true), 'rejoin warning shown');
+  assert.match(await p.textContent('#rejoins'), /Rejoined after being kicked[\s\S]*Kicked Kid[\s\S]*Removed by a leader/);
   const tick = await p.$('[data-stepdone], [data-markall]');
   if (tick) { await tick.click(); await p.waitForFunction(() => /Saved for everyone/.test(document.querySelector('#status').textContent), null, { timeout: 5000 }).catch(() => {}); assert.match(await p.textContent('#status'), /Saved for everyone/); }
   // Clan stats and the rules explainer open without errors

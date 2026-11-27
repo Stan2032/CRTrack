@@ -7,9 +7,10 @@
 //   POST /api/snapshot[?clan=TAG]          take a snapshot now (anyone: once per 5 min per clan; all clans needs EDIT_KEY)
 //   POST /api/discord                      Discord slash commands; POST /api/discord/register (leader code)
 //   GET  /api/member?tag=TAG               one member's own data (members' page)
+//   GET  /api/rejoins?clan=TAG             kicked players back in the clan (leader codes in PRIVATE_ALERTS only)
 //   GET  /api/push/key, /api/alerts/latest; POST /api/push/subscribe|unsubscribe|test   app notifications
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
-import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot } from './history.js';
+import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot, rejoins } from './history.js';
 import { publicKey, subscribe, unsubscribe, sendAlert, latestAlerts } from './push.js';
 import { handleDiscord, registerCommands, discordReady, updateRulesMessages } from './discord.js';
 
@@ -80,7 +81,7 @@ export async function handleApi(request, env, ctx) {
     return m ? json(m, 200, 'no-store') : json({ reason: 'notInClan' }, 404);
   }
 
-  if (url.pathname === '/api/history' || url.pathname === '/api/notes' || url.pathname === '/api/snapshot') {
+  if (url.pathname === '/api/history' || url.pathname === '/api/notes' || url.pathname === '/api/snapshot' || url.pathname === '/api/rejoins') {
     if (!env.DB) return json({ reason: 'noHistory' }, 501);
     if (url.pathname === '/api/snapshot') {
       if (request.method !== 'POST') return json({ reason: 'methodNotAllowed' }, 405);
@@ -97,6 +98,12 @@ export async function handleApi(request, env, ctx) {
     }
     const clan = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
     if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);
+    // Kicked players back in the clan: only for the leader codes named in PRIVATE_ALERTS (e.g. "Stan,Baki").
+    if (url.pathname === '/api/rejoins') {
+      const who = editorName(), allowedNames = (env.PRIVATE_ALERTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      if (!who || !allowedNames.includes(who.toLowerCase())) return json({ reason: 'notAllowed' }, 403);
+      return json({ rejoins: await rejoins(env.DB, clan, new Date(Date.now() - 30 * 864e5).toISOString()) }, 200, 'no-store');
+    }
     if (url.pathname === '/api/history') {
       if (request.method !== 'GET') return json({ reason: 'methodNotAllowed' }, 405);
       // The page gets the last 26 wars; ?all=1 (backups) gets everything.

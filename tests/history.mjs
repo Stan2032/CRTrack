@@ -278,3 +278,22 @@ console.log('History checks passed');
   assert.deepEqual(DB.raw.prepare('SELECT k FROM kv ORDER BY k').all().map(r => r.k),
     ['backup:C:2026-11', 'digest:due:C', 'discord:rules:G', 'dsum:C:138-3:4', 'ping:G:138-2:4:last', 'pingmsg:G', 'scout:C:138-4', 'tidy:C:2026-11-25']);
   console.log('Old marker clean-up checks passed'); }
+
+// Kicked players who rejoin: found from a "removed" leave or a Kick decision before their latest join; private API.
+{ const { rejoins } = await import('../worker/history.js');
+  const DB2 = fakeD1(); const env3 = { DB: DB2, ALLOWED_CLANS: 'PPCCR8VU', EDIT_KEYS: 'Stan:abc,Baki:xyz,Co:co', PRIVATE_ALERTS: 'Stan, Baki' };
+  await DB2.exec(`CREATE TABLE members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT);
+    CREATE TABLE member_events (clan TEXT, tag TEXT, name TEXT, kind TEXT, detail TEXT, at TEXT); CREATE TABLE notes (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, at TEXT);
+    INSERT INTO members (clan, tag, name, in_clan) VALUES ('PPCCR8VU','K1','Kicked',1),('PPCCR8VU','K2','Marked',1),('PPCCR8VU','L1','Left',1),('PPCCR8VU','K3','Gone',0);
+    INSERT INTO member_events VALUES ('PPCCR8VU','K1','Kicked','leave','member:removed','2026-11-23T10:00:00Z'),('PPCCR8VU','K1','Kicked','join','member','2026-11-26T10:00:00Z'),
+      ('PPCCR8VU','K2','Marked','leave','member','2026-11-23T10:00:00Z'),('PPCCR8VU','K2','Marked','join','member','2026-11-26T11:00:00Z'),
+      ('PPCCR8VU','L1','Left','leave','member','2026-11-23T10:00:00Z'),('PPCCR8VU','L1','Left','join','member','2026-11-26T12:00:00Z'),
+      ('PPCCR8VU','K3','Gone','leave','member:removed','2026-11-20T10:00:00Z'),('PPCCR8VU','K3','Gone','join','member','2026-11-22T10:00:00Z');
+    INSERT INTO notes VALUES ('PPCCR8VU','138-3','K2','over','Kick','x'),('PPCCR8VU','138-3','L1','over','Warn','x');`);
+  const got = await rejoins(DB2, 'PPCCR8VU', '2026-11-01T00:00:00Z');
+  assert.deepEqual(got.map(r => [r.tag, !!r.removedAt, r.kickWeeks]), [['K2', false, ['138-3']], ['K1', true, []]], 'kicked (seen or marked) and back in the clan; not someone who just left');
+  assert.deepEqual((await rejoins(DB2, 'PPCCR8VU', '2026-11-01T00:00:00Z', ['K1'])).map(r => r.tag), ['K1'], 'only the tags asked about');
+  const ask = key => handleApi(new Request('https://x.dev/api/rejoins?clan=PPCCR8VU', { headers: key ? { 'X-Edit-Key': key } : {} }), env3);
+  assert.equal((await ask(null)).status, 403); assert.equal((await ask('co')).status, 403, 'other leader codes: no');
+  const ok = await ask('abc'); assert.equal(ok.status, 200);
+  console.log('Rejoin checks passed'); }

@@ -3,7 +3,7 @@
 // multi-row statement per table, with values inlined as escaped SQL literals.
 
 import { sendAlert, PUSH_SCHEMA, kvRow, kvHas, kvPut, kvDel } from './push.js';
-import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports, endOfWarTidy, weeklyUpkeep } from './discord.js';
+import { discordPost, discordAfterSnapshot, warBoard, daySummary, dmReminders, battleDayPings, shoutOuts, updateStatsBoards, postToJob, sendDigest, postBackup, tidyGuests, sendWarReports, endOfWarTidy, weeklyUpkeep, rejoinAlert } from './discord.js';
 import { seasonRecap, scoutRivals } from './extras.js';
 import { raceOutlook, cleanName } from './logic.gen.js';
 
@@ -201,7 +201,7 @@ export async function snapshot(env, clan, now = new Date().toISOString()) {
   return {
     clan, lastEndAt: lastEnd?.ended_at || null, members: upserts.length, events: events.length, newWars: wars.map(w => w[1]), week, day, battlesFrom: pick, battles: battles.length,
     period: race.periodIndex, rivals: (race.clans || []).map(c => ({ tag: clean(c.tag), name: c.name, score: c.clanScore || 0 })),
-    joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
+    joined: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[2]), joinedTags: firstRun ? [] : events.filter(e => e[3] === 'join').map(e => e[1]), left: events.filter(e => e[3] === 'leave').map(e => e[2]),
     out, target, firstRun,
     wars: wars.map(w => {
       // For the after-war digest: how many current members took part and reached the target, and who didn't.
@@ -268,6 +268,8 @@ async function alertsFor(env, r, now) {
   if (r.joined.length || r.left.length) {
     const parts = [r.joined.length && `Joined: ${list(r.joined)}`, r.left.length && `Left: ${list(r.left)}`, r.members < 50 && `${50 - r.members} spot${r.members === 49 ? '' : 's'} open`].filter(Boolean);
     await sendAlert(env, r.clan, `ev:${r.clan}:${now}`, 'Clan members changed', parts.join(' · '));
+    const back = r.joinedTags?.length ? await rejoins(env.DB, r.clan, new Date(Date.parse(now) - 3600e3).toISOString(), r.joinedTags).catch(() => []) : [];
+    if (back.length) await rejoinAlert(env, r.clan, back).catch(() => {});
     if (r.joined.length) await discordPost(env, r.clan, `👋 Welcome ${list(r.joined)}!`, 'Link your account with `/link #YOURTAG` so you get war reminders. Check the pinned rules.', [], 'joins');
   }
   if (r.wars?.length) await endOfWarTidy(env, r.clan).catch(() => {});   // the last day's decks-left message goes
@@ -434,6 +436,19 @@ export async function requestSnapshot(env, clan, isEditor, now = Date.now()) {
 
 // weeks: how many recent wars to send (the page needs ~half a year); 0 = everything (backups).
 //   lite: only what decisions need (no battles, play times, donations, standings or change log).
+// Players back in the clan after being kicked: a leave seen as "removed by a leader", or a Kick decision on the site,
+// before their latest join. `since`: joins after this time; `tags`: only these players.
+export async function rejoins(db, clan, since, tags = null) {
+  const only = tags ? ` AND m.tag IN (${tags.map(q).join(',')})` : '';
+  const rows = (await db.prepare(`SELECT m.tag, m.name, j.at AS joined,
+      (SELECT max(at) FROM member_events l WHERE l.clan = m.clan AND l.tag = m.tag AND l.kind = 'leave' AND l.detail LIKE '%:removed' AND l.at < j.at) AS removedAt,
+      (SELECT group_concat(week) FROM notes n WHERE n.clan = m.clan AND n.tag = m.tag AND n.kind IN ('over', 'result') AND n.value = 'Kick') AS kickWeeks
+    FROM members m JOIN (SELECT tag, max(at) AS at FROM member_events WHERE clan = ?1 AND kind = 'join' GROUP BY tag) j ON j.tag = m.tag
+    WHERE m.clan = ?1 AND m.in_clan = 1 AND j.at > ?2${only} ORDER BY j.at DESC`).bind(clan, since).all()).results;
+  return rows.filter(r => r.removedAt || r.kickWeeks).map(r => ({ tag: r.tag, name: r.name, joined: r.joined, removedAt: r.removedAt || null,
+    kickWeeks: r.kickWeeks ? [...new Set(r.kickWeeks.split(','))].sort() : [] }));
+}
+
 export async function readHistory(env, clan, { weeks = 0, lite = false } = {}) {
   const db = env.DB;
   await ensureSchema(db, SCHEMA);

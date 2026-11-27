@@ -739,4 +739,24 @@ assert.match(JSON.stringify(await meCard(env, 'PPCCR8VU', '2VJ9V2PV')), /resets 
   assert.equal(await DB.prepare("SELECT 1 FROM kv WHERE k = 'refresh:GU'").first(), null, 'finished');
   await DB.exec(`DELETE FROM kv WHERE k LIKE 'discord:%' OR k LIKE 'upkeep:%'`); }
 
+// Rejoin DMs: only the Leader (or an admin) chooses who gets them; a Co-Leader can't add themselves. DMs, never a channel.
+{ const { rejoinAlert, rejoinText } = await import('../worker/discord.js');
+  await DB.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('discord:GJ', '{"clan":"PPCCR8VU","channels":{"leaders":"LC"},"roles":{"leader":"RLEAD"}}')`);
+  const opts = (user, on) => ({ name: 'setup', options: [{ type: 1, name: 'rejoins', options: [{ name: 'user', value: user }, { name: 'on', value: on }] }] });
+  const co = { user: { id: 'C' }, permissions: String(1n << 28n), roles: [] };
+  assert.match(await text(await interaction({ type: 2, guild_id: 'GJ', member: co, data: opts('C', true) })), /Only the Leader/);
+  const boss = { user: { id: 'B' }, permissions: '0', roles: ['RLEAD'] };
+  assert.match(await text(await interaction({ type: 2, guild_id: 'GJ', member: boss, data: opts('S', true) })), /<@S>/);
+  const realF = globalThis.fetch, sentTo = [];
+  globalThis.fetch = async (url, o = {}) => { const u = String(url);
+    if (u.endsWith('/users/@me/channels')) return Response.json({ id: 'DM-' + JSON.parse(o.body).recipient_id });
+    if (/channels\/[^/]+\/messages$/.test(u)) { sentTo.push(u.split('/').slice(-2)[0] + ': ' + JSON.parse(o.body).content); return Response.json({ id: 'm' }); }
+    return realF(url, o); };
+  const n = await rejoinAlert(env, 'PPCCR8VU', [{ tag: 'K1', name: 'Kicked', joined: '2026-11-26T10:00:00Z', removedAt: '2026-11-23T10:00:00Z', kickWeeks: ['138-3'] }]);
+  globalThis.fetch = realF;
+  assert.equal(n, 1); assert.equal(sentTo.length, 1); assert.match(sentTo[0], /^DM-S: ⚠️ \*\*Rejoined after being kicked\*\*\n\*\*Kicked\*\* \(#K1\): removed by a leader on 23 Nov; marked Kick after war 138-3/);
+  assert.ok(!sentTo.some(x => x.startsWith('LC')), 'never the leaders channel (Co-Leaders see it)');
+  assert.match(rejoinText([{ tag: 'X', name: 'Y', removedAt: null, kickWeeks: ['138-2'] }]), /marked Kick after war 138-2\. Record/);
+  await DB.exec(`DELETE FROM kv WHERE k = 'discord:GJ'`); }
+
 console.log('Discord checks passed');

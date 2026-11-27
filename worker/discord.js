@@ -67,12 +67,13 @@ export const COMMANDS = [
     sub('pings', 'When battle-day pings go out', [{ type: 4, name: 'hour', description: 'Evening ping hour, UK time (0-23)', min_value: 0, max_value: 23 },
       bool('auto', 'Evening ping at the start of the clan\'s busiest hours'), { type: 4, name: 'last_call', description: 'Last call this many hours before reset (0 = off)', min_value: 0, max_value: 6 }]),
     sub('tidy', 'Remove people from the Not in clan waiting room after some days', [{ type: 4, name: 'days', description: 'Days in the waiting room before removal (0 = never)', required: true, min_value: 0, max_value: 60 }]),
+    sub('rejoins', 'Leader only: who gets a private DM when a kicked player rejoins', [{ type: 6, name: 'user', description: 'Discord member', required: true }, bool('on', 'On or off', true)]),
     sub('remove', 'Leader only: delete everything War Audit made in this server (asks first)', [bool('links', 'Also delete everyone\'s linked accounts and settings')])] },
 ];
 // Grouped commands → the handlers' own names (older single commands still work while Discord updates).
 const ALIAS = { 'clan stats': 'stats', 'clan season': 'season', 'clan scout': 'scout', 'leader player': 'player', 'leader check': 'check',
   'leader links': 'links', 'leader link': 'linkuser', 'leader digest': 'digest', 'leader backup': 'backup', 'leader forget': 'forget', 'setup auto': 'autosetup', 'setup show': 'setup',
-  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup remove': 'remove', 'setup tidy': 'tidy', 'setup pings': 'pings', me: 'mystats', whosees: 'whosees' };
+  'setup channel': 'post-here', 'setup sync': 'sync', 'setup refresh': 'refresh', 'setup check': 'whosees', 'setup remove': 'remove', 'setup tidy': 'tidy', 'setup pings': 'pings', 'setup rejoins': 'rejoins', me: 'mystats', whosees: 'whosees' };
 
 export const discordReady = env => !!(env.DISCORD_PUBLIC_KEY && env.DISCORD_BOT_TOKEN && env.DISCORD_APP_ID && env.DB);
 
@@ -596,6 +597,14 @@ export async function handleDiscord(request, env, ctx) {
       await setConfig(env, guild, { ...(cfg || { clan, channels: {}, roles: {} }), tidyDays: days });
       const waiting = (await env.DB.prepare('SELECT count(*) AS n FROM discord_guests WHERE guild = ?').bind(guild).first())?.n || 0;
       return Response.json(reply(days ? `Done: people in the Not in clan waiting room get a heads-up after ${days - 1} day${days - 1 === 1 ? '' : 's'} and are removed after ${days} (they can rejoin with a new invite). Leaders are never removed. ${waiting} waiting now.` : 'Done: nobody is removed from the waiting room.'));
+    }
+    case 'rejoins': {
+      // Only the Leader (or a server admin) chooses who's told; Co-Leaders can't add themselves.
+      if (!isTopLeader(i.member, cfg)) return Response.json(reply('Only the Leader (or a server admin) can change this.'));
+      const watch = new Set(cfg?.rejoinWatch || []);
+      if (opt.on) watch.add(String(opt.user)); else watch.delete(String(opt.user));
+      await setConfig(env, guild, { ...(cfg || { clan, channels: {}, roles: {} }), rejoinWatch: [...watch] });
+      return Response.json(reply(watch.size ? `Done. A private DM goes to ${[...watch].map(u => `<@${u}>`).join(', ')} when someone who was kicked rejoins the clan.` : 'Done. Nobody gets the rejoin DM now.'));
     }
     case 'sync': {
       if (!isLeader(i.member, cfg)) return Response.json(reply('Leaders only.'));
@@ -1632,6 +1641,23 @@ export async function weeklyUpkeep(env, clan, now = Date.now()) {
     return true;
   }
   return false;
+}
+
+// A kicked player rejoined: a private DM to the people chosen with /setup rejoins (never a channel: Co-Leaders see those).
+export function rejoinText(list) {
+  const day = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+  return ['⚠️ **Rejoined after being kicked**', ...list.map(p => `**${p.name}** (#${p.tag}): ${[p.removedAt && `removed by a leader on ${day(p.removedAt)}`, p.kickWeeks.length && `marked Kick after war ${p.kickWeeks.join(', ')}`].filter(Boolean).join('; ')}. Record: \`/leader player tag:#${p.tag}\``)].join('\n');
+}
+export async function rejoinAlert(env, clan, list) {
+  if (!discordReady(env) || !list.length) return 0;
+  let sent = 0;
+  for (const cfg of (await allConfigs(env)).filter(c => c.clan === clan)) {
+    for (const user of cfg.rejoinWatch || []) {
+      const dm = (await dapi(env, 'POST', '/users/@me/channels', { recipient_id: user }).catch(() => null))?.id;
+      if (dm && await dapi(env, 'POST', `/channels/${dm}/messages`, { content: rejoinText(list).slice(0, 1990), allowed_mentions: { parse: [] } }).then(() => true, () => false)) sent++;
+    }
+  }
+  return sent;
 }
 
 // Re-write every posted stats board for this clan (after each war).
