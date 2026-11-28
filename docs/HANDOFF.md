@@ -231,8 +231,8 @@ linked from both pages' footers. Supercell's unofficial notice is on both pages,
   tidy-up. Anything it can't post goes to #leaders. `/setup refresh` is only needed after changing channels.
 - **Kicked players who rejoin** (`rejoins`, `rejoinAlert`): a join after a leave seen as removed, or after a Kick decision,
   is DMed (never a channel) to the Discord server owner and the in-game Leader's linked account, plus Co-Leaders if the
-  Leader turns that on (`/setup rejoins coleaders:True`, Leader or admin only). On the site it shows only to the leader
-  codes named in `PRIVATE_ALERTS`, or every code when Co-Leaders are on (`/api/rejoins` refuses the rest).
+  Leader turns that on (`/setup rejoins coleaders:True`, Leader or admin only). On the site it shows only to the admin code
+  (`EDIT_KEY`), or every leader code when Co-Leaders are on (`/api/rejoins` refuses the rest).
 - **Old markers** (`pruneKv`): after each war, kv once-only markers (pings, summaries, DMs sent...) of wars before the
   last two, and dated ones over two weeks old, are deleted.
 - **Data-pull failures** post in #leaders from the second failure in a row (single proxy blips are common), and again

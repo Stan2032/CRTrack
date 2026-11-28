@@ -7,7 +7,7 @@
 //   POST /api/snapshot[?clan=TAG]          take a snapshot now (anyone: once per 5 min per clan; all clans needs EDIT_KEY)
 //   POST /api/discord                      Discord slash commands; POST /api/discord/register (leader code)
 //   GET  /api/member?tag=TAG               one member's own data (members' page)
-//   GET  /api/rejoins?clan=TAG             kicked players back in the clan (leader codes in PRIVATE_ALERTS, or all if Co-Leaders are on)
+//   GET  /api/rejoins?clan=TAG             kicked players back in the clan (admin code EDIT_KEY, or all leader codes if Co-Leaders are on)
 //   GET  /api/push/key, /api/alerts/latest; POST /api/push/subscribe|unsubscribe|test   app notifications
 // ALLOWED_CLANS="PPCCR8VU,ABC123" limits which clans can be used.
 import { readHistory, readMember, writeNotes, snapshotAll, requestSnapshot, rejoins } from './history.js';
@@ -98,13 +98,13 @@ export async function handleApi(request, env, ctx) {
     }
     const clan = (url.searchParams.get('clan') || '').toUpperCase().replace(/^#/, '');
     if (!clanOk(clan)) return json({ reason: 'clanNotAllowed' }, 403);
-    // Kicked players back in the clan: for the leader codes named in PRIVATE_ALERTS (e.g. "Stan,Baki"), or every leader
-    // code if the Leader switched Co-Leaders on in Discord (/setup rejoins coleaders:True).
+    // Kicked players back in the clan: for the admin code (EDIT_KEY) only, or every leader code if the Leader switched
+    // Co-Leaders on in Discord (/setup rejoins coleaders:True).
     if (url.pathname === '/api/rejoins') {
-      const who = editorName(), allowedNames = (env.PRIVATE_ALERTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      const admin = !!env.EDIT_KEY && request.headers.get('X-Edit-Key') === env.EDIT_KEY;
       const coOn = async () => (await env.DB.prepare("SELECT v FROM kv WHERE k LIKE 'discord:%'").all().catch(() => ({ results: [] }))).results
         .some(r => { try { const c = JSON.parse(r.v); return c.clan === clan && c.rejoinCo; } catch (e) { return false; } });
-      if (!who || !(allowedNames.includes(who.toLowerCase()) || await coOn())) return json({ reason: 'notAllowed' }, 403);
+      if (!admin && !(isEditor() && await coOn())) return json({ reason: 'notAllowed' }, 403);
       return json({ rejoins: await rejoins(env.DB, clan, new Date(Date.now() - 30 * 864e5).toISOString()) }, 200, 'no-store');
     }
     if (url.pathname === '/api/history') {

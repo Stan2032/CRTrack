@@ -281,7 +281,7 @@ console.log('History checks passed');
 
 // Kicked players who rejoin: found from a "removed" leave or a Kick decision before their latest join; private API.
 { const { rejoins } = await import('../worker/history.js');
-  const DB2 = fakeD1(); const env3 = { DB: DB2, ALLOWED_CLANS: 'PPCCR8VU', EDIT_KEYS: 'Stan:abc,Baki:xyz,Co:co', PRIVATE_ALERTS: 'Stan, Baki' };
+  const DB2 = fakeD1(); const env3 = { DB: DB2, ALLOWED_CLANS: 'PPCCR8VU', EDIT_KEY: 'admin', EDIT_KEYS: 'Stan:abc,Co:co' };
   await DB2.exec(`CREATE TABLE members (clan TEXT, tag TEXT, name TEXT, role TEXT, in_clan INTEGER, first_seen TEXT, last_seen_game TEXT, updated_at TEXT);
     CREATE TABLE member_events (clan TEXT, tag TEXT, name TEXT, kind TEXT, detail TEXT, at TEXT); CREATE TABLE notes (clan TEXT, week TEXT, tag TEXT, kind TEXT, value TEXT, at TEXT);
     INSERT INTO members (clan, tag, name, in_clan) VALUES ('PPCCR8VU','K1','Kicked',1),('PPCCR8VU','K2','Marked',1),('PPCCR8VU','L1','Left',1),('PPCCR8VU','K3','Gone',0);
@@ -294,8 +294,8 @@ console.log('History checks passed');
   assert.deepEqual(got.map(r => [r.tag, !!r.removedAt, r.kickWeeks]), [['K2', false, ['138-3']], ['K1', true, []]], 'kicked (seen or marked) and back in the clan; not someone who just left');
   assert.deepEqual((await rejoins(DB2, 'PPCCR8VU', '2026-11-01T00:00:00Z', ['K1'])).map(r => r.tag), ['K1'], 'only the tags asked about');
   const ask = key => handleApi(new Request('https://x.dev/api/rejoins?clan=PPCCR8VU', { headers: key ? { 'X-Edit-Key': key } : {} }), env3);
-  assert.equal((await ask(null)).status, 403); assert.equal((await ask('co')).status, 403, 'other leader codes: no');
-  const ok = await ask('abc'); assert.equal(ok.status, 200);
+  assert.equal((await ask(null)).status, 403); assert.equal((await ask('co')).status, 403, 'per-leader codes: no'); assert.equal((await ask('abc')).status, 403);
+  const ok = await ask('admin'); assert.equal(ok.status, 200, 'the admin code (EDIT_KEY)');
   await DB2.exec(`CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT); INSERT INTO kv VALUES ('discord:G', '{"clan":"PPCCR8VU","rejoinCo":true}')`);
   assert.equal((await ask('co')).status, 200, 'Co-Leaders switched on by the Leader: every leader code');
   assert.equal((await ask(null)).status, 403);

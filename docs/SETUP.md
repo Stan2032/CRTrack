@@ -37,9 +37,8 @@ Free plan. One Worker serves the site, keeps the history and runs the bot.
 |---|---|---|
 | `CR_API_KEY` | **Secret** | the key from step 1 |
 | `ALLOWED_CLANS` | Text | your clan tag without `#`, e.g. `PPCCR8VU` (only these clans can be used or tracked) |
-| `EDIT_KEY` | **Secret** | the leader code (step 3) |
+| `EDIT_KEY` | **Secret** | the admin leader code (step 3): also sees private warnings, like kicked players who rejoin |
 | `EDIT_KEYS` | **Secret**, optional | one code per leader: `Stan:xxxx,Baki:yyyy` (the log shows who changed what) |
-| `PRIVATE_ALERTS` | Text, optional | names from `EDIT_KEYS` who see private warnings on the site (kicked players who rejoin), e.g. `Stan,Baki` (everyone, if `/setup rejoins coleaders:True`) |
 | `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN` | **Secret** | from step 5 |
 | `DISCORD_GUILD_ID` | Text | your Discord server's id (step 5) |
 
@@ -156,7 +155,7 @@ any time with `/setup auto apply:True`.
 | `/setup pings` | When battle-day pings go out: `hour:20` (UK), `auto:True` (clan's busiest hours between 16:00 and 22:00 UK), `last_call:2` (hours before reset; 0 = off) |
 | `/setup tidy 7` | Remove people from the Not in clan waiting room after 7 days (heads-up the day before; 0 = never) |
 | `/setup channel` · `/setup sync` · `/setup refresh` | Choose a channel's job · update roles and nicknames · re-post and pin kept messages |
-| `/setup rejoins coleaders:False` | Clan Leader only: kicked players who rejoin are DMed to the server owner and the clan Leader; `coleaders:True` tells Co-Leaders too (and shows the site warning to every leader code) |
+| `/setup rejoins coleaders:False` | Clan Leader only: kicked players who rejoin are DMed to the server owner and the clan Leader; `coleaders:True` tells Co-Leaders too (and shows the site warning to every leader code, not just the admin code) |
 | `/setup remove` | Clan Leader only: delete everything War Audit made in the server (asks first) |
 
 "Leaders" means anyone with the Leader or Co-Leader role, or Manage Roles / Administrator in Discord.

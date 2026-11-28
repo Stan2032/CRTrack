@@ -710,7 +710,7 @@ function setMode(m) {
   render();
 }
 
-// Kicked players who rejoined in the last 30 days. The server only answers the leader codes named in PRIVATE_ALERTS.
+// Kicked players who rejoined in the last 30 days. The server only answers the admin code (or all codes if Co-Leaders are on).
 async function loadRejoins() {
   rejoinList = [];
   if (codeOk && settings.code && settings.tag) {

@@ -605,7 +605,7 @@ export async function handleDiscord(request, env, ctx) {
       delete next.rejoinWatch;
       await setConfig(env, guild, next);
       const who = await rejoinRecipients(env, { ...next, guild }, clan).catch(() => ({ users: [], leaderLinked: false }));
-      return Response.json(reply([`Done. When a kicked player rejoins, a private DM goes to the server owner, the clan Leader${next.rejoinCo ? ' and Co-Leaders' : ''} (linked accounts), and the site shows a warning to ${next.rejoinCo ? 'every leader code' : 'the leader codes in PRIVATE_ALERTS'}.`,
+      return Response.json(reply([`Done. When a kicked player rejoins, a private DM goes to the server owner, the clan Leader${next.rejoinCo ? ' and Co-Leaders' : ''} (linked accounts), and the site shows a warning to ${next.rejoinCo ? 'every leader code' : 'the admin code only'}.`,
         `Right now that's ${who.users.map(u => `<@${u}>`).join(', ') || 'nobody'}.`, who.leaderLinked ? '' : '⚠️ The clan Leader hasn\'t linked their account yet (`/link`), so they won\'t get it until they do.'].filter(Boolean).join('\n')));
     }
     case 'sync': {
